@@ -1,0 +1,47 @@
+[
+  {
+    "id": "COURSE001",
+    "name": "高等数学",
+    "teacher": "张教授",
+    "classroom": "J3-101",
+    "weekStart": 1,
+    "weekEnd": 16,
+    "dayOfWeek": 1,
+    "sectionStart": 1,
+    "sectionEnd": 2,
+    "courseCode": "MATH101",
+    "credit": "3.0",
+    "beginTime": "08:00",
+    "endTime": "09:40"
+  },
+  {
+    "id": "COURSE002",
+    "name": "程序设计基础",
+    "teacher": "李教授",
+    "classroom": "J3-202",
+    "weekStart": 1,
+    "weekEnd": 16,
+    "dayOfWeek": 1,
+    "sectionStart": 3,
+    "sectionEnd": 4,
+    "courseCode": "CS101",
+    "credit": "2.0",
+    "beginTime": "10:00",
+    "endTime": "11:40"
+  },
+  {
+    "id": "COURSE003",
+    "name": "大学物理",
+    "teacher": "王教授",
+    "classroom": "J3-303",
+    "weekStart": 1,
+    "weekEnd": 16,
+    "dayOfWeek": 1,
+    "sectionStart": 5,
+    "sectionEnd": 6,
+    "courseCode": "PHYS101",
+    "credit": "3.0",
+    "beginTime": "14:00",
+    "endTime": "15:40"
+  }
+]

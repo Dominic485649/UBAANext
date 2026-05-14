@@ -1,0 +1,8 @@
+if(MSVC)
+    add_compile_options(/W4 /WX)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+    if(CMAKE_SYSTEM_NAME STREQUAL "OHOS" AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-Wno-error=unused-command-line-argument)
+    endif()
+endif()

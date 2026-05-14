@@ -1,0 +1,22 @@
+[
+  {"serialNumber": 1, "name": "第1周", "startDate": "2026-02-23", "endDate": "2026-03-01", "isCurrent": false},
+  {"serialNumber": 2, "name": "第2周", "startDate": "2026-03-02", "endDate": "2026-03-08", "isCurrent": false},
+  {"serialNumber": 3, "name": "第3周", "startDate": "2026-03-09", "endDate": "2026-03-15", "isCurrent": false},
+  {"serialNumber": 4, "name": "第4周", "startDate": "2026-03-16", "endDate": "2026-03-22", "isCurrent": false},
+  {"serialNumber": 5, "name": "第5周", "startDate": "2026-03-23", "endDate": "2026-03-29", "isCurrent": false},
+  {"serialNumber": 6, "name": "第6周", "startDate": "2026-03-30", "endDate": "2026-04-05", "isCurrent": false},
+  {"serialNumber": 7, "name": "第7周", "startDate": "2026-04-06", "endDate": "2026-04-12", "isCurrent": false},
+  {"serialNumber": 8, "name": "第8周", "startDate": "2026-04-13", "endDate": "2026-04-19", "isCurrent": true},
+  {"serialNumber": 9, "name": "第9周", "startDate": "2026-04-20", "endDate": "2026-04-26", "isCurrent": false},
+  {"serialNumber": 10, "name": "第10周", "startDate": "2026-04-27", "endDate": "2026-05-03", "isCurrent": false},
+  {"serialNumber": 11, "name": "第11周", "startDate": "2026-05-04", "endDate": "2026-05-10", "isCurrent": false},
+  {"serialNumber": 12, "name": "第12周", "startDate": "2026-05-11", "endDate": "2026-05-17", "isCurrent": false},
+  {"serialNumber": 13, "name": "第13周", "startDate": "2026-05-18", "endDate": "2026-05-24", "isCurrent": false},
+  {"serialNumber": 14, "name": "第14周", "startDate": "2026-05-25", "endDate": "2026-05-31", "isCurrent": false},
+  {"serialNumber": 15, "name": "第15周", "startDate": "2026-06-01", "endDate": "2026-06-07", "isCurrent": false},
+  {"serialNumber": 16, "name": "第16周", "startDate": "2026-06-08", "endDate": "2026-06-14", "isCurrent": false},
+  {"serialNumber": 17, "name": "第17周", "startDate": "2026-06-15", "endDate": "2026-06-21", "isCurrent": false},
+  {"serialNumber": 18, "name": "第18周", "startDate": "2026-06-22", "endDate": "2026-06-28", "isCurrent": false},
+  {"serialNumber": 19, "name": "第19周", "startDate": "2026-06-29", "endDate": "2026-07-05", "isCurrent": false},
+  {"serialNumber": 20, "name": "第20周", "startDate": "2026-07-06", "endDate": "2026-07-12", "isCurrent": false}
+]

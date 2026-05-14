@@ -1,0 +1,739 @@
+UBAA Next 项目目标与全流程总纲
+版本：target-2026-05-12
+性质：项目级流程总纲，不是提示词，不要求一次性生成全部代码。
+适用范围：当前 UBAA Next 仓库及后续 v0.3 修正、v0.4、v0.5、v0.6、v0.7、v1.0 开发。
+
+================================================================================
+1. 项目定位
+================================================================================
+
+项目名：UBAA Next
+仓库名：ubaa-next
+根命名空间：UBAANext
+内部短别名：namespace um = UBAANext，只允许出现在 .cpp、测试文件、CLI 内部，禁止出现在公共头文件。
+
+长期定位：
+UBAA Next 是 UBAA 的 C++ 原生重写。核心目标是将校园服务业务逻辑沉到稳定、可测试、可复用的 C++ Core 中，上层平台只做薄壳。
+
+最终平台结构：
+- C++ Core：模型、错误、协议、解析、认证、缓存、服务、抽象接口。
+- Windows CLI：最先落地，用于验证 Core、协议和自动化测试。
+- HarmonyOS：ArkUI 前端 + NAPI/Node-API 调用 C++ Core。
+- Windows GUI：后续可选 Slint 前端，通过 ViewModel 调用 C++ Core。
+
+核心原则：
+1. Core 不依赖 UI。
+2. Core 不直接依赖平台 UI 框架。
+3. Core 不直接读取真实密码或硬编码真实 Token。
+4. Core 对外返回 Result<T>，不把异常作为公共错误通道。
+5. 真实网络、真实安全存储、平台能力必须通过 Adapter 注入。
+6. Mock 与 fixture 必须长期存在，用于离线测试和协议回归。
+7. target.txt 是项目流程文件，不是一次性代码生成提示词。
+
+================================================================================
+2. 语言、构建与工具链决策
+================================================================================
+
+2.1 C++ 标准
+
+默认基线：C++23。
+
+允许使用的 C++23 特性：
+- std::expected；
+- std::print/std::println；
+- 其他已被 MSVC/Clang/GCC 主流版本稳定支持的库特性。
+
+不应默认启用：
+- C++26；
+- import std；
+- C++20/23 modules 作为主构建路径。
+
+原因：当前项目更需要稳定的跨平台构建、清晰 ABI/接口边界和可测试性，而不是追新语法。C++ modules/import std 可在实验 target 中验证，但不能影响默认构建。
+
+建议配置：
+- CMAKE_CXX_STANDARD 23
+- CMAKE_CXX_STANDARD_REQUIRED ON
+- CMAKE_CXX_EXTENSIONS OFF
+- UBAANEXT_ENABLE_CPP26_EXPERIMENTS 默认 OFF
+- UBAANEXT_ENABLE_CXX_MODULES 默认 OFF
+
+2.2 CMake 策略
+
+当前如果继续使用 Visual Studio 18 2026 generator，则项目最低 CMake 不应继续写 3.21。推荐二选一：
+
+方案 A：保留 VS2026 generator
+- cmake_minimum_required(VERSION 4.2)
+- windows-msvc-debug 使用 "Visual Studio 18 2026"
+- 额外提供 windows-ninja-msvc-debug 作为 fallback
+
+方案 B：降低工具链门槛
+- cmake_minimum_required(VERSION 3.26 或 3.30)
+- 默认 preset 使用 Ninja + MSVC DevShell
+- VS2026 generator 作为可选 preset，不作为唯一 preset
+
+推荐：方案 B。原因是命令行开发、CI、Kilo/Codex/Claude Code 调用 CMake 时，Ninja preset 更稳定，且不强绑定 IDE generator。
+
+2.3 依赖策略
+
+当前状态：
+- nlohmann-json：vcpkg。
+- Catch2：FetchContent 从 GitHub 拉取。
+
+目标状态：
+- 所有第三方依赖优先使用 vcpkg manifest 管理。
+- tests 默认依赖 catch2，写入 vcpkg.json。
+- 禁止 CMake configure 阶段默认联网拉取依赖。
+- 如保留 FetchContent，必须有 UBAANEXT_USE_FETCHCONTENT=OFF 默认值，并文档说明网络需求。
+
+推荐 vcpkg.json：
+- nlohmann-json
+- catch2
+
+2.4 仓库清理
+
+必须进入 .gitignore / 导出排除：
+- .kilo/node_modules/
+- .kilo/package-lock.json 等可再生成文件
+- build/
+- .vs/
+- CMakeUserPresets.json
+- 本地 session/cache 文件
+
+.kilo/plans 可以保留为开发历史，但不应让 node_modules 进入仓库或交付压缩包。
+
+================================================================================
+3. 当前代码审查结论与立即修正项
+================================================================================
+
+3.1 版本与文档一致性
+
+问题：
+- CMakeLists.txt project VERSION 是 0.3.0。
+- vcpkg.json 是 0.3.0。
+- README 标题仍写 v0.1。
+- target.txt 大量写 v0.1。
+- CLI 报错写 v0.3。
+- docs/decisions/0001 文件名是 use-cpp20，但标题是 Use C++23。
+
+修正目标：
+- 当前仓库版本统一为 0.3.0-dev 或 0.3.1-fixup。
+- README 改为“Current status: v0.3 mock core”。
+- target.txt 改为本文件这种项目流程总纲。
+- docs/02-roadmap.md 与所有 decisions 对齐。
+- 0001 文件名改为 0001-use-cpp23-as-baseline.md，或保留文件名但注明 historical typo，不推荐继续保留误导性文件名。
+
+验收：
+- rg "v0\.1|v0\.2|v0\.3" README.md docs target.txt 后，所有出现都有明确历史/当前/未来语义。
+- 根版本只在 project() 和 vcpkg.json 中维护；Version.hpp 继续由 CMake 生成。
+
+3.2 构建系统
+
+问题：
+- CMakePresets 只提供 VS2026 generator。
+- FetchContent 默认拉取 Catch2。
+- dependencies 和 docs 不一致。
+
+修正目标：
+- 新增 windows-ninja-msvc-debug / windows-ninja-msvc-release。
+- 可保留 windows-vs2026-debug，但不作为唯一入口。
+- Catch2 改为 find_package(Catch2 CONFIG REQUIRED)。
+- vcpkg.json 添加 catch2。
+- cmake/Dependencies.cmake 不默认联网。
+
+验收命令：
+- cmake --preset windows-ninja-msvc-debug
+- cmake --build --preset windows-ninja-msvc-debug
+- ctest --preset windows-ninja-msvc-debug
+- cmake --preset windows-vs2026-debug 在已安装支持版本 CMake/VS 的环境中可用。
+
+3.3 公共头文件与 API 完整性
+
+问题：
+- UBAANext.hpp 没有包含 TermService.hpp。
+- FileSecureStore.hpp 使用 std::optional，但没有自己 include <optional>，只是依赖间接包含。
+- main.cpp 使用 std::optional/free，但缺少显式 <optional>/<cstdlib>。
+
+修正目标：
+- 所有公共头文件自包含：单独 include 该头即可编译。
+- UBAANext.hpp 包含全部公共服务头。
+- 增加 header self-contained 测试。
+
+验收：
+- 对 core/include/**/*.hpp、mocks/include/**/*.hpp、apps/cli/include/**/*.hpp 逐个生成临时 .cpp，仅 include 本头文件并编译通过。
+
+3.4 IHttpClient 错误模型
+
+问题：
+IHttpClient::send 文档声明可能抛 std::runtime_error，但 Service 层没有 try/catch。真实网络实现后，异常会穿透 Core 公共 API。
+
+目标接口：
+- 方案 A：IHttpClient::send 返回 Result<HttpResponse>。
+- 方案 B：IHttpClient::send 仍返回 HttpResponse，但接口契约明确 noexcept-like：实现不得抛异常，网络错误用 status_code=0 + error headers/body 表示。
+
+推荐：方案 A。
+
+目标签名：
+Result<HttpResponse> send(const HttpRequest& request);
+
+Service 处理流程：
+- send 失败：直接返回 NetworkError。
+- HTTP 401/403：返回 AuthFailed 或 SessionExpired。
+- HTTP 2xx：进入 Parser。
+- Parser 失败：返回 ParseError。
+
+验收：
+- MockHttpClient 可以模拟网络错误、HTTP 500、非法 JSON。
+- 每个 Service 至少覆盖成功、HTTP 错误、解析错误、缓存命中四类测试。
+
+3.5 CacheStore 抽象
+
+问题：
+Service 通过 dynamic_cast<MemoryCacheStore*> 判断是否支持 TTL，这泄露了实现细节。
+
+目标：
+ICacheStore 直接支持可选 TTL，或 Service 不管理 TTL。
+
+推荐接口：
+struct CacheOptions { std::optional<std::chrono::seconds> ttl; };
+virtual void set(const std::string& key, std::string value, CacheOptions options = {}) = 0;
+
+验收：
+- Service 不再 include MemoryCacheStore.hpp。
+- Service 不再 dynamic_cast。
+- MemoryCacheStore 和 MockCacheStore 都通过同一 ICacheStore 接口支持 TTL。
+
+3.6 FileSecureStore 安全边界
+
+问题：
+FileSecureStore 明文保存 session.dat，不应被描述为安全存储。
+
+目标：
+- FileSecureStore 改名为 PlainFileStore 或 DevFileSecureStore，并在注释中明确“仅开发/Mock 使用，不保存真实 Token”。
+- 真实 Windows 存储使用 DPAPI Adapter。
+- HarmonyOS 使用系统安全存储能力封装为 ISecureStore。
+
+验收：
+- 真实登录实现前，不允许真实 token 写入 PlainFileStore。
+- CLI 若处于真实模式而没有平台安全存储，必须拒绝保存或仅允许一次性会话。
+- docs/security/credential-handling.md 明确禁止明文长期保存。
+
+3.7 Parser 与协议层
+
+问题：
+Parser 当前采用宽松 value(default) 策略，适合 mock 初期，但真实接口变更时可能悄悄吞错。
+
+目标：
+- Parser 分为 strict 和 lenient 两种策略。
+- Mock/单元测试可用 strict 保护字段映射。
+- 真实接口初期可 lenient，但必须记录缺失字段 diagnostics。
+
+验收：
+- fixtures 与 Parser golden tests 绑定。
+- 添加字段缺失、字段类型错误、未知枚举值测试。
+- 每个 parse_xxx 返回的 Error.message 包含模块名与关键字段名。
+
+3.8 CLI
+
+问题：
+手写参数解析可用，但缺少系统性错误处理和机器可读输出规范。
+
+目标：
+- v0.4 前继续手写解析。
+- v0.4 开始稳定命令树、exit code、--json 输出。
+- CLI 不应直接知道太多 MockHttpClient 路由；依赖 AppContext/ServiceFactory。
+
+验收：
+- ubaa help
+- ubaa version
+- ubaa login --mock --username 20260000 --password test
+- ubaa whoami
+- ubaa logout
+- ubaa course today --mock
+- ubaa course week --mock --week 8
+- ubaa exam list --mock
+- ubaa classroom query --mock --campus 1 --date 2026-05-12
+- ubaa term list --mock
+- ubaa week list --mock
+- 所有命令支持 --json 后输出稳定 JSON。
+
+================================================================================
+4. 目录结构目标
+================================================================================
+
+目标结构应逐步整理为：
+
+ubaa-next/
+├─ CMakeLists.txt
+├─ CMakePresets.json
+├─ CMakeUserPresets.example.json
+├─ vcpkg.json
+├─ README.md
+├─ LICENSE
+├─ NOTICE
+├─ target.txt
+├─ .gitignore
+├─ .clang-format
+├─ .clang-tidy
+│
+├─ cmake/
+│  ├─ UBAANextOptions.cmake
+│  ├─ UBAANextWarnings.cmake
+│  ├─ Dependencies.cmake
+│  └─ ToolchainChecks.cmake
+│
+├─ core/
+│  ├─ CMakeLists.txt
+│  ├─ include/UBAANext/
+│  │  ├─ UBAANext.hpp
+│  │  ├─ Version.hpp.in
+│  │  ├─ Base/
+│  │  ├─ Model/
+│  │  ├─ Net/
+│  │  ├─ Storage/
+│  │  ├─ Auth/
+│  │  ├─ Parser/
+│  │  ├─ Protocol/
+│  │  └─ Service/
+│  └─ src/
+│
+├─ adapters/
+│  ├─ windows/
+│  │  ├─ include/UBAANextAdapters/Windows/
+│  │  └─ src/
+│  ├─ curl/
+│  └─ harmony/
+│
+├─ bindings/
+│  ├─ c/
+│  └─ napi/
+│
+├─ mocks/
+│  ├─ CMakeLists.txt
+│  ├─ include/UBAANextMocks/
+│  └─ src/
+│
+├─ apps/
+│  ├─ cli/
+│  ├─ harmony-arkui/
+│  └─ windows-slint/
+│
+├─ tests/
+│  ├─ CMakeLists.txt
+│  ├─ fixtures/
+│  ├─ unit/
+│  ├─ integration/
+│  └─ header-self-contained/
+│
+├─ tools/
+│  ├─ format.ps1
+│  ├─ check.ps1
+│  └─ export-source.ps1
+│
+└─ docs/
+   ├─ 00-index.md
+   ├─ 01-project-overview.md
+   ├─ 02-roadmap.md
+   ├─ 03-glossary.md
+   ├─ architecture/
+   ├─ api/
+   ├─ apps/
+   ├─ build/
+   ├─ core/
+   ├─ decisions/
+   ├─ licensing/
+   ├─ protocol/
+   ├─ release/
+   ├─ security/
+   └─ testing/
+
+说明：
+- adapters/ 在真实网络和真实安全存储开始前可以不存在，但 target 应预留。
+- bindings/ 在 HarmonyOS NAPI 前可以不存在，但 target 应预留。
+- apps/harmony-arkui 和 apps/windows-slint 不能在 Core 未稳定前提前膨胀。
+
+================================================================================
+5. 版本路线图
+================================================================================
+
+v0.3-fixup：当前仓库修正阶段
+
+目标：
+把当前 mock core 从“能跑的样子”整理成“可持续迭代的工程基线”。
+
+范围：
+- 版本和文档统一。
+- 构建系统去默认联网化。
+- Catch2 改 vcpkg。
+- Header self-contained 检查。
+- IHttpClient 错误模型确定。
+- CacheStore TTL 抽象修正。
+- FileSecureStore 安全定位修正。
+- UBAANext.hpp 补齐。
+- .kilo/node_modules 清理。
+
+不做：
+- 不接真实校园接口。
+- 不做 ArkUI。
+- 不做 Slint。
+- 不做真实登录。
+
+验收：
+- Windows MSVC + Ninja 可配置、编译、测试。
+- 所有单元测试通过。
+- 所有公共头自包含检查通过。
+- README/target/docs 版本语义一致。
+- 压缩包导出不包含 node_modules。
+
+v0.4：Windows CLI 完整化与协议准备
+
+目标：
+让 Windows CLI 成为稳定的 Core 验证入口，并准备真实协议对接。
+
+范围：
+- 稳定命令树。
+- 完整 --json 输出格式。
+- 统一 exit code。
+- config 子命令：查看/设置 base-url、proxy、cache、mock 模式。
+- cache clear。
+- fixtures/golden tests。
+- AppContext/ServiceFactory，减少 main.cpp 直接组装重复逻辑。
+
+不做：
+- 不在仓库中硬编码真实学校 URL、账号、密码、Cookie、Token。
+- 不在无安全存储情况下保存真实 token。
+
+验收：
+- CLI 所有命令有人类可读输出和 --json 输出。
+- JSON schema 写入 docs/api/json-output-format.md。
+- 集成测试可调用 CLI 并比对 golden output。
+
+v0.5：真实传输、认证与平台安全存储
+
+目标：
+在不破坏 Mock 测试的前提下，引入真实 HTTP adapter、真实认证流程和安全存储 adapter。
+
+范围：
+- CurlHttpClient 或 WinHttpClient。
+- 统一 timeout、proxy、headers、cookie jar。
+- AuthService real login skeleton。
+- Windows DPAPI SecureStore。
+- Session refresh / expire 处理。
+- 错误映射：网络错误、HTTP 错误、认证失败、会话过期、解析失败。
+
+不做：
+- 不把真实账号密码写入 fixture。
+- 不在日志输出敏感字段。
+
+验收：
+- Mock tests 仍可完全离线通过。
+- Real adapter tests 默认跳过，只有显式环境变量开启。
+- 安全文档覆盖凭据、token、cookie、日志脱敏。
+
+v0.6：C ABI 与 HarmonyOS NAPI 边界
+
+目标：
+建立 ArkTS/ArkUI 调用 C++ Core 的稳定边界。
+
+范围：
+- C API：稳定 ABI，隐藏 C++ 模板、std::string、std::vector、std::expected。
+- Error 映射：C++ ErrorCode → C ABI code → ArkTS exception/result。
+- NAPI binding：Promise/async 封装。
+- ArkTS .d.ts 类型声明。
+- 生命周期：init/shutdown/session handle。
+
+不做：
+- 不在 NAPI 层复制业务逻辑。
+- 不让 ArkUI 直接拼协议。
+
+验收：
+- ArkTS 能调用 version、mock login、mock course today。
+- NAPI 层测试覆盖成功、失败、异常转换。
+- Core 仍可在无 HarmonyOS SDK 环境下单独构建。
+
+v0.7：HarmonyOS ArkUI 应用
+
+目标：
+基于 NAPI 调用 Core，完成最小可用 HarmonyOS 客户端。
+
+范围：
+- 登录页。
+- 今日课表页。
+- 考试列表页。
+- 空教室查询页。
+- 设置页。
+- 错误提示与加载状态。
+
+不做：
+- 不在 ArkUI 页面中实现协议解析。
+- 不绕过 Core 直接请求真实校园接口。
+
+验收：
+- ArkUI 页面只调用 ViewModel/Binding。
+- 断网/未登录/session expired 均有明确 UI 状态。
+- NAPI 返回数据与 CLI --json schema 尽量一致。
+
+v0.8：Windows Slint GUI
+
+目标：
+在 Windows 上提供可选 GUI。
+
+范围：
+- Slint UI。
+- C++ ViewModel。
+- 登录/课表/考试/空教室/设置。
+- Slint license/attribution 文档。
+
+不做：
+- 不影响 CLI 作为主调试入口。
+- 不把 Slint 依赖引入 Core。
+
+验收：
+- Core 不依赖 Slint。
+- GUI 可以禁用构建。
+- License 文档明确 GPLv3/商业授权影响。
+
+v1.0：稳定版
+
+目标：
+形成可发布、可维护、可回归测试的稳定版本。
+
+范围：
+- CI。
+- Release packaging。
+- Windows artifact。
+- HarmonyOS packaging。
+- changelog。
+- crash/error reporting 策略。
+- 安全文档、隐私文档、第三方 notices。
+
+验收：
+- fresh clone + documented commands 可构建。
+- tests 全部通过。
+- 无敏感数据进入仓库。
+- release checklist 全部通过。
+
+================================================================================
+6. 模块边界规则
+================================================================================
+
+6.1 Core
+
+允许依赖：
+- C++ 标准库。
+- nlohmann-json，若 Parser 仍在 Core 中。
+- 纯接口抽象。
+
+禁止依赖：
+- ArkUI。
+- Slint。
+- Windows UI/API，除非在 adapters/windows。
+- CLI 参数解析库。
+- 测试框架。
+
+6.2 Mocks
+
+允许：
+- 依赖 Core。
+- 内嵌 mock JSON。
+- 读取 tests/fixtures 作为可选增强。
+
+禁止：
+- 依赖真实网络。
+- 依赖真实安全存储。
+
+6.3 CLI
+
+允许：
+- 依赖 Core、Mocks、Adapters。
+- 手写参数解析直到 v0.4。
+
+禁止：
+- 在 main.cpp 堆积业务逻辑。
+- 直接解析校园协议。
+- 直接处理真实 token 明文存储。
+
+6.4 Adapters
+
+职责：
+- 把平台能力转换为 Core 接口。
+- Windows DPAPI、WinHTTP/Curl、Harmony secure store 等都在这里。
+
+禁止：
+- 上层 UI 直接依赖某个 Adapter 的内部细节。
+
+6.5 Bindings
+
+职责：
+- C ABI 和 NAPI 只做类型转换、生命周期、错误映射、异步调度。
+
+禁止：
+- 在 Binding 写业务规则。
+
+================================================================================
+7. 测试策略
+================================================================================
+
+测试分层：
+1. Unit tests：Core 纯逻辑、Parser、CookieJar、CacheStore、SessionManager、Service mock。
+2. Header self-contained tests：每个公共头文件独立 include 编译。
+3. CLI integration tests：调用 ubaa 可执行文件，比对 stdout/stderr/exit code/json。
+4. Golden parser tests：fixtures 输入，结构化输出固定。
+5. Real adapter tests：默认跳过，只在显式环境变量开启。
+
+必须新增测试：
+- IHttpClient 网络失败模拟。
+- HTTP 401/403/500 映射。
+- Parser 字段缺失、类型错误、非法 JSON。
+- Cache TTL 不通过 dynamic_cast 实现。
+- File/DPAPI Store 行为区别。
+- UBAANext.hpp 伞形头可单独 include。
+
+推荐命令：
+- pwsh ./tools/check.ps1
+
+check.ps1 应执行：
+1. cmake configure。
+2. cmake build。
+3. ctest。
+4. clang-format check。
+5. clang-tidy 可选。
+6. header self-contained check。
+7. rg 敏感字段检查。
+
+================================================================================
+8. 安全与隐私规则
+================================================================================
+
+必须遵守：
+- 仓库不得提交真实账号、密码、Cookie、Token、真实响应包。
+- 日志默认脱敏 Authorization、Cookie、Set-Cookie、password、token。
+- 明文 FileSecureStore 只能用于 mock/dev。
+- 真实模式必须使用平台安全存储，或明确不持久化 token。
+- crash dump / debug log 不得包含敏感字段。
+- docs/security 必须随真实登录一起更新，不能事后补。
+
+命名建议：
+- MockSecureStore：仅测试。
+- PlainFileStore：开发/Mock 文件存储。
+- WindowsDpapiSecureStore：真实 Windows 安全存储。
+- HarmonySecureStore：HarmonyOS 安全存储。
+
+================================================================================
+9. CLI 输出与错误码
+================================================================================
+
+CLI exit code：
+- 0：成功。
+- 1：通用失败。
+- 2：参数错误。
+- 3：未登录或会话过期。
+- 4：网络错误。
+- 5：解析错误。
+- 6：安全存储错误。
+
+JSON 输出统一格式：
+成功：
+{
+  "ok": true,
+  "data": { ... },
+  "error": null
+}
+
+失败：
+{
+  "ok": false,
+  "data": null,
+  "error": {
+    "code": "InvalidArgument",
+    "message": "..."
+  }
+}
+
+人类可读输出可以中文；JSON 字段名必须稳定、英文、小驼峰或 snake_case 二选一。推荐 camelCase，与 ArkTS 更贴近。
+
+================================================================================
+10. 文档维护规则
+================================================================================
+
+docs 不应只是占位。每个版本至少更新：
+- docs/02-roadmap.md
+- docs/architecture/module-boundaries.md
+- docs/build/cmake-guide.md
+- docs/testing/test-strategy.md
+- docs/security/credential-handling.md
+- docs/api/json-output-format.md
+- docs/decisions/ 新增或修正 ADR
+
+文档状态标记：
+- Draft：草案。
+- Accepted：已采纳。
+- Deprecated：已废弃。
+- Superseded by XXXX：被某决策取代。
+
+任何与代码相反的文档必须立即修正，不能让 target/README/docs 三套说法长期并存。
+
+================================================================================
+11. 当前下一步执行清单
+================================================================================
+
+P0：不改功能，只修工程一致性
+- 替换旧 target.txt 为本总纲。
+- README 改为 v0.3 mock core 状态。
+- docs/02-roadmap.md 对齐本路线。
+- 决策文档 0001 文件名/内容修正为 C++23 baseline。
+- UBAANext.hpp 补 include TermService.hpp。
+- FileSecureStore.hpp 加 <optional>。
+- main.cpp 加 <optional> 和 <cstdlib>。
+- .gitignore 加 .kilo/node_modules/ 和本地 session/cache。
+- 导出脚本排除 .git、.kilo/node_modules、build。
+
+P1：修构建依赖
+- vcpkg.json 添加 catch2。
+- Dependencies.cmake 改 find_package(Catch2 CONFIG REQUIRED)。
+- 移除默认 FetchContent 拉 Catch2。
+- CMakePresets 新增 Ninja + MSVC preset。
+- 明确 VS2026 preset 所需 CMake 版本。
+
+P2：修 Core 抽象
+- IHttpClient::send 改 Result<HttpResponse>，或明确不得抛异常；推荐改 Result。
+- ICacheStore 增加可选 TTL，移除 Service 对 MemoryCacheStore 的 dynamic_cast。
+- Service 错误映射统一。
+
+P3：修安全边界
+- FileSecureStore 改名/改注释为开发明文存储。
+- 新增 WindowsDpapiSecureStore 设计文档，真实登录前必须完成。
+- 日志脱敏规则写入 docs/security。
+
+P4：增强测试
+- Header self-contained test。
+- CLI integration test。
+- Parser strict/lenient/golden test。
+- Service 网络错误测试。
+
+P5：进入 v0.4 CLI 完整化
+- ServiceFactory/AppContext。
+- --json。
+- config/cache。
+- 稳定 exit code。
+
+================================================================================
+12. Definition of Done
+================================================================================
+
+任一版本完成必须满足：
+1. Windows 主构建链路可 fresh configure/build/test。
+2. Mock 测试不需要网络、不需要真实账号。
+3. target.txt、README、docs/02-roadmap.md 对当前状态描述一致。
+4. 新功能有测试；bug 修复有回归测试。
+5. 公共头文件自包含。
+6. Core 不依赖 UI。
+7. 敏感信息不进入仓库、日志和测试 fixture。
+8. CLI 输出和 exit code 符合文档。
+9. 版本号、changelog、release notes 在发布前同步。
+10. 压缩包/发布包不包含 node_modules、build、.git、本地缓存。
+
+================================================================================
+13. 一句话方向
+================================================================================
+
+现在不要再让 AI 重写 v0.1 骨架；应该让它基于当前 v0.3 mock core 做工程化修正，把“能跑的样子”变成“可长期迭代的基线”，然后按 v0.4 CLI、v0.5 真实传输/安全存储、v0.6 NAPI、v0.7 ArkUI、v0.8 Slint、v1.0 Release 的顺序推进。

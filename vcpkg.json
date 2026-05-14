@@ -1,0 +1,5 @@
+{
+  "name": "ubaanext",
+  "version-string": "0.3.0",
+  "dependencies": ["nlohmann-json", "catch2"]
+}

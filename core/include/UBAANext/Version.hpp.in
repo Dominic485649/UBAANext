@@ -1,0 +1,16 @@
+/**
+ * @file Version.hpp.in
+ * @brief UBAA Next 版本常量定义（CMake 模板文件）
+ *
+ * 此文件由 CMake configure_file() 处理，
+ * 生成的 Version.hpp 中的版本号自动与 CMakeLists.txt 中的
+ * project(UBAANext VERSION ...) 保持同步。
+ *
+ * @warning 请勿直接编辑生成的 Version.hpp，修改此模板文件即可。
+ */
+#pragma once
+
+#define UBAANEXT_VERSION_MAJOR @PROJECT_VERSION_MAJOR@   ///< 主版本号（破坏性变更）
+#define UBAANEXT_VERSION_MINOR @PROJECT_VERSION_MINOR@   ///< 次版本号（新功能）
+#define UBAANEXT_VERSION_PATCH @PROJECT_VERSION_PATCH@   ///< 补丁版本号（缺陷修复）
+#define UBAANEXT_VERSION_STRING "@PROJECT_VERSION@"      ///< 人类可读的版本字符串

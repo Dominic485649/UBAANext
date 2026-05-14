@@ -1,0 +1,24 @@
+{
+  "buildings": {
+    "J3": [
+      {
+        "id": "J3-101",
+        "name": "J3-101",
+        "floorId": "1",
+        "freeSections": [1, 2, 3, 4]
+      },
+      {
+        "id": "J3-202",
+        "name": "J3-202",
+        "floorId": "2",
+        "freeSections": [5, 6, 7, 8]
+      },
+      {
+        "id": "J3-303",
+        "name": "J3-303",
+        "floorId": "3",
+        "freeSections": [9, 10, 11, 12]
+      }
+    ]
+  }
+}

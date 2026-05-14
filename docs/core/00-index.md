@@ -1,0 +1,15 @@
+# 核心索引
+
+- [编码规范](coding-guidelines.md)
+- [命名规则](naming-rules.md)
+- [命名空间规则](namespace-rules.md)
+- [错误模型](error-model.md)
+- [Result 类型](result-type.md)
+- [模型层](model-layer.md)
+- [服务层](service-layer.md)
+- [解析器层](parser-layer.md)
+- [网络抽象](net-abstraction.md)
+- [存储抽象](storage-abstraction.md)
+- [会话设计](session-design.md)
+- [缓存设计](cache-design.md)
+- [线程安全](thread-safety.md)

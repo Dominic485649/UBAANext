@@ -1,0 +1,41 @@
+[
+  {
+    "id": "EXAM001",
+    "courseName": "高等数学",
+    "location": "J3-101",
+    "timeText": "2026-06-20 09:00-11:00",
+    "courseNo": "MATH101",
+    "examDate": "2026-06-20",
+    "startTime": "09:00",
+    "endTime": "11:00",
+    "seatNo": "15",
+    "examType": "期末考试",
+    "status": 1
+  },
+  {
+    "id": "EXAM002",
+    "courseName": "程序设计基础",
+    "location": "J3-202",
+    "timeText": "2026-06-22 14:00-16:00",
+    "courseNo": "CS101",
+    "examDate": "2026-06-22",
+    "startTime": "14:00",
+    "endTime": "16:00",
+    "seatNo": "23",
+    "examType": "期末考试",
+    "status": 1
+  },
+  {
+    "id": "EXAM003",
+    "courseName": "大学物理",
+    "location": "J3-303",
+    "timeText": "2026-06-24 09:00-11:00",
+    "courseNo": "PHYS101",
+    "examDate": "2026-06-24",
+    "startTime": "09:00",
+    "endTime": "11:00",
+    "seatNo": "8",
+    "examType": "期末考试",
+    "status": 1
+  }
+]
