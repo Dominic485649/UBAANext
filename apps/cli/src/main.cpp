@@ -61,6 +61,12 @@ using UBAANextCli::ExitCode;
 using UBAANextCli::OutputFormatter;
 using UBAANextCli::ServiceFactory;
 
+struct CliArgs;
+
+ExitCode cmd_feature_show(ServiceFactory &factory, OutputFormatter &out,
+                          const std::string &domain, const std::string &operation,
+                          const std::string &id, const std::string &key);
+
 // ── CLI 参数结构 ──────────────────────────────────────────────
 
 struct CliArgs {
@@ -1038,6 +1044,67 @@ ExitCode cmd_grade_list(const CliArgs &args, ServiceFactory &factory, OutputForm
     return ExitCode::Ok;
 }
 
+um::Model::FeatureRecord judge_summary_to_record(const um::Model::JudgeAssignmentSummary &assignment) {
+    um::Model::FeatureRecord record;
+    record.id = assignment.id;
+    record.title = assignment.title;
+    record.status = assignment.status.empty() ? "available" : assignment.status;
+    record.fields["courseId"] = assignment.course_id;
+    record.fields["courseName"] = assignment.course_name;
+    return record;
+}
+
+um::Model::FeatureRecord judge_detail_to_record(const um::Model::JudgeAssignmentDetail &detail) {
+    um::Model::FeatureRecord record;
+    record.id = detail.id;
+    record.title = detail.title;
+    record.status = detail.status;
+    record.fields["courseId"] = detail.course_id;
+    record.fields["courseName"] = detail.course_name;
+    record.fields["content"] = detail.content;
+    record.fields["startTime"] = detail.start_time;
+    record.fields["dueTime"] = detail.due_time;
+    record.fields["maxScore"] = detail.max_score;
+    record.fields["myScore"] = detail.my_score;
+    record.fields["totalProblems"] = std::to_string(detail.total_problems);
+    record.fields["submittedCount"] = std::to_string(detail.submitted_count);
+    record.fields["submissionStatus"] = detail.status;
+    record.fields["submissionStatusText"] = detail.status_text;
+    return record;
+}
+
+um::Model::FeatureRecord spoc_summary_to_record(const um::Model::SpocAssignmentSummary &assignment) {
+    um::Model::FeatureRecord record;
+    record.id = assignment.id;
+    record.title = assignment.title;
+    record.status = assignment.status;
+    record.fields["courseId"] = assignment.course_id;
+    record.fields["courseName"] = assignment.course_name;
+    record.fields["teacher"] = assignment.teacher;
+    record.fields["startTime"] = assignment.start_time;
+    record.fields["dueTime"] = assignment.due_time;
+    record.fields["score"] = assignment.score;
+    record.fields["term"] = assignment.term_code;
+    record.fields["termName"] = assignment.term_name;
+    record.fields["submissionStatus"] = assignment.submission_status;
+    return record;
+}
+
+um::Model::FeatureRecord spoc_detail_to_record(const um::Model::SpocAssignmentDetail &assignment) {
+    um::Model::FeatureRecord record;
+    record.id = assignment.id;
+    record.title = assignment.title;
+    record.status = assignment.status;
+    record.fields["courseId"] = assignment.course_id;
+    record.fields["startTime"] = assignment.start_time;
+    record.fields["dueTime"] = assignment.due_time;
+    record.fields["score"] = assignment.score;
+    record.fields["content"] = assignment.content;
+    record.fields["submissionStatus"] = assignment.submission_status;
+    record.fields["submittedAt"] = assignment.submitted_at;
+    return record;
+}
+
 ExitCode cmd_feature_list(ServiceFactory &factory, OutputFormatter &out,
                           const std::string &domain, const std::string &operation,
                           const std::string &key) {
@@ -1089,6 +1156,96 @@ std::vector<std::string> parse_judge_batch_input(const std::string &input) {
     return ids;
 }
 
+ExitCode cmd_spoc_assignments(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        return cmd_feature_list(factory, out, "spoc", "assignments:" + std::string(args.pending_only ? "pending" : "all") + ":" + std::string(args.include_expired ? "include-expired" : "active"), "assignments");
+    }
+#endif
+    auto service = factory.create_spoc_service();
+    um::SpocAssignmentQuery query;
+    query.pending_only = args.pending_only;
+    query.include_expired = args.include_expired;
+    auto result = service.list_assignment_summaries(query);
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    std::vector<um::Model::FeatureRecord> records;
+    for (const auto &summary : *result) records.push_back(spoc_summary_to_record(summary));
+    save_real_cookies(factory);
+    out.print_records("assignments", records);
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_spoc_assignment_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        return cmd_feature_show(factory, out, "spoc", "assignment", args.id, "assignment");
+    }
+#endif
+    auto service = factory.create_spoc_service();
+    auto result = service.assignment_detail(args.id);
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    save_real_cookies(factory);
+    out.print_record("assignment", spoc_detail_to_record(*result));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_judge_assignments(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        return cmd_feature_list(factory, out, "judge", "assignments:" + args.course_id + ":" + std::string(args.include_expired ? "include-expired" : "active") + ":" + std::string(args.include_history ? "include-history" : "current"), "assignments");
+    }
+#endif
+    auto service = factory.create_judge_service();
+    um::JudgeAssignmentQuery query;
+    query.course_id = args.course_id;
+    query.include_expired = args.include_expired;
+    query.include_history = args.include_history;
+    auto result = service.list_assignment_summaries(query);
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    std::vector<um::Model::FeatureRecord> records;
+    for (const auto &summary : *result) records.push_back(judge_summary_to_record(summary));
+    save_real_cookies(factory);
+    out.print_records("assignments", records);
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_judge_assignment_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    const auto id = args.assignment_id.empty() ? args.id : args.assignment_id;
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        return cmd_feature_show(factory, out, "judge", args.action, id, args.action == "details" ? "details" : "assignment");
+    }
+#endif
+    auto service = factory.create_judge_service();
+    if (args.action == "details") {
+        auto result = service.assignment_detail(id);
+        if (!result) {
+            out.print_error(result.error());
+            return map_error_to_exit_code(result.error());
+        }
+        save_real_cookies(factory);
+        out.print_record("details", judge_detail_to_record(*result));
+        return ExitCode::Ok;
+    }
+    auto result = service.show_assignment(id);
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    save_real_cookies(factory);
+    out.print_record("assignment", *result);
+    return ExitCode::Ok;
+}
+
 ExitCode cmd_judge_details_batch(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (args.input.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "judge assignment details-batch 需要 --input <json|@file>"});
@@ -1117,13 +1274,15 @@ ExitCode cmd_judge_details_batch(const CliArgs &args, ServiceFactory &factory, O
 #endif
 
     auto service = factory.create_judge_service();
-    auto result = service.show_assignment_details_batch(ids);
+    auto result = service.assignment_details_batch(ids);
     if (!result) {
         out.print_error(result.error());
         return map_error_to_exit_code(result.error());
     }
+    std::vector<um::Model::FeatureRecord> records;
+    for (const auto &detail : *result) records.push_back(judge_detail_to_record(detail));
     save_real_cookies(factory);
-    out.print_records("details", *result);
+    out.print_records("details", records);
     return ExitCode::Ok;
 }
 
@@ -1334,16 +1493,16 @@ int main(int argc, char *argv[]) {
     }
 
     if (args.command == "spoc") {
-        if (args.subcommand == "assignments") return static_cast<int>(cmd_feature_list(factory, out, "spoc", "assignments:" + std::string(args.pending_only ? "pending" : "all") + ":" + std::string(args.include_expired ? "include-expired" : "active"), "assignments"));
-        if (args.subcommand == "assignment" && args.action == "show") return static_cast<int>(cmd_feature_show(factory, out, "spoc", "assignment", args.id, "assignment"));
+        if (args.subcommand == "assignments") return static_cast<int>(cmd_spoc_assignments(args, factory, out));
+        if (args.subcommand == "assignment" && args.action == "show") return static_cast<int>(cmd_spoc_assignment_show(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 spoc 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     if (args.command == "judge") {
-        if (args.subcommand == "assignments") return static_cast<int>(cmd_feature_list(factory, out, "judge", "assignments:" + args.course_id + ":" + std::string(args.include_expired ? "include-expired" : "active") + ":" + std::string(args.include_history ? "include-history" : "current"), "assignments"));
+        if (args.subcommand == "assignments") return static_cast<int>(cmd_judge_assignments(args, factory, out));
         if (args.subcommand == "assignment" && args.action == "details-batch") return static_cast<int>(cmd_judge_details_batch(args, factory, out));
-        if (args.subcommand == "assignment" && (args.action == "show" || args.action == "details")) return static_cast<int>(cmd_feature_show(factory, out, "judge", args.action, args.assignment_id.empty() ? args.id : args.assignment_id, args.action == "details" ? "details" : "assignment"));
+        if (args.subcommand == "assignment" && (args.action == "show" || args.action == "details")) return static_cast<int>(cmd_judge_assignment_show(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 judge 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }

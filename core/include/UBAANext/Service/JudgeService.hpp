@@ -3,6 +3,7 @@
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Base/Result.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
+#include <UBAANext/Model/Judge.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
 
@@ -20,6 +21,11 @@ struct JudgeAssignmentQuery {
 class JudgeService {
 public:
     JudgeService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
+
+    Result<std::vector<Model::JudgeAssignmentSummary>> list_assignment_summaries(const std::string &course_id);
+    Result<std::vector<Model::JudgeAssignmentSummary>> list_assignment_summaries(const JudgeAssignmentQuery &query);
+    Result<Model::JudgeAssignmentDetail> assignment_detail(const std::string &assignment_id);
+    Result<std::vector<Model::JudgeAssignmentDetail>> assignment_details_batch(const std::vector<std::string> &assignment_ids);
 
     Result<std::vector<Model::FeatureRecord>> list_assignments(const std::string &course_id);
     Result<std::vector<Model::FeatureRecord>> list_assignments(const JudgeAssignmentQuery &query);

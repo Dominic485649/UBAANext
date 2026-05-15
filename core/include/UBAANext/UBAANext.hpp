@@ -19,6 +19,8 @@
 #include <UBAANext/Model/Course.hpp>
 #include <UBAANext/Model/Exam.hpp>
 #include <UBAANext/Model/Grade.hpp>
+#include <UBAANext/Model/Judge.hpp>
+#include <UBAANext/Model/Spoc.hpp>
 #include <UBAANext/Model/Term.hpp>
 #include <UBAANext/Model/Week.hpp>
 
@@ -41,6 +43,8 @@
 
 // ── 解析 ──────────────────────────────────────────────────────────
 #include <UBAANext/Parser/JsonParser.hpp>
+#include <UBAANext/Parser/JudgeParser.hpp>
+#include <UBAANext/Parser/SpocParser.hpp>
 
 // ── 服务层 ─────────────────────────────────────────────────────────
 #include <UBAANext/Service/ClassroomService.hpp>

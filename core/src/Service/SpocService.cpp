@@ -1,6 +1,7 @@
 #include <UBAANext/Service/SpocService.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Parser/SpocParser.hpp>
 
 #include <algorithm>
 #include <array>
@@ -83,41 +84,6 @@ std::string json_string(const nlohmann::json &json, const char *key) {
 
 std::string escape_json(const std::string &value) {
     return nlohmann::json(value).dump();
-}
-
-std::string html_unescape(std::string text) {
-    const std::pair<const char *, const char *> replacements[] = {
-        {"&nbsp;", " "}, {"&amp;", "&"}, {"&lt;", "<"}, {"&gt;", ">"}, {"&quot;", "\""}, {"&#39;", "'"}, {"&#x27;", "'"},
-    };
-    for (const auto &[from, to] : replacements) {
-        size_t pos = 0;
-        while ((pos = text.find(from, pos)) != std::string::npos) {
-            text.replace(pos, std::char_traits<char>::length(from), to);
-            pos += std::char_traits<char>::length(to);
-        }
-    }
-    return text;
-}
-
-std::string clean_html_text(const std::string &html) {
-    auto text = std::regex_replace(html, std::regex(R"(<br\s*/?>)", std::regex::icase), " ");
-    text = std::regex_replace(text, std::regex(R"(<[^>]+>)"), " ");
-    text = html_unescape(std::move(text));
-    std::string out;
-    bool last_space = false;
-    for (unsigned char ch : text) {
-        if (std::isspace(ch)) {
-            if (!last_space) out.push_back(' ');
-            last_space = true;
-        } else {
-            out.push_back(static_cast<char>(ch));
-            last_space = false;
-        }
-    }
-    auto start = out.find_first_not_of(' ');
-    if (start == std::string::npos) return {};
-    auto end = out.find_last_not_of(' ');
-    return out.substr(start, end - start + 1);
 }
 
 std::string base64_encode(const std::string &data) {
@@ -253,6 +219,32 @@ Model::FeatureRecord make_record(std::string id, std::string title, std::string 
     return record;
 }
 
+Model::FeatureRecord summary_to_record(const Model::SpocAssignmentSummary &assignment) {
+    return make_record(assignment.id, assignment.title, assignment.status, {
+        {"courseId", assignment.course_id},
+        {"courseName", assignment.course_name},
+        {"teacher", assignment.teacher},
+        {"startTime", assignment.start_time},
+        {"dueTime", assignment.due_time},
+        {"score", assignment.score},
+        {"term", assignment.term_code},
+        {"termName", assignment.term_name},
+        {"submissionStatus", assignment.submission_status},
+    });
+}
+
+Model::FeatureRecord detail_to_record(const Model::SpocAssignmentDetail &assignment) {
+    return make_record(assignment.id, assignment.title, assignment.status, {
+        {"courseId", assignment.course_id},
+        {"startTime", assignment.start_time},
+        {"dueTime", assignment.due_time},
+        {"score", assignment.score},
+        {"content", assignment.content},
+        {"submissionStatus", assignment.submission_status},
+        {"submittedAt", assignment.submitted_at},
+    });
+}
+
 } // namespace
 
 SpocService::SpocService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
@@ -372,7 +364,7 @@ Result<nlohmann::json> SpocService::post_envelope(const std::string &url, const 
     return unwrap_envelope(json, response->body);
 }
 
-Result<std::vector<Model::FeatureRecord>> SpocService::list_assignments_once() {
+Result<std::vector<Model::SpocAssignmentSummary>> SpocService::list_assignment_summaries_once() {
     auto term = post_envelope("https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryOne", nlohmann::json{{"param", current_term_param}});
     if (!term) return make_error(term.error().code, term.error().message);
     auto term_code = json_string(*term, "mrxq");
@@ -387,41 +379,43 @@ Result<std::vector<Model::FeatureRecord>> SpocService::list_assignments_once() {
         }
     }
 
-    std::vector<Model::FeatureRecord> records;
+    std::vector<Model::SpocAssignmentSummary> records;
     int page_num = 1;
     while (page_num <= 50) {
         auto plain = "{\"pageSize\":15,\"pageNum\":" + std::to_string(page_num) + ",\"sqlid\":" + escape_json(assignments_page_sql_id) + ",\"xnxq\":" + escape_json(term_code) + ",\"kcid\":\"\",\"yzwz\":\"\"}";
         auto page = post_envelope("https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryListByPage", nlohmann::json{{"param", encrypt_spoc_param(plain)}});
         if (!page) return make_error(page.error().code, page.error().message);
+        auto page_records = Parser::parse_spoc_assignments_page(*page, courses, term_code, term_name);
+        records.insert(records.end(), page_records.begin(), page_records.end());
         auto list = page->contains("list") && (*page)["list"].is_array() ? (*page)["list"] : nlohmann::json::array();
-        for (const auto &assignment : list) {
-            auto id = json_string(assignment, "zyid");
-            auto course_id = json_string(assignment, "sskcid");
-            auto course_it = courses.find(course_id);
-            auto course_name = json_string(assignment, "kcmc");
-            auto teacher = std::string{};
-            if (course_it != courses.end()) {
-                if (course_name.empty()) course_name = course_it->second.first;
-                teacher = course_it->second.second;
-            }
-            auto status_raw = json_string(assignment, "tjzt");
-            auto status = status_raw == "1" || status_raw == "已做" || status_raw == "已提交" ? "submitted" : "unsubmitted";
-            records.push_back(make_record(id, json_string(assignment, "zymc"), status, {
-                {"courseId", course_id},
-                {"courseName", course_name},
-                {"teacher", teacher},
-                {"startTime", json_string(assignment, "zykssj")},
-                {"dueTime", json_string(assignment, "zyjzsj")},
-                {"score", json_string(assignment, "mf")},
-                {"term", term_code},
-                {"termName", term_name},
-                {"submissionStatus", status_raw},
-            }));
-        }
         bool has_next = page->value("hasNextPage", false);
         int pages = page->value("pages", page_num);
         if (!has_next || page_num >= pages || list.empty()) break;
         ++page_num;
+    }
+    return records;
+}
+
+Result<std::vector<Model::SpocAssignmentSummary>> SpocService::list_assignment_summaries() {
+    return list_assignment_summaries({});
+}
+
+Result<std::vector<Model::SpocAssignmentSummary>> SpocService::list_assignment_summaries(const SpocAssignmentQuery &query) {
+    auto login = ensure_login();
+    if (!login) return make_error(login.error().code, login.error().message);
+    auto result = list_assignment_summaries_once();
+    if (!result && result.error().code == ErrorCode::SessionExpired) {
+        auto refreshed = ensure_login(true);
+        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+        result = list_assignment_summaries_once();
+    }
+    if (!result) return result;
+
+    std::vector<Model::SpocAssignmentSummary> records;
+    for (auto record : *result) {
+        if (query.pending_only && record.status == "submitted") continue;
+        if (!query.include_expired && record.submission_status == "已过期") continue;
+        records.push_back(std::move(record));
     }
     return records;
 }
@@ -431,63 +425,37 @@ Result<std::vector<Model::FeatureRecord>> SpocService::list_assignments() {
 }
 
 Result<std::vector<Model::FeatureRecord>> SpocService::list_assignments(const SpocAssignmentQuery &query) {
-    auto login = ensure_login();
-    if (!login) return make_error(login.error().code, login.error().message);
-    auto result = list_assignments_once();
-    if (!result && result.error().code == ErrorCode::SessionExpired) {
-        auto refreshed = ensure_login(true);
-        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
-        result = list_assignments_once();
-    }
-    if (!result) return result;
-
+    auto summaries = list_assignment_summaries(query);
+    if (!summaries) return make_error(summaries.error().code, summaries.error().message);
     std::vector<Model::FeatureRecord> records;
-    for (auto record : *result) {
-        if (query.pending_only && record.status == "submitted") continue;
-        if (!query.include_expired) {
-            auto due = record.fields.find("dueTime");
-            auto raw = record.fields.find("submissionStatus");
-            if (due != record.fields.end() && raw != record.fields.end() && raw->second == "已过期") continue;
-        }
-        records.push_back(std::move(record));
-    }
+    for (const auto &summary : *summaries) records.push_back(summary_to_record(summary));
     return records;
 }
 
-Result<Model::FeatureRecord> SpocService::show_assignment_once(const std::string &assignment_id) {
+Result<Model::SpocAssignmentDetail> SpocService::assignment_detail_once(const std::string &assignment_id) {
     auto detail = get_envelope("https://spoc.buaa.edu.cn/spocnewht/kczy/queryKczyInfoByid?id=" + assignment_id);
     if (!detail) return make_error(detail.error().code, detail.error().message);
     auto submission = get_envelope("https://spoc.buaa.edu.cn/spocnewht/kczy/queryXsSubmitKczyInfo?kczyid=" + assignment_id);
-    std::map<std::string, std::string> fields = {
-        {"courseId", json_string(*detail, "sskcid")},
-        {"startTime", json_string(*detail, "zykssj")},
-        {"dueTime", json_string(*detail, "zyjzsj")},
-        {"score", json_string(*detail, "zyfs")},
-        {"content", clean_html_text(json_string(*detail, "zynr"))},
-    };
-    std::string status = "unknown";
-    if (submission) {
-        auto raw_status = json_string(*submission, "tjzt");
-        fields["submissionStatus"] = raw_status;
-        fields["submittedAt"] = json_string(*submission, "tjsj");
-        status = raw_status == "1" || raw_status == "已做" || raw_status == "已提交" ? "submitted" : "unsubmitted";
-    }
-    auto title = json_string(*detail, "zymc");
-    if (title.empty()) title = assignment_id;
-    return make_record(assignment_id, title, status, std::move(fields));
+    return Parser::parse_spoc_assignment_detail(*detail, submission ? &*submission : nullptr, assignment_id);
 }
 
-Result<Model::FeatureRecord> SpocService::show_assignment(const std::string &assignment_id) {
+Result<Model::SpocAssignmentDetail> SpocService::assignment_detail(const std::string &assignment_id) {
     if (assignment_id.empty()) return make_error(ErrorCode::InvalidArgument, "spoc assignment show 需要 --id <assignmentId>");
     auto login = ensure_login();
     if (!login) return make_error(login.error().code, login.error().message);
-    auto result = show_assignment_once(assignment_id);
+    auto result = assignment_detail_once(assignment_id);
     if (!result && result.error().code == ErrorCode::SessionExpired) {
         auto refreshed = ensure_login(true);
         if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
-        return show_assignment_once(assignment_id);
+        return assignment_detail_once(assignment_id);
     }
     return result;
+}
+
+Result<Model::FeatureRecord> SpocService::show_assignment(const std::string &assignment_id) {
+    auto detail = assignment_detail(assignment_id);
+    if (!detail) return make_error(detail.error().code, detail.error().message);
+    return detail_to_record(*detail);
 }
 
 } // namespace UBAANext

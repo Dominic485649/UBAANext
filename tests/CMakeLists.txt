@@ -14,6 +14,8 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/ClassroomServiceTests.cpp
         unit/CacheStoreTests.cpp
         unit/JsonParserTests.cpp
+        unit/JudgeParserTests.cpp
+        unit/SpocParserTests.cpp
         unit/TermServiceTests.cpp
         unit/VpnCipherTests.cpp
     )
@@ -22,6 +24,10 @@ if(UBAANEXT_ENABLE_MOCKS)
         PRIVATE UBAANextCore
         PRIVATE UBAANextMocks
         PRIVATE Catch2::Catch2WithMain
+    )
+
+    target_compile_definitions(UBAANextTests PRIVATE
+        UBAA_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     )
 
     set_target_properties(UBAANextTests PROPERTIES

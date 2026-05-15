@@ -39,6 +39,10 @@ UBAANext::JudgeService ServiceFactory::create_judge_service() {
     return UBAANext::JudgeService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
 }
 
+UBAANext::SpocService ServiceFactory::create_spoc_service() {
+    return UBAANext::SpocService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
 UBAANext::FeatureService ServiceFactory::create_feature_service() {
     return UBAANext::FeatureService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
 }

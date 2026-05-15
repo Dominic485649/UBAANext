@@ -1,0 +1,26 @@
+{
+  "list": [
+    {
+      "zyid": "spoc-1",
+      "sskcid": "course-1",
+      "kcmc": "",
+      "zymc": "第一章作业",
+      "tjzt": "已提交",
+      "zykssj": "2026-03-01 08:00:00",
+      "zyjzsj": "2026-03-08 23:59:00",
+      "mf": "100"
+    },
+    {
+      "zyid": "spoc-2",
+      "sskcid": "course-2",
+      "kcmc": "工程训练",
+      "zymc": "第二章作业",
+      "tjzt": "未做",
+      "zykssj": "2026-03-09 08:00:00",
+      "zyjzsj": "2026-03-16 23:59:00",
+      "mf": 50
+    }
+  ],
+  "hasNextPage": false,
+  "pages": 1
+}

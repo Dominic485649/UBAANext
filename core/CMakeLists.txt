@@ -25,6 +25,8 @@ add_library(UBAANextCore STATIC
     src/Storage/SecureStoreAdapter.cpp
     src/Storage/MemoryCacheStore.cpp
     src/Parser/JsonParser.cpp
+    src/Parser/JudgeParser.cpp
+    src/Parser/SpocParser.cpp
 )
 
 target_include_directories(UBAANextCore
