@@ -1,6 +1,7 @@
 #include <UBAANext/Service/VenueReservationService.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Parser/VenueReservationParser.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -137,6 +138,30 @@ Model::FeatureRecord make_record(std::string id, std::string title, std::string 
     return record;
 }
 
+Model::FeatureRecord to_record(const Model::VenueSite &site) {
+    return make_record(site.id, site.name, "available", {{"venueId", site.venue_id}, {"venueName", site.venue_name}, {"campusName", site.campus_name}});
+}
+
+Model::FeatureRecord to_record(const Model::VenuePurposeType &purpose) {
+    return make_record(purpose.id, purpose.name, "available");
+}
+
+Model::FeatureRecord to_record(const Model::VenueSpaceInfo &space) {
+    return make_record(space.id, space.name, "available", {{"date", space.date}, {"siteId", space.site_id}, {"token", space.token}});
+}
+
+Model::FeatureRecord to_record(const Model::VenueOrder &order) {
+    return make_record(order.id, order.title, order.status, {{"reservationDate", order.reservation_date}, {"space", order.space}, {"site", order.site}, {"phone", order.phone}, {"joiners", order.joiners}});
+}
+
+template <typename T>
+std::vector<Model::FeatureRecord> to_records(const std::vector<T> &items) {
+    std::vector<Model::FeatureRecord> records;
+    records.reserve(items.size());
+    for (const auto &item : items) records.push_back(to_record(item));
+    return records;
+}
+
 } // namespace
 
 VenueReservationService::VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
@@ -229,80 +254,68 @@ Result<nlohmann::json> VenueReservationService::request_json(HttpMethod method,
     return json;
 }
 
-Result<std::vector<Model::FeatureRecord>> VenueReservationService::list_sites() {
+Result<std::vector<Model::VenueSite>> VenueReservationService::venue_sites() {
     auto data = request_json(HttpMethod::Get, "/api/front/website/venues", {{"page", "-1"}, {"size", "-1"}, {"reservationRoleId", "3"}});
     if (!data) return make_error(data.error().code, data.error().message);
-    auto content = data->contains("content") && (*data)["content"].is_array() ? (*data)["content"] : (*data).is_array() ? *data : nlohmann::json::array();
-    std::vector<Model::FeatureRecord> records;
-    for (const auto &venue : content) {
-        auto venue_id = json_string(venue, "id");
-        auto venue_name = json_string(venue, "venueName");
-        auto campus = json_string(venue, "campusName");
-        if (venue.contains("siteList") && venue["siteList"].is_array()) {
-            for (const auto &site : venue["siteList"]) {
-                records.push_back(make_record(json_string(site, "id"), json_string(site, "siteName"), "available", {{"venueId", venue_id}, {"venueName", venue_name}, {"campusName", campus}}));
-            }
-        }
-    }
-    return records;
+    return Parser::parse_venue_sites(*data);
 }
 
-Result<std::vector<Model::FeatureRecord>> VenueReservationService::list_purpose_types() {
+Result<std::vector<Model::VenuePurposeType>> VenueReservationService::purpose_types() {
     auto data = request_json(HttpMethod::Get, "/api/codes");
-    std::vector<Model::FeatureRecord> records;
-    if (data) {
-        std::function<void(const nlohmann::json &)> visit = [&](const nlohmann::json &node) {
-            if (node.is_array()) for (const auto &child : node) visit(child);
-            if (node.is_object()) {
-                auto name = json_string(node, "name");
-                auto id = json_string(node, "key");
-                if (id.empty()) id = json_string(node, "value");
-                if (id.empty()) id = json_string(node, "id");
-                if (!id.empty() && name.find("类") != std::string::npos) records.push_back(make_record(id, name, "available"));
-                for (const auto &[_, child] : node.items()) visit(child);
-            }
-        };
-        visit(*data);
-    }
+    std::vector<Model::VenuePurposeType> records;
+    if (data) records = Parser::parse_venue_purpose_types(*data);
     if (!records.empty()) return records;
-    return std::vector<Model::FeatureRecord>{
-        make_record("1", "导学活动类", "available"), make_record("2", "学业支持类", "available"), make_record("3", "学术研讨类", "available"),
-        make_record("4", "党建活动类", "available"), make_record("5", "工作会议类", "available"), make_record("6", "团队建设类", "available"),
-        make_record("7", "培训面试类", "available"), make_record("8", "博雅课程类", "available"), make_record("9", "讲座、沙龙研讨类", "available"),
-        make_record("10", "其他特色活动类", "available")};
+    return std::vector<Model::VenuePurposeType>{{"1", "导学活动类"}, {"2", "学业支持类"}, {"3", "学术研讨类"}, {"4", "党建活动类"}, {"5", "工作会议类"}, {"6", "团队建设类"}, {"7", "培训面试类"}, {"8", "博雅课程类"}, {"9", "讲座、沙龙研讨类"}, {"10", "其他特色活动类"}};
 }
 
-Result<std::vector<Model::FeatureRecord>> VenueReservationService::day_info(const std::string &date, const std::string &site_id) {
+Result<std::vector<Model::VenueSpaceInfo>> VenueReservationService::day_spaces(const std::string &date, const std::string &site_id) {
     if (date.empty() || site_id.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy day-info 需要 --date 和 --id/--site-id");
     auto data = request_json(HttpMethod::Get, "/api/reservation/day/info", {{"searchDate", date}, {"venueSiteId", site_id}});
     if (!data) return make_error(data.error().code, data.error().message);
-    std::vector<Model::FeatureRecord> records;
-    auto spaces_by_date = data->contains("reservationDateSpaceInfo") && (*data)["reservationDateSpaceInfo"].is_object() ? (*data)["reservationDateSpaceInfo"] : nlohmann::json::object();
-    for (const auto &[day, spaces] : spaces_by_date.items()) {
-        if (!spaces.is_array()) continue;
-        for (const auto &space : spaces) {
-            records.push_back(make_record(json_string(space, "id"), json_string(space, "spaceName"), "available", {{"date", day}, {"siteId", site_id}, {"token", json_string(*data, "token")}}));
-        }
-    }
-    return records;
+    return Parser::parse_venue_day_info(*data, site_id);
 }
 
-Result<std::vector<Model::FeatureRecord>> VenueReservationService::list_orders(int page, int size) {
+Result<std::vector<Model::VenueOrder>> VenueReservationService::orders(int page, int size) {
     auto data = request_json(HttpMethod::Get, "/api/orders/mine", {{"page", std::to_string(page < 1 ? 1 : page)}, {"size", std::to_string(size < 1 ? 20 : size)}});
     if (!data) return make_error(data.error().code, data.error().message);
-    auto content = data->contains("content") && (*data)["content"].is_array() ? (*data)["content"] : nlohmann::json::array();
-    std::vector<Model::FeatureRecord> records;
-    for (const auto &order : content) {
-        records.push_back(make_record(json_string(order, "id"), json_string(order, "theme").empty() ? json_string(order, "venueSpaceName") : json_string(order, "theme"), json_string(order, "orderStatus"), {{"reservationDate", json_string(order, "reservationDate")}, {"space", json_string(order, "venueSpaceName")}, {"site", json_string(order, "siteName")}}));
-    }
-    return records;
+    return Parser::parse_venue_orders(*data);
 }
 
-Result<Model::FeatureRecord> VenueReservationService::show_order(const std::string &order_id) {
+Result<Model::VenueOrder> VenueReservationService::order_detail(const std::string &order_id) {
     if (order_id.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy order show 需要 --order-id");
     auto data = request_json(HttpMethod::Get, "/api/orders/" + order_id);
     if (!data) return make_error(data.error().code, data.error().message);
-    return make_record(order_id, json_string(*data, "theme").empty() ? json_string(*data, "venueSpaceName") : json_string(*data, "theme"), json_string(*data, "orderStatus"), {{"reservationDate", json_string(*data, "reservationDate")}, {"space", json_string(*data, "venueSpaceName")}, {"site", json_string(*data, "siteName")}, {"phone", json_string(*data, "phone")}, {"joiners", json_string(*data, "joiners")}});
+    return Parser::parse_venue_order_detail(*data, order_id);
+}
+
+Result<std::vector<Model::FeatureRecord>> VenueReservationService::list_sites() {
+    auto records = venue_sites();
+    if (!records) return make_error(records.error().code, records.error().message);
+    return to_records(*records);
+}
+
+Result<std::vector<Model::FeatureRecord>> VenueReservationService::list_purpose_types() {
+    auto records = purpose_types();
+    if (!records) return make_error(records.error().code, records.error().message);
+    return to_records(*records);
+}
+
+Result<std::vector<Model::FeatureRecord>> VenueReservationService::day_info(const std::string &date, const std::string &site_id) {
+    auto records = day_spaces(date, site_id);
+    if (!records) return make_error(records.error().code, records.error().message);
+    return to_records(*records);
+}
+
+Result<std::vector<Model::FeatureRecord>> VenueReservationService::list_orders(int page, int size) {
+    auto records = orders(page, size);
+    if (!records) return make_error(records.error().code, records.error().message);
+    return to_records(*records);
+}
+
+Result<Model::FeatureRecord> VenueReservationService::show_order(const std::string &order_id) {
+    auto record = order_detail(order_id);
+    if (!record) return make_error(record.error().code, record.error().message);
+    return to_record(*record);
 }
 
 Result<Model::FeatureRecord> VenueReservationService::lock_code() {

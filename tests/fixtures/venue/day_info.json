@@ -1,0 +1,17 @@
+{
+  "token": "token-1",
+  "reservationDateSpaceInfo": {
+    "2026-05-15": [
+      {
+        "id": "space-1",
+        "spaceName": "A101"
+      }
+    ],
+    "2026-05-16": [
+      {
+        "id": "space-2",
+        "spaceName": "A102"
+      }
+    ]
+  }
+}

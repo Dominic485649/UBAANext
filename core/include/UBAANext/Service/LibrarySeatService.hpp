@@ -3,6 +3,7 @@
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Base/Result.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
+#include <UBAANext/Model/LibrarySeat.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
 
@@ -16,6 +17,12 @@ namespace UBAANext {
 class LibrarySeatService {
 public:
     LibrarySeatService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
+
+    Result<std::vector<Model::LibraryInfo>> libraries(const std::string &day);
+    Result<std::vector<Model::LibraryArea>> areas(const std::string &library_id, const std::string &day, const std::string &storey_id = "");
+    Result<Model::LibraryArea> area_detail(const std::string &area_id);
+    Result<std::vector<Model::LibrarySeat>> seats(const std::string &area_id, const std::string &day, const std::string &start_time = "08:00", const std::string &end_time = "22:00");
+    Result<std::vector<Model::LibraryReservation>> reservations(int page = 1, int limit = 20);
 
     Result<std::vector<Model::FeatureRecord>> list_libraries(const std::string &day);
     Result<std::vector<Model::FeatureRecord>> list_areas(const std::string &library_id, const std::string &day, const std::string &storey_id = "");

@@ -3,6 +3,7 @@
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Base/Result.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
+#include <UBAANext/Model/VenueReservation.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
 
@@ -17,6 +18,12 @@ namespace UBAANext {
 class VenueReservationService {
 public:
     VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
+
+    Result<std::vector<Model::VenueSite>> venue_sites();
+    Result<std::vector<Model::VenuePurposeType>> purpose_types();
+    Result<std::vector<Model::VenueSpaceInfo>> day_spaces(const std::string &date, const std::string &site_id);
+    Result<std::vector<Model::VenueOrder>> orders(int page = 1, int size = 20);
+    Result<Model::VenueOrder> order_detail(const std::string &order_id);
 
     Result<std::vector<Model::FeatureRecord>> list_sites();
     Result<std::vector<Model::FeatureRecord>> list_purpose_types();

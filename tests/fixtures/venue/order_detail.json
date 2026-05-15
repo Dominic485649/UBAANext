@@ -1,0 +1,10 @@
+{
+  "id": "order-1",
+  "theme": "组会",
+  "orderStatus": "approved",
+  "reservationDate": "2026-05-15",
+  "venueSpaceName": "A101",
+  "siteName": "第一会议室",
+  "phone": "13800000000",
+  "joiners": "张三,李四"
+}

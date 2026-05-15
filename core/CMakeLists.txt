@@ -31,6 +31,8 @@ add_library(UBAANextCore STATIC
     src/Parser/EvaluationParser.cpp
     src/Parser/SigninParser.cpp
     src/Parser/YgdkParser.cpp
+    src/Parser/VenueReservationParser.cpp
+    src/Parser/LibrarySeatParser.cpp
 )
 
 target_include_directories(UBAANextCore

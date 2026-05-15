@@ -1,0 +1,19 @@
+{
+  "content": [
+    {
+      "id": "venue-1",
+      "venueName": "学院路研讨室",
+      "campusName": "学院路校区",
+      "siteList": [
+        {
+          "id": "site-1",
+          "siteName": "第一会议室"
+        },
+        {
+          "id": "site-2",
+          "siteName": "第二会议室"
+        }
+      ]
+    }
+  ]
+}

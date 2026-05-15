@@ -1,0 +1,14 @@
+[
+  {
+    "id": "lib-1",
+    "name": "北区图书馆",
+    "free_num": 12,
+    "total_num": 100
+  },
+  {
+    "id": "lib-2",
+    "name": "学院路图书馆",
+    "free_num": "8",
+    "total_num": "80"
+  }
+]

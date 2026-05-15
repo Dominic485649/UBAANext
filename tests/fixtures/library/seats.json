@@ -1,0 +1,16 @@
+[
+  {
+    "id": "seat-1",
+    "no": "A001",
+    "name": "窗边座位",
+    "status": "1",
+    "status_name": "可预约"
+  },
+  {
+    "id": "seat-2",
+    "no": "A002",
+    "name": "过道座位",
+    "status": "0",
+    "status_name": "已占用"
+  }
+]

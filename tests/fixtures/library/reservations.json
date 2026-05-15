@@ -1,0 +1,12 @@
+[
+  {
+    "id": "booking-1",
+    "no": "A001",
+    "status": "reserved",
+    "name": "三层阅览区",
+    "day": "2026-05-15",
+    "beginTime": "08:00",
+    "endTime": "10:00",
+    "status_name": "预约成功"
+  }
+]

@@ -22,9 +22,11 @@
 #include <UBAANext/Model/Exam.hpp>
 #include <UBAANext/Model/Grade.hpp>
 #include <UBAANext/Model/Judge.hpp>
+#include <UBAANext/Model/LibrarySeat.hpp>
 #include <UBAANext/Model/Signin.hpp>
 #include <UBAANext/Model/Spoc.hpp>
 #include <UBAANext/Model/Term.hpp>
+#include <UBAANext/Model/VenueReservation.hpp>
 #include <UBAANext/Model/Week.hpp>
 #include <UBAANext/Model/Ygdk.hpp>
 
@@ -50,8 +52,10 @@
 #include <UBAANext/Parser/EvaluationParser.hpp>
 #include <UBAANext/Parser/JsonParser.hpp>
 #include <UBAANext/Parser/JudgeParser.hpp>
+#include <UBAANext/Parser/LibrarySeatParser.hpp>
 #include <UBAANext/Parser/SigninParser.hpp>
 #include <UBAANext/Parser/SpocParser.hpp>
+#include <UBAANext/Parser/VenueReservationParser.hpp>
 #include <UBAANext/Parser/YgdkParser.hpp>
 
 // ── 服务层 ─────────────────────────────────────────────────────────

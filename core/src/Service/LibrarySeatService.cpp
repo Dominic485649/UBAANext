@@ -1,6 +1,7 @@
 #include <UBAANext/Service/LibrarySeatService.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Parser/LibrarySeatParser.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -181,19 +182,6 @@ std::string json_string(const nlohmann::json &json, const char *key) {
     return {};
 }
 
-std::string json_int_string(const nlohmann::json &json, const char *key) {
-    if (!json.contains(key) || json[key].is_null()) {
-        return {};
-    }
-    if (json[key].is_number_integer()) {
-        return std::to_string(json[key].get<long long>());
-    }
-    if (json[key].is_string()) {
-        return json[key].get<std::string>();
-    }
-    return {};
-}
-
 Model::FeatureRecord make_record(std::string id,
                                  std::string title,
                                  std::string status,
@@ -206,80 +194,33 @@ Model::FeatureRecord make_record(std::string id,
     return record;
 }
 
-std::vector<Model::FeatureRecord> map_libraries(const nlohmann::json &list) {
-    std::vector<Model::FeatureRecord> records;
-    if (!list.is_array()) {
-        return records;
-    }
-    for (const auto &raw : list) {
-        if (!raw.is_object()) {
-            continue;
-        }
-        auto id = json_string(raw, "id");
-        auto name = json_string(raw, "name");
-        records.push_back(make_record(id, name.empty() ? "图书馆" : name, "available",
-                                      {{"freeNum", json_int_string(raw, "free_num")}, {"totalNum", json_int_string(raw, "total_num")}}));
-    }
-    return records;
+Model::FeatureRecord to_record(const Model::LibraryInfo &library) {
+    return make_record(library.id, library.name, "available", {{"freeNum", library.free_num}, {"totalNum", library.total_num}});
 }
 
-std::vector<Model::FeatureRecord> map_areas(const nlohmann::json &list) {
-    std::vector<Model::FeatureRecord> records;
-    if (!list.is_array()) {
-        return records;
-    }
-    for (const auto &raw : list) {
-        if (!raw.is_object()) {
-            continue;
-        }
-        auto id = json_string(raw, "id");
-        auto name = json_string(raw, "name");
-        records.push_back(make_record(id, name.empty() ? "图书馆区域" : name, "available",
-                                      {{"area", json_string(raw, "area")},
-                                       {"premisesId", json_string(raw, "premises_id")},
-                                       {"storeyId", json_string(raw, "storey_id")},
-                                       {"freeNum", json_int_string(raw, "free_num")},
-                                       {"totalNum", json_int_string(raw, "total_num")}}));
-    }
-    return records;
+Model::FeatureRecord to_record(const Model::LibraryArea &area) {
+    return make_record(area.id,
+                       area.name,
+                       "available",
+                       {{"area", area.area}, {"premisesId", area.premises_id}, {"storeyId", area.storey_id}, {"freeNum", area.free_num}, {"totalNum", area.total_num}, {"availableDates", area.available_dates}});
 }
 
-std::vector<Model::FeatureRecord> map_seats(const nlohmann::json &list) {
-    std::vector<Model::FeatureRecord> records;
-    if (!list.is_array()) {
-        return records;
-    }
-    for (const auto &raw : list) {
-        if (!raw.is_object()) {
-            continue;
-        }
-        auto id = json_string(raw, "id");
-        auto no = json_string(raw, "no");
-        auto status = json_string(raw, "status");
-        records.push_back(make_record(id, no.empty() ? json_string(raw, "name") : no, status == "1" ? "available" : "unavailable",
-                                      {{"name", json_string(raw, "name")}, {"status", status}, {"statusName", json_string(raw, "status_name")}}));
-    }
-    return records;
+Model::FeatureRecord to_record(const Model::LibrarySeat &seat) {
+    return make_record(seat.id, seat.title, seat.status, {{"name", seat.name}, {"status", seat.raw_status}, {"statusName", seat.status_name}});
 }
 
-std::vector<Model::FeatureRecord> map_reservations(const nlohmann::json &list) {
+Model::FeatureRecord to_record(const Model::LibraryReservation &reservation) {
+    return make_record(reservation.id,
+                       reservation.title,
+                       reservation.status,
+                       {{"areaName", reservation.area_name}, {"day", reservation.day}, {"beginTime", reservation.begin_time}, {"endTime", reservation.end_time}, {"statusName", reservation.status_name}});
+}
+
+template <typename T>
+std::vector<Model::FeatureRecord> to_records(const std::vector<T> &items) {
     std::vector<Model::FeatureRecord> records;
-    if (!list.is_array()) {
-        return records;
-    }
-    for (const auto &raw : list) {
-        if (!raw.is_object()) {
-            continue;
-        }
-        auto id = json_string(raw, "id");
-        auto seat_no = json_string(raw, "no");
-        records.push_back(make_record(id, seat_no.empty() ? "图书馆预约" : seat_no, json_string(raw, "status"),
-                                      {{"areaName", json_string(raw, "name")},
-                                       {"day", json_string(raw, "day")},
-                                       {"beginTime", json_string(raw, "beginTime")},
-                                       {"endTime", json_string(raw, "endTime")},
-                                       {"statusName", json_string(raw, "status_name")}}));
-    }
+    records.reserve(items.size());
+    for (const auto &item : items) records.push_back(to_record(item));
     return records;
 }
 
@@ -393,16 +334,16 @@ Result<nlohmann::json> LibrarySeatService::request_json(const std::string &path,
     }
 }
 
-Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_libraries(const std::string &day) {
+Result<std::vector<Model::LibraryInfo>> LibrarySeatService::libraries(const std::string &day) {
     (void)m_cache;
     auto json = request_json("space/pcTopFor", {{"day", day.empty() ? today_yyyy_mm_dd() : day}});
     if (!json) {
         return make_error(json.error().code, json.error().message);
     }
-    return map_libraries((*json)["data"]["list"]);
+    return Parser::parse_library_infos((*json)["data"]["list"]);
 }
 
-Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_areas(const std::string &library_id, const std::string &day, const std::string &storey_id) {
+Result<std::vector<Model::LibraryArea>> LibrarySeatService::areas(const std::string &library_id, const std::string &day, const std::string &storey_id) {
     if (library_id.empty() || library_id == "areas") {
         return make_error(ErrorCode::InvalidArgument, "libbook areas 需要 --library-id <id>");
     }
@@ -414,10 +355,10 @@ Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_areas(const s
     if (!json) {
         return make_error(json.error().code, json.error().message);
     }
-    return map_areas((*json)["data"]["area"]);
+    return Parser::parse_library_areas((*json)["data"]["area"]);
 }
 
-Result<Model::FeatureRecord> LibrarySeatService::show_area(const std::string &area_id) {
+Result<Model::LibraryArea> LibrarySeatService::area_detail(const std::string &area_id) {
     if (area_id.empty()) {
         return make_error(ErrorCode::InvalidArgument, "libbook area show 需要 --area-id <id>");
     }
@@ -425,14 +366,10 @@ Result<Model::FeatureRecord> LibrarySeatService::show_area(const std::string &ar
     if (!json) {
         return make_error(json.error().code, json.error().message);
     }
-    auto area = (*json)["data"]["area"];
-    return make_record(json_string(area, "id").empty() ? area_id : json_string(area, "id"),
-                       json_string(area, "name"),
-                       "available",
-                       {{"availableDates", std::to_string((*json)["data"]["date"]["list"].is_array() ? (*json)["data"]["date"]["list"].size() : 0)}});
+    return Parser::parse_library_area_detail((*json)["data"], area_id);
 }
 
-Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_seats(const std::string &area_id, const std::string &day, const std::string &start_time, const std::string &end_time) {
+Result<std::vector<Model::LibrarySeat>> LibrarySeatService::seats(const std::string &area_id, const std::string &day, const std::string &start_time, const std::string &end_time) {
     if (area_id.empty() || area_id == "seats") {
         return make_error(ErrorCode::InvalidArgument, "libbook seats 需要 --area-id <id>");
     }
@@ -440,19 +377,46 @@ Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_seats(const s
     if (!json) {
         return make_error(json.error().code, json.error().message);
     }
-    return map_seats((*json)["data"]["list"]);
+    return Parser::parse_library_seats((*json)["data"]["list"]);
 }
 
-Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_reservations(int page, int limit) {
+Result<std::vector<Model::LibraryReservation>> LibrarySeatService::reservations(int page, int limit) {
     auto json = request_json("member/seat", {{"type", "1"}, {"page", page < 1 ? 1 : page}, {"limit", limit < 1 ? 20 : limit}});
     if (!json) {
         return make_error(json.error().code, json.error().message);
     }
     auto data = (*json)["data"];
-    if (data.contains("data")) {
-        return map_reservations(data["data"]);
-    }
-    return map_reservations(data["list"]);
+    return Parser::parse_library_reservations(data.contains("data") ? data["data"] : data["list"]);
+}
+
+Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_libraries(const std::string &day) {
+    auto records = libraries(day);
+    if (!records) return make_error(records.error().code, records.error().message);
+    return to_records(*records);
+}
+
+Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_areas(const std::string &library_id, const std::string &day, const std::string &storey_id) {
+    auto records = areas(library_id, day, storey_id);
+    if (!records) return make_error(records.error().code, records.error().message);
+    return to_records(*records);
+}
+
+Result<Model::FeatureRecord> LibrarySeatService::show_area(const std::string &area_id) {
+    auto area = area_detail(area_id);
+    if (!area) return make_error(area.error().code, area.error().message);
+    return to_record(*area);
+}
+
+Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_seats(const std::string &area_id, const std::string &day, const std::string &start_time, const std::string &end_time) {
+    auto records = seats(area_id, day, start_time, end_time);
+    if (!records) return make_error(records.error().code, records.error().message);
+    return to_records(*records);
+}
+
+Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_reservations(int page, int limit) {
+    auto records = reservations(page, limit);
+    if (!records) return make_error(records.error().code, records.error().message);
+    return to_records(*records);
 }
 
 Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string &seat_id, const std::string &day, const std::string &segment) {

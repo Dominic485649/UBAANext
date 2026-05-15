@@ -1,0 +1,11 @@
+[
+  {
+    "id": "area-1",
+    "name": "三层阅览区",
+    "area": "A",
+    "premises_id": "lib-1",
+    "storey_id": "3",
+    "free_num": 6,
+    "total_num": 20
+  }
+]

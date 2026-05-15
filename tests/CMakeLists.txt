@@ -20,6 +20,8 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/EvaluationParserTests.cpp
         unit/SigninParserTests.cpp
         unit/YgdkParserTests.cpp
+        unit/VenueReservationParserTests.cpp
+        unit/LibrarySeatParserTests.cpp
         unit/TermServiceTests.cpp
         unit/VpnCipherTests.cpp
     )
