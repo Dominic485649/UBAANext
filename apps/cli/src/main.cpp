@@ -1602,19 +1602,98 @@ void append_todo_records(std::vector<um::Model::FeatureRecord> &todos,
 }
 
 ExitCode cmd_todo_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    auto service = factory.create_feature_service();
     std::vector<um::Model::FeatureRecord> todos;
     const bool pending_only = true;
     (void)args;
 
-    if (auto spoc = service.list("spoc", "assignments")) append_todo_records(todos, "spoc", *spoc, pending_only);
-    if (auto judge = service.list("judge", "assignments")) append_todo_records(todos, "judge", *judge, pending_only);
-    if (auto signin = service.list("signin", "today")) append_todo_records(todos, "signin", *signin, pending_only);
-    if (auto evaluation = service.list("evaluation", "list")) append_todo_records(todos, "evaluation", *evaluation, pending_only);
+    {
+        auto service = factory.create_spoc_service();
+        if (auto spoc = service.list_assignments()) append_todo_records(todos, "spoc", *spoc, pending_only);
+    }
+    {
+        auto service = factory.create_judge_service();
+        if (auto judge = service.list_assignments(um::JudgeAssignmentQuery{})) append_todo_records(todos, "judge", *judge, pending_only);
+    }
+    {
+        auto service = factory.create_signin_service();
+        if (auto signin = service.list_today()) append_todo_records(todos, "signin", *signin, pending_only);
+    }
+    {
+        auto service = factory.create_evaluation_service();
+        if (auto evaluation = service.list_evaluations()) append_todo_records(todos, "evaluation", *evaluation, pending_only);
+    }
 
     save_real_cookies(factory);
     out.print_records("todos", todos);
     return ExitCode::Ok;
+}
+
+ExitCode cmd_signin_today(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "signin", "today", "signin");
+#endif
+    auto service = factory.create_signin_service();
+    return print_records_result(factory, out, "signin", service.list_today());
+}
+
+ExitCode cmd_signin_do(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "signin do 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "signin", "do", args.course_id.empty() ? args.id : args.course_id, args.confirmed);
+#endif
+    auto service = factory.create_signin_service();
+    return print_mutation_result(factory, out, service.perform_signin(args.course_id.empty() ? args.id : args.course_id));
+}
+
+ExitCode cmd_ygdk_overview(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "ygdk", "overview", "overview");
+#endif
+    auto service = factory.create_ygdk_service();
+    return print_records_result(factory, out, "overview", service.overview());
+}
+
+ExitCode cmd_ygdk_records(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "ygdk", "records", "records");
+#endif
+    auto service = factory.create_ygdk_service();
+    return print_records_result(factory, out, "records", service.records(args.page, args.size));
+}
+
+ExitCode cmd_ygdk_submit(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "ygdk submit 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "ygdk", "submit", args.item_id.empty() ? args.id : args.item_id, args.confirmed);
+#endif
+    auto service = factory.create_ygdk_service();
+    return print_mutation_result(factory, out, service.submit_clockin(args.item_id.empty() ? args.id : args.item_id, args.start_time, args.end_time, args.place, args.share, args.photo_path));
+}
+
+ExitCode cmd_evaluation_list(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "evaluation", "list", "evaluations");
+#endif
+    auto service = factory.create_evaluation_service();
+    return print_records_result(factory, out, "evaluations", service.list_evaluations());
+}
+
+ExitCode cmd_evaluation_submit(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "evaluation submit 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "evaluation", "submit", args.id, args.confirmed);
+#endif
+    auto service = factory.create_evaluation_service();
+    return print_mutation_result(factory, out, service.submit_evaluations(args.id));
 }
 
 // ── 主入口 ──────────────────────────────────────────────────
@@ -1754,23 +1833,23 @@ int main(int argc, char *argv[]) {
     }
 
     if (args.command == "signin") {
-        if (args.subcommand == "today") return static_cast<int>(cmd_feature_list(factory, out, "signin", "today", "signin"));
-        if (args.subcommand == "do") return static_cast<int>(cmd_feature_mutate(factory, out, "signin", "do", args.course_id.empty() ? args.id : args.course_id, args.confirmed));
+        if (args.subcommand == "today") return static_cast<int>(cmd_signin_today(factory, out));
+        if (args.subcommand == "do") return static_cast<int>(cmd_signin_do(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 signin 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     if (args.command == "ygdk") {
-        if (args.subcommand == "overview") return static_cast<int>(cmd_feature_list(factory, out, "ygdk", "overview", "overview"));
-        if (args.subcommand == "records") return static_cast<int>(cmd_feature_list(factory, out, "ygdk", "records:" + std::to_string(args.page) + ":" + std::to_string(args.size), "records"));
-        if (args.subcommand == "submit") return static_cast<int>(cmd_feature_mutate(factory, out, "ygdk", "submit:" + args.start_time + "\n" + args.end_time + "\n" + args.place + "\n" + (args.share ? "1" : "0") + "\n" + args.photo_path, args.item_id.empty() ? args.id : args.item_id, args.confirmed));
+        if (args.subcommand == "overview") return static_cast<int>(cmd_ygdk_overview(factory, out));
+        if (args.subcommand == "records") return static_cast<int>(cmd_ygdk_records(args, factory, out));
+        if (args.subcommand == "submit") return static_cast<int>(cmd_ygdk_submit(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 ygdk 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     if (args.command == "evaluation") {
-        if (args.subcommand == "list") return static_cast<int>(cmd_feature_list(factory, out, "evaluation", "list", "evaluations"));
-        if (args.subcommand == "submit") return static_cast<int>(cmd_feature_mutate(factory, out, "evaluation", "submit", args.id, args.confirmed));
+        if (args.subcommand == "list") return static_cast<int>(cmd_evaluation_list(factory, out));
+        if (args.subcommand == "submit") return static_cast<int>(cmd_evaluation_submit(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 evaluation 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }

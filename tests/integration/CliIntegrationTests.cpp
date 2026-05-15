@@ -312,6 +312,21 @@ TEST_CASE("CLI 有副作用命令需要 confirm", "[cli][integration]") {
 }
 
 TEST_CASE("CLI 直接服务写操作保留分隔符参数", "[cli][integration]") {
+    auto signin = run_cli({"signin", "do", "--mock", "--id", "signin:1", "--confirm", "--json"});
+    REQUIRE(signin.exit_code == 0);
+    auto signin_json = parse_json_output(signin.stdout_output);
+    REQUIRE(signin_json["ok"] == true);
+
+    auto ygdk = run_cli({"ygdk", "submit", "--mock", "--id", "ygdk:1", "--start-time", "08:00", "--end-time", "09:30", "--place", "操场:东区", "--photo", "C:\\tmp\\a:b.jpg", "--share", "--confirm", "--json"});
+    REQUIRE(ygdk.exit_code == 0);
+    auto ygdk_json = parse_json_output(ygdk.stdout_output);
+    REQUIRE(ygdk_json["ok"] == true);
+
+    auto evaluation = run_cli({"evaluation", "submit", "--mock", "--id", "evaluation:1", "--confirm", "--json"});
+    REQUIRE(evaluation.exit_code == 0);
+    auto evaluation_json = parse_json_output(evaluation.stdout_output);
+    REQUIRE(evaluation_json["ok"] == true);
+
     auto bykc = run_cli({"bykc", "sign", "--mock", "--course-id", "bykc:1", "--sign-type", "1", "--lat", "39.981", "--lng", "116.347", "--confirm", "--json"});
     REQUIRE(bykc.exit_code == 0);
     auto bykc_json = parse_json_output(bykc.stdout_output);
