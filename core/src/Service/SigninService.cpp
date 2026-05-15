@@ -1,6 +1,7 @@
 #include <UBAANext/Service/SigninService.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Parser/SigninParser.hpp>
 
 #include <ctime>
 #include <iomanip>
@@ -60,6 +61,14 @@ Model::FeatureRecord make_record(std::string id,
     record.status = std::move(status);
     record.fields = std::move(fields);
     return record;
+}
+
+Model::FeatureRecord course_to_record(const Model::SigninCourse &course) {
+    return make_record(course.id, course.name, course.status, {
+        {"classBeginTime", course.class_begin_time},
+        {"classEndTime", course.class_end_time},
+        {"signStatus", course.sign_status},
+    });
 }
 
 std::string json_string(const nlohmann::json &json, const char *key) {
@@ -175,7 +184,7 @@ Result<std::pair<std::string, std::string>> SigninService::login_iclass(const st
     }
 }
 
-Result<std::vector<Model::FeatureRecord>> SigninService::list_today() {
+Result<std::vector<Model::SigninCourse>> SigninService::list_today_courses() {
     (void)m_cache;
 
     auto student_id = get_student_id();
@@ -205,31 +214,19 @@ Result<std::vector<Model::FeatureRecord>> SigninService::list_today() {
         return make_error(ErrorCode::NetworkError, "今日签到请求返回: " + std::to_string(response->status_code));
     }
 
-    try {
-        auto json = nlohmann::json::parse(response->body);
-        std::vector<Model::FeatureRecord> records;
-        if (!json.contains("result") || !json["result"].is_array()) {
-            return records;
-        }
-        for (const auto &item : json["result"]) {
-            if (!item.is_object()) {
-                continue;
-            }
-            auto id = json_string(item, "id");
-            auto name = json_string(item, "courseName");
-            auto sign_status = json_string(item, "signStatus");
-            records.push_back(make_record(
-                id.empty() ? name : id,
-                name.empty() ? "签到课程" : name,
-                sign_status == "1" ? "signed" : "available",
-                {{"classBeginTime", json_string(item, "classBeginTime")},
-                 {"classEndTime", json_string(item, "classEndTime")},
-                 {"signStatus", sign_status}}));
-        }
-        return records;
-    } catch (const std::exception &e) {
-        return make_error(ErrorCode::ParseError, std::string("解析今日签到 JSON 失败: ") + e.what());
+    auto json = nlohmann::json::parse(response->body, nullptr, false);
+    if (json.is_discarded()) {
+        return make_error(ErrorCode::ParseError, "解析今日签到 JSON 失败");
     }
+    return Parser::parse_signin_today_courses(json);
+}
+
+Result<std::vector<Model::FeatureRecord>> SigninService::list_today() {
+    auto result = list_today_courses();
+    if (!result) return make_error(result.error().code, result.error().message);
+    std::vector<Model::FeatureRecord> records;
+    for (const auto &course : *result) records.push_back(course_to_record(course));
+    return records;
 }
 
 Result<Model::MutationResult> SigninService::perform_signin(const std::string &course_id) {

@@ -1,0 +1,23 @@
+{
+  "STATUS": 0,
+  "result": [
+    {
+      "id": "sched-1",
+      "courseName": "智能制造导论",
+      "signStatus": "0",
+      "classBeginTime": "08:00",
+      "classEndTime": "09:40"
+    },
+    {
+      "id": "sched-2",
+      "courseName": "工程训练",
+      "signStatus": "1",
+      "classBeginTime": "10:00",
+      "classEndTime": "11:40"
+    },
+    {
+      "courseName": "无 ID 课程",
+      "signStatus": "0"
+    }
+  ]
+}

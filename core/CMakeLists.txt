@@ -29,6 +29,7 @@ add_library(UBAANextCore STATIC
     src/Parser/SpocParser.cpp
     src/Parser/BykcParser.cpp
     src/Parser/EvaluationParser.cpp
+    src/Parser/SigninParser.cpp
 )
 
 target_include_directories(UBAANextCore

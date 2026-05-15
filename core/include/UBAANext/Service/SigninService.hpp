@@ -3,6 +3,7 @@
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Base/Result.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
+#include <UBAANext/Model/Signin.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
 
@@ -15,6 +16,7 @@ class SigninService {
 public:
     SigninService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    Result<std::vector<Model::SigninCourse>> list_today_courses();
     Result<std::vector<Model::FeatureRecord>> list_today();
     Result<Model::MutationResult> perform_signin(const std::string &course_id);
 
