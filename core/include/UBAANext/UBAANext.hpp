@@ -15,8 +15,10 @@
 
 // ── 数据模型 ──────────────────────────────────────────────────────
 #include <UBAANext/Model/Account.hpp>
+#include <UBAANext/Model/Bykc.hpp>
 #include <UBAANext/Model/Classroom.hpp>
 #include <UBAANext/Model/Course.hpp>
+#include <UBAANext/Model/Evaluation.hpp>
 #include <UBAANext/Model/Exam.hpp>
 #include <UBAANext/Model/Grade.hpp>
 #include <UBAANext/Model/Judge.hpp>
@@ -42,6 +44,8 @@
 #include <UBAANext/Auth/SessionManager.hpp>
 
 // ── 解析 ──────────────────────────────────────────────────────────
+#include <UBAANext/Parser/BykcParser.hpp>
+#include <UBAANext/Parser/EvaluationParser.hpp>
 #include <UBAANext/Parser/JsonParser.hpp>
 #include <UBAANext/Parser/JudgeParser.hpp>
 #include <UBAANext/Parser/SpocParser.hpp>

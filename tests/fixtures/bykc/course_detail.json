@@ -1,0 +1,13 @@
+{
+  "id": "course-1",
+  "courseName": "创新创业实践",
+  "courseTeacher": "李老师",
+  "coursePosition": "学院路校区",
+  "courseContact": "北航楼",
+  "courseContactMobile": "010-00000000",
+  "courseDesc": "课程说明",
+  "courseStartDate": "2026-03-01",
+  "courseEndDate": "2026-04-01",
+  "selected": true,
+  "courseSignConfig": "gps"
+}

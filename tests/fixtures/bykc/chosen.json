@@ -1,0 +1,17 @@
+[
+  {
+    "id": "chosen-1",
+    "selectDate": "2026-02-21",
+    "checkin": true,
+    "pass": false,
+    "score": 90,
+    "homework": "已交",
+    "signInfo": "已签到",
+    "courseInfo": {
+      "id": "course-1",
+      "courseName": "创新创业实践",
+      "courseTeacher": "李老师",
+      "coursePosition": "学院路校区"
+    }
+  }
+]

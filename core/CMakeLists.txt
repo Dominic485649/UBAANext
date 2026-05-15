@@ -27,6 +27,8 @@ add_library(UBAANextCore STATIC
     src/Parser/JsonParser.cpp
     src/Parser/JudgeParser.cpp
     src/Parser/SpocParser.cpp
+    src/Parser/BykcParser.cpp
+    src/Parser/EvaluationParser.cpp
 )
 
 target_include_directories(UBAANextCore

@@ -2,6 +2,7 @@
 
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Base/Result.hpp>
+#include <UBAANext/Model/Bykc.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
@@ -28,6 +29,13 @@ struct BykcCourseQuery {
 class BykcService {
 public:
     BykcService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
+
+    Result<Model::BykcProfile> get_profile();
+    Result<std::vector<Model::BykcCourse>> list_courses(int page = 1, int size = 100, bool all = false);
+    Result<std::vector<Model::BykcCourse>> list_courses(const BykcCourseQuery &query);
+    Result<std::vector<Model::BykcChosenCourse>> list_chosen_courses();
+    Result<std::vector<Model::BykcStat>> list_stats();
+    Result<Model::BykcCourseDetail> course_detail(const std::string &course_id);
 
     Result<std::vector<Model::FeatureRecord>> profile();
     Result<std::vector<Model::FeatureRecord>> courses(int page = 1, int size = 100, bool all = false);

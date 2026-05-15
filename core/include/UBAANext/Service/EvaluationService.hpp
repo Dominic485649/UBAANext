@@ -2,6 +2,7 @@
 
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Base/Result.hpp>
+#include <UBAANext/Model/Evaluation.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
@@ -17,6 +18,7 @@ class EvaluationService {
 public:
     EvaluationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    Result<std::vector<Model::EvaluationTask>> list_evaluation_tasks();
     Result<std::vector<Model::FeatureRecord>> list_evaluations();
     Result<Model::MutationResult> submit_evaluations(const std::string &target_id);
 

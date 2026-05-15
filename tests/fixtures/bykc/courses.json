@@ -1,0 +1,40 @@
+[
+  {
+    "id": "course-1",
+    "courseName": "创新创业实践",
+    "courseTeacher": "李老师",
+    "coursePosition": "学院路校区",
+    "courseStartDate": "2026-03-01",
+    "courseEndDate": "2026-04-01",
+    "courseSelectStartDate": "2026-02-20",
+    "courseSelectEndDate": "2026-02-28",
+    "courseCancelEndDate": "2026-03-05",
+    "courseMaxCount": 30,
+    "courseCurrentCount": 12,
+    "courseNewKind1": {"kindName": "通识"},
+    "courseNewKind2": {"kindName": "创新创业"},
+    "selected": false
+  },
+  {
+    "id": "course-2",
+    "courseName": "工程训练",
+    "courseTeacher": "王老师",
+    "coursePosition": "沙河校区",
+    "courseMaxCount": 10,
+    "courseCurrentCount": 10,
+    "courseNewKind1": {"kindName": "实践"},
+    "courseNewKind2": {"kindName": "工程"},
+    "selected": false
+  },
+  {
+    "id": "course-3",
+    "courseName": "航空导论",
+    "courseTeacher": "赵老师",
+    "coursePosition": "学院路校区",
+    "courseMaxCount": 20,
+    "courseCurrentCount": 3,
+    "courseNewKind1": {"kindName": "通识"},
+    "courseNewKind2": {"kindName": "航空"},
+    "selected": true
+  }
+]

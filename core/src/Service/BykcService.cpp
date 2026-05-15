@@ -1,6 +1,7 @@
 #include <UBAANext/Service/BykcService.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Parser/BykcParser.hpp>
 
 #include <algorithm>
 #include <array>
@@ -244,11 +245,6 @@ std::string json_string(const nlohmann::json &json, const char *key) {
     return {};
 }
 
-std::string nested_string(const nlohmann::json &json, const char *object_key, const char *key) {
-    if (!json.contains(object_key) || !json[object_key].is_object()) return {};
-    return json_string(json[object_key], key);
-}
-
 Model::FeatureRecord make_record(std::string id, std::string title, std::string status, std::map<std::string, std::string> fields = {}) {
     Model::FeatureRecord record;
     record.id = std::move(id);
@@ -258,16 +254,69 @@ Model::FeatureRecord make_record(std::string id, std::string title, std::string 
     return record;
 }
 
-std::string status_for_course(const nlohmann::json &course) {
-    if (course.value("selected", false)) return "selected";
-    auto max_count = json_string(course, "courseMaxCount");
-    auto current = json_string(course, "courseCurrentCount");
-    if (!max_count.empty() && !current.empty()) {
-        try {
-            if (std::stoi(current) >= std::stoi(max_count)) return "full";
-        } catch (...) {}
-    }
-    return "available";
+Model::FeatureRecord profile_to_record(const Model::BykcProfile &profile) {
+    return make_record(profile.id, profile.real_name, "active", {
+        {"employeeId", profile.employee_id},
+        {"studentNo", profile.student_no},
+        {"studentType", profile.student_type},
+        {"classCode", profile.class_code},
+        {"collegeName", profile.college_name},
+        {"termName", profile.term_name},
+    });
+}
+
+Model::FeatureRecord course_to_record(const Model::BykcCourse &course) {
+    return make_record(course.id, course.name, course.status, {
+        {"teacher", course.teacher},
+        {"position", course.position},
+        {"startDate", course.start_date},
+        {"endDate", course.end_date},
+        {"selectStartDate", course.select_start_date},
+        {"selectEndDate", course.select_end_date},
+        {"cancelEndDate", course.cancel_end_date},
+        {"maxCount", course.max_count},
+        {"currentCount", course.current_count},
+        {"category", course.category},
+        {"subCategory", course.sub_category},
+        {"selected", course.selected},
+    });
+}
+
+Model::FeatureRecord detail_to_record(const Model::BykcCourseDetail &course) {
+    return make_record(course.id, course.name, course.status, {
+        {"teacher", course.teacher},
+        {"position", course.position},
+        {"contact", course.contact},
+        {"mobile", course.mobile},
+        {"desc", course.description},
+        {"startDate", course.start_date},
+        {"endDate", course.end_date},
+        {"selected", course.selected},
+        {"signConfig", course.sign_config},
+    });
+}
+
+Model::FeatureRecord chosen_to_record(const Model::BykcChosenCourse &course) {
+    return make_record(course.id, course.name, "selected", {
+        {"courseId", course.course_id},
+        {"teacher", course.teacher},
+        {"position", course.position},
+        {"selectDate", course.select_date},
+        {"checkin", course.checkin},
+        {"pass", course.pass},
+        {"score", course.score},
+        {"homework", course.homework},
+        {"signInfo", course.sign_info},
+    });
+}
+
+Model::FeatureRecord stat_to_record(const Model::BykcStat &stat) {
+    std::map<std::string, std::string> fields;
+    if (!stat.valid_count.empty()) fields["validCount"] = stat.valid_count;
+    if (!stat.category.empty()) fields["category"] = stat.category;
+    if (!stat.required_count.empty()) fields["requiredCount"] = stat.required_count;
+    if (!stat.passed_count.empty()) fields["passedCount"] = stat.passed_count;
+    return make_record(stat.id, stat.title, "ok", std::move(fields));
 }
 
 } // namespace
@@ -362,12 +411,48 @@ Result<nlohmann::json> BykcService::call_api_data(const std::string &api_name, c
     return json["data"];
 }
 
-Result<std::vector<Model::FeatureRecord>> BykcService::profile() {
+Result<Model::BykcProfile> BykcService::get_profile() {
     auto data = call_api_data("getUserProfile", nlohmann::json::object(), "博雅资料加载失败");
     if (!data) return make_error(data.error().code, data.error().message);
-    return std::vector<Model::FeatureRecord>{make_record(json_string(*data, "id"), json_string(*data, "realName"), "active", {
-        {"employeeId", json_string(*data, "employeeId")}, {"studentNo", json_string(*data, "studentNo")}, {"studentType", json_string(*data, "studentType")},
-        {"classCode", json_string(*data, "classCode")}, {"collegeName", nested_string(*data, "college", "collegeName")}, {"termName", nested_string(*data, "term", "termName")}})};
+    return Parser::parse_bykc_profile(*data);
+}
+
+Result<std::vector<Model::FeatureRecord>> BykcService::profile() {
+    auto result = get_profile();
+    if (!result) return make_error(result.error().code, result.error().message);
+    return std::vector<Model::FeatureRecord>{profile_to_record(*result)};
+}
+
+Result<std::vector<Model::BykcCourse>> BykcService::list_courses(int page, int size, bool all) {
+    BykcCourseQuery query;
+    query.page = page;
+    query.size = size;
+    query.all = all;
+    return list_courses(query);
+}
+
+Result<std::vector<Model::BykcCourse>> BykcService::list_courses(const BykcCourseQuery &query) {
+    nlohmann::json payload{{"pageNumber", query.page < 1 ? 1 : query.page}, {"pageSize", query.size < 1 ? 100 : query.size}, {"all", query.all}};
+    if (!query.status.empty()) payload["status"] = query.status;
+    if (!query.category.empty()) payload["category"] = query.category;
+    if (!query.sub_category.empty()) payload["subCategory"] = query.sub_category;
+    if (!query.campus.empty()) payload["campus"] = query.campus;
+    if (!query.keyword.empty()) payload["keyword"] = query.keyword;
+
+    auto data = call_api_data("queryStudentSemesterCourseByPage", payload, "博雅课程列表加载失败");
+    if (!data) return make_error(data.error().code, data.error().message);
+    auto content = data->contains("content") && (*data)["content"].is_array() ? (*data)["content"] : nlohmann::json::array();
+    auto courses = Parser::parse_bykc_courses(content);
+    std::vector<Model::BykcCourse> records;
+    for (auto course : courses) {
+        if (!query.status.empty() && course.status != query.status) continue;
+        if (!query.category.empty() && course.category.find(query.category) == std::string::npos) continue;
+        if (!query.sub_category.empty() && course.sub_category.find(query.sub_category) == std::string::npos) continue;
+        if (!query.campus.empty() && course.position.find(query.campus) == std::string::npos) continue;
+        if (!query.keyword.empty() && course.name.find(query.keyword) == std::string::npos && course.teacher.find(query.keyword) == std::string::npos) continue;
+        records.push_back(std::move(course));
+    }
+    return records;
 }
 
 Result<std::vector<Model::FeatureRecord>> BykcService::courses(int page, int size, bool all) {
@@ -379,48 +464,27 @@ Result<std::vector<Model::FeatureRecord>> BykcService::courses(int page, int siz
 }
 
 Result<std::vector<Model::FeatureRecord>> BykcService::courses(const BykcCourseQuery &query) {
-    nlohmann::json payload{{"pageNumber", query.page < 1 ? 1 : query.page}, {"pageSize", query.size < 1 ? 100 : query.size}, {"all", query.all}};
-    if (!query.status.empty()) payload["status"] = query.status;
-    if (!query.category.empty()) payload["category"] = query.category;
-    if (!query.sub_category.empty()) payload["subCategory"] = query.sub_category;
-    if (!query.campus.empty()) payload["campus"] = query.campus;
-    if (!query.keyword.empty()) payload["keyword"] = query.keyword;
-
-    auto data = call_api_data("queryStudentSemesterCourseByPage", payload, "博雅课程列表加载失败");
-    if (!data) return make_error(data.error().code, data.error().message);
-    auto content = data->contains("content") && (*data)["content"].is_array() ? (*data)["content"] : nlohmann::json::array();
+    auto result = list_courses(query);
+    if (!result) return make_error(result.error().code, result.error().message);
     std::vector<Model::FeatureRecord> records;
-    for (const auto &course : content) {
-        auto status = status_for_course(course);
-        auto title = json_string(course, "courseName");
-        auto category = nested_string(course, "courseNewKind1", "kindName");
-        auto sub_category = nested_string(course, "courseNewKind2", "kindName");
-        auto position = json_string(course, "coursePosition");
-        if (!query.status.empty() && status != query.status) continue;
-        if (!query.category.empty() && category.find(query.category) == std::string::npos) continue;
-        if (!query.sub_category.empty() && sub_category.find(query.sub_category) == std::string::npos) continue;
-        if (!query.campus.empty() && position.find(query.campus) == std::string::npos) continue;
-        if (!query.keyword.empty() && title.find(query.keyword) == std::string::npos && json_string(course, "courseTeacher").find(query.keyword) == std::string::npos) continue;
-        records.push_back(make_record(json_string(course, "id"), title, status, {
-            {"teacher", json_string(course, "courseTeacher")}, {"position", position}, {"startDate", json_string(course, "courseStartDate")},
-            {"endDate", json_string(course, "courseEndDate")}, {"selectStartDate", json_string(course, "courseSelectStartDate")}, {"selectEndDate", json_string(course, "courseSelectEndDate")},
-            {"cancelEndDate", json_string(course, "courseCancelEndDate")}, {"maxCount", json_string(course, "courseMaxCount")}, {"currentCount", json_string(course, "courseCurrentCount")},
-            {"category", category}, {"subCategory", sub_category}, {"selected", json_string(course, "selected")}}));
-    }
+    for (const auto &course : *result) records.push_back(course_to_record(course));
     return records;
 }
 
-Result<Model::FeatureRecord> BykcService::show_course(const std::string &course_id) {
+Result<Model::BykcCourseDetail> BykcService::course_detail(const std::string &course_id) {
     if (course_id.empty()) return make_error(ErrorCode::InvalidArgument, "bykc course show 需要 --course-id");
     auto data = call_api_data("queryCourseById", nlohmann::json{{"id", std::stoll(course_id)}}, "博雅课程详情加载失败");
     if (!data) return make_error(data.error().code, data.error().message);
-    return make_record(course_id, json_string(*data, "courseName"), status_for_course(*data), {
-        {"teacher", json_string(*data, "courseTeacher")}, {"position", json_string(*data, "coursePosition")}, {"contact", json_string(*data, "courseContact")},
-        {"mobile", json_string(*data, "courseContactMobile")}, {"desc", json_string(*data, "courseDesc")}, {"startDate", json_string(*data, "courseStartDate")},
-        {"endDate", json_string(*data, "courseEndDate")}, {"selected", json_string(*data, "selected")}, {"signConfig", json_string(*data, "courseSignConfig")}});
+    return Parser::parse_bykc_course_detail(*data, course_id);
 }
 
-Result<std::vector<Model::FeatureRecord>> BykcService::chosen() {
+Result<Model::FeatureRecord> BykcService::show_course(const std::string &course_id) {
+    auto result = course_detail(course_id);
+    if (!result) return make_error(result.error().code, result.error().message);
+    return detail_to_record(*result);
+}
+
+Result<std::vector<Model::BykcChosenCourse>> BykcService::list_chosen_courses() {
     auto config = call_api_data("getAllConfig", nlohmann::json::object(), "博雅配置加载失败");
     if (!config) return make_error(config.error().code, config.error().message);
     auto semesters = config->contains("semester") && (*config)["semester"].is_array() ? (*config)["semester"] : nlohmann::json::array();
@@ -431,30 +495,28 @@ Result<std::vector<Model::FeatureRecord>> BykcService::chosen() {
     auto data = call_api_data("queryChosenCourse", nlohmann::json{{"startDate", start}, {"endDate", end}}, "博雅已选课程加载失败");
     if (!data) return make_error(data.error().code, data.error().message);
     auto list = data->contains("courseList") && (*data)["courseList"].is_array() ? (*data)["courseList"] : nlohmann::json::array();
+    return Parser::parse_bykc_chosen_courses(list);
+}
+
+Result<std::vector<Model::FeatureRecord>> BykcService::chosen() {
+    auto result = list_chosen_courses();
+    if (!result) return make_error(result.error().code, result.error().message);
     std::vector<Model::FeatureRecord> records;
-    for (const auto &chosen_course : list) {
-        auto course = chosen_course.contains("courseInfo") && chosen_course["courseInfo"].is_object() ? chosen_course["courseInfo"] : nlohmann::json::object();
-        records.push_back(make_record(json_string(chosen_course, "id"), json_string(course, "courseName"), "selected", {
-            {"courseId", json_string(course, "id")}, {"teacher", json_string(course, "courseTeacher")}, {"position", json_string(course, "coursePosition")},
-            {"selectDate", json_string(chosen_course, "selectDate")}, {"checkin", json_string(chosen_course, "checkin")}, {"pass", json_string(chosen_course, "pass")},
-            {"score", json_string(chosen_course, "score")}, {"homework", json_string(chosen_course, "homework")}, {"signInfo", json_string(chosen_course, "signInfo")}}));
-    }
+    for (const auto &course : *result) records.push_back(chosen_to_record(course));
     return records;
 }
 
-Result<std::vector<Model::FeatureRecord>> BykcService::stats() {
+Result<std::vector<Model::BykcStat>> BykcService::list_stats() {
     auto data = call_api_data("queryStatisticByUserId", nlohmann::json::object(), "博雅统计加载失败");
     if (!data) return make_error(data.error().code, data.error().message);
+    return Parser::parse_bykc_stats(*data);
+}
+
+Result<std::vector<Model::FeatureRecord>> BykcService::stats() {
+    auto result = list_stats();
+    if (!result) return make_error(result.error().code, result.error().message);
     std::vector<Model::FeatureRecord> records;
-    records.push_back(make_record("total", "累计有效修读", "ok", {{"validCount", json_string(*data, "validCount")}}));
-    if (data->contains("statistical") && (*data)["statistical"].is_object()) {
-        for (const auto &[category, sub_map] : (*data)["statistical"].items()) {
-            if (!sub_map.is_object()) continue;
-            for (const auto &[sub_category, entry] : sub_map.items()) {
-                records.push_back(make_record(category + ":" + sub_category, sub_category, "ok", {{"category", category}, {"requiredCount", json_string(entry, "assessmentCount")}, {"passedCount", json_string(entry, "completeAssessmentCount")}}));
-            }
-        }
-    }
+    for (const auto &stat : *result) records.push_back(stat_to_record(stat));
     return records;
 }
 

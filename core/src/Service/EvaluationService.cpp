@@ -1,6 +1,7 @@
 #include <UBAANext/Service/EvaluationService.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Parser/EvaluationParser.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -53,15 +54,6 @@ std::string json_string(const nlohmann::json &json, const char *key) {
     return {};
 }
 
-int json_int(const nlohmann::json &json, const char *key, int fallback = 0) {
-    if (!json.contains(key) || json[key].is_null()) return fallback;
-    if (json[key].is_number_integer()) return json[key].get<int>();
-    if (json[key].is_string()) {
-        try { return std::stoi(json[key].get<std::string>()); } catch (...) { return fallback; }
-    }
-    return fallback;
-}
-
 bool envelope_ok(const nlohmann::json &json) {
     if (!json.contains("code")) return true;
     const auto &code = json["code"];
@@ -91,6 +83,20 @@ Model::FeatureRecord make_record(std::string id, std::string title, std::string 
     record.status = std::move(status);
     record.fields = std::move(fields);
     return record;
+}
+
+Model::FeatureRecord task_to_record(const Model::EvaluationTask &task) {
+    return make_record(task.id, task.title, task.status, {
+        {"teacher", task.teacher},
+        {"rwid", task.task_id},
+        {"wjid", task.questionnaire_id},
+        {"kcdm", task.course_code},
+        {"bpdm", task.teacher_code},
+        {"xnxq", task.term_code},
+        {"msid", task.pattern_id},
+        {"ypjcs", std::to_string(task.evaluated_count)},
+        {"xypjcs", std::to_string(task.required_count)},
+    });
 }
 
 } // namespace
@@ -142,7 +148,7 @@ Result<std::string> EvaluationService::current_xnxq() {
     return xn + xq;
 }
 
-Result<std::vector<Model::FeatureRecord>> EvaluationService::list_evaluations() {
+Result<std::vector<Model::EvaluationTask>> EvaluationService::list_evaluation_tasks() {
     auto activation = activate_session();
     if (!activation) return make_error(activation.error().code, activation.error().message);
     auto xnxq = current_xnxq();
@@ -152,7 +158,7 @@ Result<std::vector<Model::FeatureRecord>> EvaluationService::list_evaluations() 
     if (!tasks_data) return make_error(tasks_data.error().code, tasks_data.error().message);
     auto tasks = tasks_data->contains("list") && (*tasks_data)["list"].is_array() ? (*tasks_data)["list"] : nlohmann::json::array();
 
-    std::map<std::string, Model::FeatureRecord> records;
+    std::map<std::string, Model::EvaluationTask> records;
     for (const auto &task : tasks) {
         auto rwid = json_string(task, "rwid");
         if (rwid.empty()) continue;
@@ -167,32 +173,26 @@ Result<std::vector<Model::FeatureRecord>> EvaluationService::list_evaluations() 
             for (const auto &sfyp : {std::string("0"), std::string("1")}) {
                 auto courses_data = request_json(HttpMethod::Get, "https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/getRequiredReviewsData?sfyp=" + sfyp + "&wjid=" + url_encode(wjid) + "&xnxq=" + url_encode(*xnxq) + "&pageNum=1&pageSize=999");
                 if (!courses_data || !courses_data->is_array()) continue;
-                for (const auto &course : *courses_data) {
-                    auto kcdm = json_string(course, "kcdm");
-                    auto bpdm = json_string(course, "bpdm");
-                    if (kcdm.empty()) continue;
-                    auto key = rwid + "_" + wjid + "_" + kcdm + "_" + bpdm;
-                    auto status = sfyp == "1" ? "evaluated" : "pending";
-                    records[key] = make_record(key, json_string(course, "kcmc").empty() ? "未知课程" : json_string(course, "kcmc"), status, {
-                        {"teacher", json_string(course, "bpmc")},
-                        {"rwid", rwid},
-                        {"wjid", wjid},
-                        {"kcdm", kcdm},
-                        {"bpdm", bpdm},
-                        {"xnxq", *xnxq},
-                        {"msid", msid},
-                        {"ypjcs", std::to_string(json_int(course, "ypjcs"))},
-                        {"xypjcs", std::to_string(json_int(course, "xypjcs", 1))},
-                    });
+                auto status = sfyp == "1" ? "evaluated" : "pending";
+                for (auto record : Parser::parse_evaluation_required_reviews(*courses_data, rwid, wjid, msid, *xnxq, status)) {
+                    records[record.id] = std::move(record);
                 }
             }
         }
     }
 
-    std::vector<Model::FeatureRecord> out;
+    std::vector<Model::EvaluationTask> out;
     out.reserve(records.size());
     for (auto &[_, record] : records) out.push_back(std::move(record));
     return out;
+}
+
+Result<std::vector<Model::FeatureRecord>> EvaluationService::list_evaluations() {
+    auto result = list_evaluation_tasks();
+    if (!result) return make_error(result.error().code, result.error().message);
+    std::vector<Model::FeatureRecord> records;
+    for (const auto &task : *result) records.push_back(task_to_record(task));
+    return records;
 }
 
 Result<Model::MutationResult> EvaluationService::submit_evaluations(const std::string &target_id) {

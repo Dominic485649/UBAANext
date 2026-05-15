@@ -1,0 +1,9 @@
+{
+  "validCount": 3,
+  "statistical": {
+    "通识": {
+      "创新创业": {"assessmentCount": 2, "completeAssessmentCount": 1},
+      "航空航天": {"assessmentCount": 1, "completeAssessmentCount": 1}
+    }
+  }
+}

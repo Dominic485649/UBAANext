@@ -1,0 +1,10 @@
+{
+  "id": "user-1",
+  "realName": "张三",
+  "employeeId": "20260001",
+  "studentNo": "20260001",
+  "studentType": "本科生",
+  "classCode": "A101",
+  "college": {"collegeName": "智能制造学院"},
+  "term": {"termName": "2025-2026学年第二学期"}
+}

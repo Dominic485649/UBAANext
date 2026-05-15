@@ -1,0 +1,21 @@
+[
+  {
+    "kcdm": "CS101",
+    "kcmc": "程序设计",
+    "bpdm": "teacher-1",
+    "bpmc": "陈老师",
+    "ypjcs": 0,
+    "xypjcs": 1
+  },
+  {
+    "kcdm": "ME101",
+    "kcmc": "机械基础",
+    "bpdm": "teacher-2",
+    "bpmc": "刘老师",
+    "ypjcs": "1",
+    "xypjcs": "2"
+  },
+  {
+    "kcmc": "缺少课程代码"
+  }
+]
