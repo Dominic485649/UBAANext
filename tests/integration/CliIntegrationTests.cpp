@@ -70,6 +70,51 @@ struct CliResult {
     return nlohmann::json::parse(output.substr(start));
 }
 
+void require_success_envelope(const nlohmann::json &json) {
+    REQUIRE(json["ok"] == true);
+    REQUIRE(json.contains("data"));
+    REQUIRE(json["data"].is_object());
+    REQUIRE(json.contains("error"));
+    REQUIRE(json["error"].is_null());
+}
+
+void require_error_envelope(const nlohmann::json &json) {
+    REQUIRE(json["ok"] == false);
+    REQUIRE(json.contains("data"));
+    REQUIRE(json["data"].is_null());
+    REQUIRE(json.contains("error"));
+    REQUIRE(json["error"].is_object());
+    REQUIRE(json["error"].contains("code"));
+    REQUIRE(json["error"].contains("message"));
+}
+
+void require_feature_record(const nlohmann::json &record) {
+    REQUIRE(record.is_object());
+    REQUIRE(record.contains("id"));
+    REQUIRE(record.contains("title"));
+    REQUIRE(record.contains("status"));
+    REQUIRE(record.contains("fields"));
+    REQUIRE(record["fields"].is_object());
+}
+
+void require_records_contract(const nlohmann::json &json, const std::string &key) {
+    require_success_envelope(json);
+    REQUIRE(json["data"].contains(key));
+    REQUIRE(json["data"][key].is_array());
+    REQUIRE_FALSE(json["data"][key].empty());
+    require_feature_record(json["data"][key][0]);
+}
+
+void require_mutation_contract(const nlohmann::json &json) {
+    require_success_envelope(json);
+    REQUIRE(json["data"].contains("accepted"));
+    REQUIRE(json["data"].contains("message"));
+    REQUIRE(json["data"].contains("result"));
+    REQUIRE(json["data"]["accepted"].is_boolean());
+    REQUIRE(json["data"]["message"].is_string());
+    require_feature_record(json["data"]["result"]);
+}
+
 } // namespace
 
 TEST_CASE("CLI version 命令", "[cli][integration]") {
@@ -365,6 +410,42 @@ TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integratio
         REQUIRE(json["ok"] == true);
         REQUIRE(json["data"].contains("message"));
     }
+}
+
+TEST_CASE("CLI JSON contract mock smoke", "[cli][integration]") {
+    const std::vector<std::pair<std::vector<std::string>, std::string>> list_commands = {
+        {{"signin", "today", "--mock", "--json"}, "signin"},
+        {{"ygdk", "overview", "--mock", "--json"}, "overview"},
+        {{"ygdk", "records", "--mock", "--json"}, "records"},
+        {{"evaluation", "list", "--mock", "--json"}, "evaluations"},
+        {{"bykc", "courses", "--mock", "--json"}, "courses"},
+        {{"cgyy", "sites", "--mock", "--json"}, "sites"},
+        {{"libbook", "libraries", "--mock", "--json"}, "libraries"},
+    };
+
+    for (const auto &[command, key] : list_commands) {
+        auto result = run_cli(command);
+        INFO(result.stdout_output);
+        REQUIRE(result.exit_code == 0);
+        require_records_contract(parse_json_output(result.stdout_output), key);
+    }
+
+    auto detail = run_cli({"bykc", "course", "show", "--mock", "--course-id", "bykc-1", "--json"});
+    REQUIRE(detail.exit_code == 0);
+    auto detail_json = parse_json_output(detail.stdout_output);
+    require_success_envelope(detail_json);
+    REQUIRE(detail_json["data"].contains("course"));
+    require_feature_record(detail_json["data"]["course"]);
+
+    auto mutation = run_cli({"bykc", "select", "--mock", "--course-id", "bykc-1", "--confirm", "--json"});
+    REQUIRE(mutation.exit_code == 0);
+    require_mutation_contract(parse_json_output(mutation.stdout_output));
+
+    auto error = run_cli({"bykc", "select", "--mock", "--course-id", "bykc-1", "--json"});
+    REQUIRE(error.exit_code == 2);
+    auto error_json = parse_json_output(error.stdout_output);
+    require_error_envelope(error_json);
+    REQUIRE(error_json["error"]["code"] == "InvalidArgument");
 }
 
 #endif
