@@ -20,7 +20,9 @@ namespace UBAANext {
 
 class CourseService {
 public:
+#if UBAANEXT_ENABLE_MOCKS
     CourseService(IHttpClient &http_client, ICacheStore &cache);
+#endif
     CourseService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
     Result<std::vector<Model::Course>> get_today_courses();

@@ -9,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <sstream>
 #include <vector>
 
@@ -43,6 +44,34 @@ bool session_expired_body(const std::string &body) {
            body.find("input name=\"execution\"") != std::string::npos ||
            body.find("未登录") != std::string::npos ||
            body.find("login") != std::string::npos;
+}
+
+bool contains_section(const std::vector<int> &values, int wanted) {
+    return std::find(values.begin(), values.end(), wanted) != values.end();
+}
+
+bool matches_sections(const Model::ClassroomInfo &room, const std::vector<int> &sections) {
+    if (sections.empty()) return true;
+    for (int section : sections) {
+        if (!contains_section(room.free_sections, section)) return false;
+    }
+    return true;
+}
+
+Model::ClassroomQueryResult filter_classrooms(Model::ClassroomQueryResult result, const std::vector<int> &sections) {
+    if (sections.empty()) return result;
+    for (auto it = result.buildings.begin(); it != result.buildings.end();) {
+        auto &rooms = it->second;
+        rooms.erase(std::remove_if(rooms.begin(), rooms.end(), [&](const auto &room) {
+            return !matches_sections(room, sections);
+        }), rooms.end());
+        if (rooms.empty()) {
+            it = result.buildings.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return result;
 }
 
 Result<Model::ClassroomQueryResult> parse_real_classrooms(const std::string &body) {
@@ -80,15 +109,24 @@ Result<Model::ClassroomQueryResult> parse_real_classrooms(const std::string &bod
 
 } // namespace
 
+#if UBAANEXT_ENABLE_MOCKS
 ClassroomService::ClassroomService(IHttpClient &http_client, ICacheStore &cache)
     : m_http_client(http_client), m_cache(cache), m_mode(ConnectionMode::Mock) {}
+#endif
 
 ClassroomService::ClassroomService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
     : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
 
 Result<Model::ClassroomQueryResult>
 ClassroomService::query_classrooms(int campus_id, const std::string &date) {
-    return query_classrooms(campus_id, date, {}, {});
+    return query_classrooms(campus_id, date, {}, {}, {});
+}
+
+Result<Model::ClassroomQueryResult>
+ClassroomService::query_classrooms(int campus_id,
+                                   const std::string &date,
+                                   const std::vector<int> &sections) {
+    return query_classrooms(campus_id, date, {}, {}, sections);
 }
 
 Result<Model::ClassroomQueryResult>
@@ -96,12 +134,23 @@ ClassroomService::query_classrooms(int campus_id,
                                    const std::string &date,
                                    const std::string &username,
                                    const std::string &password) {
+    return query_classrooms(campus_id, date, username, password, {});
+}
+
+Result<Model::ClassroomQueryResult>
+ClassroomService::query_classrooms(int campus_id,
+                                   const std::string &date,
+                                   const std::string &username,
+                                   const std::string &password,
+                                   const std::vector<int> &sections) {
     std::string cache_key = "cache:classroom:" + std::to_string(campus_id) + ":" + date;
 
+#if UBAANEXT_ENABLE_MOCKS
     auto cached = m_cache.get(cache_key);
     if (m_mode == ConnectionMode::Mock && cached.has_value()) {
         return Parser::parse_classrooms(*cached);
     }
+#endif
 
     if (m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) {
         auto session = username.empty() || password.empty()
@@ -129,9 +178,12 @@ ClassroomService::query_classrooms(int campus_id,
         if (response.status_code != 200) {
             return make_error(ErrorCode::NetworkError, "空教室请求返回: " + std::to_string(response.status_code));
         }
-        return parse_real_classrooms(response.body);
+        auto parsed = parse_real_classrooms(response.body);
+        if (!parsed) return parsed;
+        return filter_classrooms(std::move(*parsed), sections);
     }
 
+#if UBAANEXT_ENABLE_MOCKS
     HttpRequest req;
     req.method = HttpMethod::Get;
     req.url = "/classroom/query";
@@ -151,7 +203,13 @@ ClassroomService::query_classrooms(int campus_id,
         m_cache.set_with_ttl(cache_key, response.body, kCacheTtlSeconds);
     }
 
-    return parsed;
+    if (!parsed) return parsed;
+    return filter_classrooms(std::move(*parsed), sections);
+#else
+    (void)cache_key;
+    (void)sections;
+    return make_error(ErrorCode::InvalidArgument, "空教室查询需要 Direct 或 WebVPN 连接模式");
+#endif
 }
 
 } // namespace UBAANext

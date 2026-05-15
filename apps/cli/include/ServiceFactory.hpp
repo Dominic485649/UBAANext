@@ -14,6 +14,8 @@
 #include <UBAANext/Service/CourseService.hpp>
 #include <UBAANext/Service/ExamService.hpp>
 #include <UBAANext/Service/FeatureService.hpp>
+#include <UBAANext/Service/GradeService.hpp>
+#include <UBAANext/Service/JudgeService.hpp>
 #include <UBAANext/Service/TermService.hpp>
 
 namespace UBAANextCli {
@@ -33,6 +35,8 @@ public:
     [[nodiscard]] UBAANext::ExamService create_exam_service();
     [[nodiscard]] UBAANext::ClassroomService create_classroom_service();
     [[nodiscard]] UBAANext::TermService create_term_service();
+    [[nodiscard]] UBAANext::GradeService create_grade_service();
+    [[nodiscard]] UBAANext::JudgeService create_judge_service();
     [[nodiscard]] UBAANext::FeatureService create_feature_service();
 
     [[nodiscard]] UBAANext::IHttpClient &http_client() { return *m_ctx.http; }

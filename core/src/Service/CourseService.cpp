@@ -27,8 +27,10 @@ void apply_schedule_headers(HttpRequest &req, ConnectionMode mode) {
     req.headers["User-Agent"] = "UBAANext/0.4";
 }
 
+#if UBAANEXT_ENABLE_MOCKS
 CourseService::CourseService(IHttpClient &http_client, ICacheStore &cache)
     : m_http_client(http_client), m_cache(cache), m_mode(ConnectionMode::Mock) {}
+#endif
 
 CourseService::CourseService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
     : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
@@ -54,12 +56,14 @@ Result<std::vector<Model::Course>> CourseService::get_today_courses() {
 
 Result<std::vector<Model::Course>> CourseService::get_date_courses(const std::string &date) {
     std::string cache_key = "cache:course:date:" + date;
+#if UBAANEXT_ENABLE_MOCKS
     if (m_mode == ConnectionMode::Mock) {
         auto cached = m_cache.get(cache_key);
         if (cached.has_value()) {
             return Parser::parse_courses(*cached);
         }
     }
+#endif
 
     if (m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) {
         auto activate_result = Protocol::Byxt::ensure_session(m_http_client, m_mode);
@@ -116,6 +120,7 @@ Result<std::vector<Model::Course>> CourseService::get_date_courses(const std::st
         }
     }
 
+#if UBAANEXT_ENABLE_MOCKS
     HttpRequest req;
     req.method = HttpMethod::Get;
     req.url = "/schedule/today";
@@ -135,6 +140,10 @@ Result<std::vector<Model::Course>> CourseService::get_date_courses(const std::st
         m_cache.set_with_ttl(cache_key, response.body, kCacheTtlSeconds);
     }
     return parsed;
+#else
+    (void)cache_key;
+    return UBAANext::make_error(ErrorCode::InvalidArgument, "课程查询需要 Direct 或 WebVPN 连接模式");
+#endif
 }
 
 Result<std::vector<Model::Course>> CourseService::get_week_courses(int week) {
@@ -152,6 +161,7 @@ Result<std::vector<Model::Course>> CourseService::get_week_courses(int week) {
         return fetch_week_courses_real(week, "2025-2026-2");
     }
 
+#if UBAANEXT_ENABLE_MOCKS
     HttpRequest req;
     req.method = HttpMethod::Get;
     req.url = "/schedule/week";
@@ -173,13 +183,21 @@ Result<std::vector<Model::Course>> CourseService::get_week_courses(int week) {
 
     m_cache.set_with_ttl(cache_key, response.body, kCacheTtlSeconds);
     return parsed;
+#else
+    (void)cache_key;
+    return UBAANext::make_error(ErrorCode::InvalidArgument, "课程查询需要 Direct 或 WebVPN 连接模式");
+#endif
 }
 
 Result<std::vector<Model::Course>> CourseService::get_week_courses(int week, const std::string &term_code) {
     if (m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) {
         return fetch_week_courses_real(week, term_code);
     }
+#if UBAANEXT_ENABLE_MOCKS
     return get_week_courses(week);
+#else
+    return UBAANext::make_error(ErrorCode::InvalidArgument, "课程查询需要 Direct 或 WebVPN 连接模式");
+#endif
 }
 
 Result<std::vector<Model::Course>> CourseService::fetch_week_courses_real(int week, const std::string &term_code) {

@@ -26,10 +26,13 @@ public:
 
 private:
     IHttpClient &m_http_client;
+    ICacheStore &m_cache;
     ConnectionMode m_mode;
 
+#if UBAANEXT_ENABLE_MOCKS
     Result<std::vector<Model::FeatureRecord>> mock_list(const std::string &domain, const std::string &operation) const;
     Result<Model::FeatureRecord> mock_show(const std::string &domain, const std::string &operation, const std::string &id) const;
+#endif
 };
 
 } // namespace UBAANext

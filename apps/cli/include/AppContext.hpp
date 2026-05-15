@@ -25,7 +25,7 @@ namespace UBAANextCli {
  * 无需关心具体实现类型。
  */
 struct AppContext {
-    bool mock_mode = true;                                      ///< 是否使用 mock 实现
+    bool mock_mode = false;                                     ///< 是否使用 mock 实现
     UBAANext::ConnectionMode conn_mode = UBAANext::ConnectionMode::WebVPN;  ///< 连接模式
     CliConfig config;                                           ///< CLI 配置
     std::unique_ptr<UBAANext::IHttpClient> http;                ///< HTTP 客户端

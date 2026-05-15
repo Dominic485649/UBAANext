@@ -21,7 +21,9 @@ namespace UBAANext {
 
 class TermService {
 public:
+#if UBAANEXT_ENABLE_MOCKS
     TermService(IHttpClient &http_client, ICacheStore &cache);
+#endif
     TermService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
     Result<std::vector<Model::Term>> get_terms();

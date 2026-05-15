@@ -1,0 +1,514 @@
+#include <UBAANext/Service/LibrarySeatService.hpp>
+
+#include <UBAANext/Net/VpnCipher.hpp>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <bcrypt.h>
+#endif
+
+#include <ctime>
+#include <iomanip>
+#include <map>
+#include <regex>
+#include <sstream>
+#include <utility>
+#include <vector>
+#include <algorithm>
+
+namespace UBAANext {
+
+namespace {
+
+constexpr const char *base_url = "https://booking.lib.buaa.edu.cn";
+constexpr const char *cas_login_url = "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fbooking.lib.buaa.edu.cn%2Fv4%2Flogin%2Fcas";
+#ifdef _WIN32
+constexpr const char *reserve_iv = "ZZWBKJ_ZHIHUAWEI";
+#endif
+
+std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
+    return mode == ConnectionMode::WebVPN ? VpnCipher::to_vpn_url(url) : url;
+}
+
+std::string header_value(const HttpResponse &response, const std::string &name) {
+    for (const auto &[key, value] : response.headers) {
+        if (key.size() != name.size()) {
+            continue;
+        }
+        bool same = true;
+        for (size_t i = 0; i < key.size(); ++i) {
+            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
+                same = false;
+                break;
+            }
+        }
+        if (same) {
+            auto newline = value.find('\n');
+            return newline == std::string::npos ? value : value.substr(0, newline);
+        }
+    }
+    return {};
+}
+
+std::string resolve_redirect_url(const std::string &base, const std::string &location) {
+    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) {
+        return location;
+    }
+    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
+    std::smatch match;
+    if (!std::regex_search(base, match, url_re)) {
+        return location;
+    }
+    std::string authority = match[1].str();
+    if (!location.empty() && location.front() == '/') {
+        return authority + location;
+    }
+    return authority + "/" + location;
+}
+
+std::string extract_cas_token(const std::string &url) {
+    std::regex token_re(R"([?&#]cas=([^&#]+))");
+    std::smatch match;
+    return std::regex_search(url, match, token_re) && match.size() > 1 ? match[1].str() : std::string{};
+}
+
+std::string today_yyyy_mm_dd() {
+    std::time_t now = std::time(nullptr);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &now);
+#else
+    localtime_r(&now, &local);
+#endif
+    std::ostringstream out;
+    out << std::put_time(&local, "%Y-%m-%d");
+    return out.str();
+}
+
+#ifdef _WIN32
+std::string base64_encode(const std::vector<unsigned char> &data) {
+    static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    for (size_t i = 0; i < data.size(); i += 3) {
+        unsigned int value = data[i] << 16;
+        if (i + 1 < data.size()) value |= data[i + 1] << 8;
+        if (i + 2 < data.size()) value |= data[i + 2];
+        out.push_back(alphabet[(value >> 18) & 0x3f]);
+        out.push_back(alphabet[(value >> 12) & 0x3f]);
+        out.push_back(i + 1 < data.size() ? alphabet[(value >> 6) & 0x3f] : '=');
+        out.push_back(i + 2 < data.size() ? alphabet[value & 0x3f] : '=');
+    }
+    return out;
+}
+
+std::string libbook_aes_key(const std::string &day) {
+    std::string digits;
+    for (char ch : day) {
+        if (ch >= '0' && ch <= '9') digits.push_back(ch);
+    }
+    if (digits.size() != 8) return {};
+    std::string reversed = digits;
+    std::reverse(reversed.begin(), reversed.end());
+    return digits + reversed;
+}
+#endif
+
+Result<std::string> encrypt_reserve_payload(const nlohmann::json &body, const std::string &day) {
+#ifdef _WIN32
+    auto key = libbook_aes_key(day);
+    if (key.empty()) return make_error(ErrorCode::InvalidArgument, "libbook book 需要有效 --date <yyyy-MM-dd>");
+    auto plain = body.dump();
+    std::vector<unsigned char> data(plain.begin(), plain.end());
+    auto pad = 16 - (data.size() % 16);
+    data.insert(data.end(), pad, static_cast<unsigned char>(pad));
+
+    BCRYPT_ALG_HANDLE alg = nullptr;
+    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_AES_ALGORITHM, nullptr, 0) != 0) return make_error(ErrorCode::NetworkError, "打开 LibBook AES 算法失败");
+    auto close_alg = [&]() { if (alg) BCryptCloseAlgorithmProvider(alg, 0); };
+    if (BCryptSetProperty(alg, BCRYPT_CHAINING_MODE, reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_CBC)), static_cast<ULONG>((wcslen(BCRYPT_CHAIN_MODE_CBC) + 1) * sizeof(wchar_t)), 0) != 0) {
+        close_alg();
+        return make_error(ErrorCode::NetworkError, "设置 LibBook AES CBC 模式失败");
+    }
+    BCRYPT_KEY_HANDLE key_handle = nullptr;
+    std::vector<unsigned char> key_bytes(key.begin(), key.end());
+    if (BCryptGenerateSymmetricKey(alg, &key_handle, nullptr, 0, key_bytes.data(), static_cast<ULONG>(key_bytes.size()), 0) != 0) {
+        close_alg();
+        return make_error(ErrorCode::NetworkError, "生成 LibBook AES 密钥失败");
+    }
+    std::vector<unsigned char> iv(reserve_iv, reserve_iv + std::char_traits<char>::length(reserve_iv));
+    ULONG out_len = 0;
+    if (BCryptEncrypt(key_handle, data.data(), static_cast<ULONG>(data.size()), nullptr, iv.data(), static_cast<ULONG>(iv.size()), nullptr, 0, &out_len, 0) != 0) {
+        BCryptDestroyKey(key_handle);
+        close_alg();
+        return make_error(ErrorCode::NetworkError, "计算 LibBook AES 输出长度失败");
+    }
+    std::vector<unsigned char> out(out_len);
+    iv.assign(reserve_iv, reserve_iv + std::char_traits<char>::length(reserve_iv));
+    if (BCryptEncrypt(key_handle, data.data(), static_cast<ULONG>(data.size()), nullptr, iv.data(), static_cast<ULONG>(iv.size()), out.data(), static_cast<ULONG>(out.size()), &out_len, 0) != 0) {
+        BCryptDestroyKey(key_handle);
+        close_alg();
+        return make_error(ErrorCode::NetworkError, "LibBook AES 加密失败");
+    }
+    BCryptDestroyKey(key_handle);
+    close_alg();
+    out.resize(out_len);
+    return base64_encode(out);
+#else
+    (void)body;
+    (void)day;
+    return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 LibBook AES 加密实现");
+#endif
+}
+
+void apply_headers(HttpRequest &request) {
+    request.headers["Accept"] = "application/json, text/plain, */*";
+    request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
+    request.headers["X-Requested-With"] = "XMLHttpRequest";
+    request.headers["Referer"] = base_url;
+    request.headers["Origin"] = base_url;
+}
+
+std::string json_string(const nlohmann::json &json, const char *key) {
+    if (!json.contains(key) || json[key].is_null()) {
+        return {};
+    }
+    if (json[key].is_string()) {
+        return json[key].get<std::string>();
+    }
+    if (json[key].is_number_integer()) {
+        return std::to_string(json[key].get<long long>());
+    }
+    return {};
+}
+
+std::string json_int_string(const nlohmann::json &json, const char *key) {
+    if (!json.contains(key) || json[key].is_null()) {
+        return {};
+    }
+    if (json[key].is_number_integer()) {
+        return std::to_string(json[key].get<long long>());
+    }
+    if (json[key].is_string()) {
+        return json[key].get<std::string>();
+    }
+    return {};
+}
+
+Model::FeatureRecord make_record(std::string id,
+                                 std::string title,
+                                 std::string status,
+                                 std::map<std::string, std::string> fields = {}) {
+    Model::FeatureRecord record;
+    record.id = std::move(id);
+    record.title = std::move(title);
+    record.status = std::move(status);
+    record.fields = std::move(fields);
+    return record;
+}
+
+std::vector<Model::FeatureRecord> map_libraries(const nlohmann::json &list) {
+    std::vector<Model::FeatureRecord> records;
+    if (!list.is_array()) {
+        return records;
+    }
+    for (const auto &raw : list) {
+        if (!raw.is_object()) {
+            continue;
+        }
+        auto id = json_string(raw, "id");
+        auto name = json_string(raw, "name");
+        records.push_back(make_record(id, name.empty() ? "图书馆" : name, "available",
+                                      {{"freeNum", json_int_string(raw, "free_num")}, {"totalNum", json_int_string(raw, "total_num")}}));
+    }
+    return records;
+}
+
+std::vector<Model::FeatureRecord> map_areas(const nlohmann::json &list) {
+    std::vector<Model::FeatureRecord> records;
+    if (!list.is_array()) {
+        return records;
+    }
+    for (const auto &raw : list) {
+        if (!raw.is_object()) {
+            continue;
+        }
+        auto id = json_string(raw, "id");
+        auto name = json_string(raw, "name");
+        records.push_back(make_record(id, name.empty() ? "图书馆区域" : name, "available",
+                                      {{"area", json_string(raw, "area")},
+                                       {"premisesId", json_string(raw, "premises_id")},
+                                       {"storeyId", json_string(raw, "storey_id")},
+                                       {"freeNum", json_int_string(raw, "free_num")},
+                                       {"totalNum", json_int_string(raw, "total_num")}}));
+    }
+    return records;
+}
+
+std::vector<Model::FeatureRecord> map_seats(const nlohmann::json &list) {
+    std::vector<Model::FeatureRecord> records;
+    if (!list.is_array()) {
+        return records;
+    }
+    for (const auto &raw : list) {
+        if (!raw.is_object()) {
+            continue;
+        }
+        auto id = json_string(raw, "id");
+        auto no = json_string(raw, "no");
+        auto status = json_string(raw, "status");
+        records.push_back(make_record(id, no.empty() ? json_string(raw, "name") : no, status == "1" ? "available" : "unavailable",
+                                      {{"name", json_string(raw, "name")}, {"status", status}, {"statusName", json_string(raw, "status_name")}}));
+    }
+    return records;
+}
+
+std::vector<Model::FeatureRecord> map_reservations(const nlohmann::json &list) {
+    std::vector<Model::FeatureRecord> records;
+    if (!list.is_array()) {
+        return records;
+    }
+    for (const auto &raw : list) {
+        if (!raw.is_object()) {
+            continue;
+        }
+        auto id = json_string(raw, "id");
+        auto seat_no = json_string(raw, "no");
+        records.push_back(make_record(id, seat_no.empty() ? "图书馆预约" : seat_no, json_string(raw, "status"),
+                                      {{"areaName", json_string(raw, "name")},
+                                       {"day", json_string(raw, "day")},
+                                       {"beginTime", json_string(raw, "beginTime")},
+                                       {"endTime", json_string(raw, "endTime")},
+                                       {"statusName", json_string(raw, "status_name")}}));
+    }
+    return records;
+}
+
+} // namespace
+
+LibrarySeatService::LibrarySeatService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
+    : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
+
+Result<std::string> LibrarySeatService::fetch_cas_token() {
+    std::string current_url = cas_login_url;
+    for (int i = 0; i < 8; ++i) {
+        HttpRequest request;
+        request.method = HttpMethod::Get;
+        request.url = resolve_for_mode(current_url, m_mode);
+        apply_headers(request);
+        auto response = m_http_client.send(request);
+        if (!response) {
+            return make_error(ErrorCode::NetworkError, "获取图书馆 CAS 参数失败: " + response.error().message);
+        }
+
+        if (auto token = extract_cas_token(current_url); !token.empty()) {
+            return token;
+        }
+        auto location = header_value(*response, "Location");
+        if (auto token = extract_cas_token(location); !token.empty()) {
+            return token;
+        }
+        if (response->status_code < 300 || response->status_code >= 400 || location.empty()) {
+            break;
+        }
+        current_url = resolve_redirect_url(current_url, location);
+    }
+    return make_error(ErrorCode::SessionExpired, "未能获取图书馆 CAS 参数，请重新登录");
+}
+
+Result<void> LibrarySeatService::ensure_login(bool force_refresh) {
+    if (!force_refresh && !m_token.empty()) {
+        return {};
+    }
+
+    auto cas = fetch_cas_token();
+    if (!cas) {
+        return make_error(cas.error().code, cas.error().message);
+    }
+
+    auto response = request_json("login/user", {{"cas", *cas}}, false, false);
+    if (!response) {
+        return make_error(response.error().code, response.error().message);
+    }
+
+    try {
+        auto member = (*response)["data"]["member"];
+        auto token = json_string(member, "token");
+        if (token.empty()) {
+            return make_error(ErrorCode::SessionExpired, "图书馆登录成功但未返回 token");
+        }
+        m_token = std::move(token);
+        return {};
+    } catch (const std::exception &e) {
+        return make_error(ErrorCode::ParseError, std::string("解析图书馆登录响应失败: ") + e.what());
+    }
+}
+
+Result<nlohmann::json> LibrarySeatService::request_json(const std::string &path, const nlohmann::json &body, bool authorize, bool allow_retry) {
+    if (authorize) {
+        auto login = ensure_login();
+        if (!login) {
+            return make_error(login.error().code, login.error().message);
+        }
+    }
+
+    HttpRequest request;
+    request.method = HttpMethod::Post;
+    request.url = resolve_for_mode(std::string(base_url) + "/v4/" + path, m_mode);
+    apply_headers(request);
+    request.headers["Content-Type"] = "application/json";
+    if (authorize) {
+        request.headers["Authorization"] = "bearer" + m_token;
+    }
+    request.body = body.dump();
+
+    auto response = m_http_client.send(request);
+    if (!response) {
+        return make_error(ErrorCode::NetworkError, "请求图书馆座位系统失败: " + response.error().message);
+    }
+    if (response->status_code != 200) {
+        return make_error(ErrorCode::NetworkError, "图书馆座位系统返回: " + std::to_string(response->status_code));
+    }
+
+    try {
+        auto json = nlohmann::json::parse(response->body);
+        auto message = json_string(json, "message");
+        if (message.find("登录失效") != std::string::npos || message.find("请重新登录") != std::string::npos || message.find("未登录") != std::string::npos) {
+            m_token.clear();
+            if (authorize && allow_retry) {
+                auto login = ensure_login(true);
+                if (!login) {
+                    return make_error(login.error().code, login.error().message);
+                }
+                return request_json(path, body, authorize, false);
+            }
+            return make_error(ErrorCode::SessionExpired, "图书馆登录状态已失效");
+        }
+        int code = json.value("code", 0);
+        if (code != 0 && code != 1) {
+            return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆接口请求失败" : message);
+        }
+        return json;
+    } catch (const std::exception &e) {
+        return make_error(ErrorCode::ParseError, std::string("解析图书馆座位 JSON 失败: ") + e.what());
+    }
+}
+
+Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_libraries(const std::string &day) {
+    (void)m_cache;
+    auto json = request_json("space/pcTopFor", {{"day", day.empty() ? today_yyyy_mm_dd() : day}});
+    if (!json) {
+        return make_error(json.error().code, json.error().message);
+    }
+    return map_libraries((*json)["data"]["list"]);
+}
+
+Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_areas(const std::string &library_id, const std::string &day, const std::string &storey_id) {
+    if (library_id.empty() || library_id == "areas") {
+        return make_error(ErrorCode::InvalidArgument, "libbook areas 需要 --library-id <id>");
+    }
+    auto storeys = nlohmann::json::array();
+    if (!storey_id.empty()) {
+        storeys.push_back(storey_id);
+    }
+    auto json = request_json("space/pick", {{"premisesIds", library_id}, {"categoryIds", nlohmann::json::array()}, {"storeyIds", storeys}, {"boutiqueIds", nlohmann::json::array()}, {"date", day.empty() ? today_yyyy_mm_dd() : day}});
+    if (!json) {
+        return make_error(json.error().code, json.error().message);
+    }
+    return map_areas((*json)["data"]["area"]);
+}
+
+Result<Model::FeatureRecord> LibrarySeatService::show_area(const std::string &area_id) {
+    if (area_id.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "libbook area show 需要 --area-id <id>");
+    }
+    auto json = request_json("Space/map", {{"id", area_id}});
+    if (!json) {
+        return make_error(json.error().code, json.error().message);
+    }
+    auto area = (*json)["data"]["area"];
+    return make_record(json_string(area, "id").empty() ? area_id : json_string(area, "id"),
+                       json_string(area, "name"),
+                       "available",
+                       {{"availableDates", std::to_string((*json)["data"]["date"]["list"].is_array() ? (*json)["data"]["date"]["list"].size() : 0)}});
+}
+
+Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_seats(const std::string &area_id, const std::string &day, const std::string &start_time, const std::string &end_time) {
+    if (area_id.empty() || area_id == "seats") {
+        return make_error(ErrorCode::InvalidArgument, "libbook seats 需要 --area-id <id>");
+    }
+    auto json = request_json("Space/seat", {{"id", area_id}, {"day", day.empty() ? today_yyyy_mm_dd() : day}, {"label_id", nlohmann::json::array()}, {"start_time", start_time.empty() ? "08:00" : start_time}, {"end_time", end_time.empty() ? "22:00" : end_time}, {"begdate", ""}, {"enddate", ""}});
+    if (!json) {
+        return make_error(json.error().code, json.error().message);
+    }
+    return map_seats((*json)["data"]["list"]);
+}
+
+Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_reservations(int page, int limit) {
+    auto json = request_json("member/seat", {{"type", "1"}, {"page", page < 1 ? 1 : page}, {"limit", limit < 1 ? 20 : limit}});
+    if (!json) {
+        return make_error(json.error().code, json.error().message);
+    }
+    auto data = (*json)["data"];
+    if (data.contains("data")) {
+        return map_reservations(data["data"]);
+    }
+    return map_reservations(data["list"]);
+}
+
+Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string &seat_id, const std::string &day, const std::string &segment) {
+    if (seat_id.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "libbook book 需要 --seat-id <id>");
+    }
+    if (day.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "libbook book 需要 --date <yyyy-MM-dd>");
+    }
+    if (segment.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "libbook book 需要 --segment <segment>");
+    }
+
+    auto encrypted = encrypt_reserve_payload({{"seat_id", seat_id}, {"segment", segment}, {"day", day}, {"start_time", ""}, {"end_time", ""}}, day);
+    if (!encrypted) {
+        return make_error(encrypted.error().code, encrypted.error().message);
+    }
+    auto json = request_json("space/confirm", {{"aesjson", *encrypted}});
+    if (!json) {
+        return make_error(json.error().code, json.error().message);
+    }
+
+    auto message = json_string(*json, "message");
+    if (message.empty()) message = json_string(*json, "msg");
+    if (message.empty()) message = "预约成功";
+
+    Model::MutationResult result;
+    result.accepted = true;
+    result.message = message;
+    result.summary = make_record(seat_id, "图书馆座位预约", "reserved", {{"day", day}, {"segment", segment}, {"raw", json->dump()}});
+    return result;
+}
+
+Result<Model::MutationResult> LibrarySeatService::cancel_booking(const std::string &booking_id) {
+    if (booking_id.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "libbook cancel 需要 --booking-id <id>");
+    }
+
+    auto json = request_json("space/cancel", {{"id", booking_id}});
+    if (!json) {
+        return make_error(json.error().code, json.error().message);
+    }
+
+    auto message = json_string(*json, "message");
+    if (message.empty()) {
+        message = json_string(*json, "msg");
+    }
+    if (message.empty()) {
+        message = "取消成功";
+    }
+
+    Model::MutationResult result;
+    result.accepted = true;
+    result.message = message;
+    result.summary = make_record(booking_id, "图书馆预约", "cancelled", {{"bookingId", booking_id}});
+    return result;
+}
+
+} // namespace UBAANext

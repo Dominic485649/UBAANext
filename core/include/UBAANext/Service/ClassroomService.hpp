@@ -14,20 +14,31 @@
 #include <UBAANext/Storage/CacheStore.hpp>
 
 #include <string>
+#include <vector>
 
 namespace UBAANext {
 
 class ClassroomService {
 public:
+#if UBAANEXT_ENABLE_MOCKS
     ClassroomService(IHttpClient &http_client, ICacheStore &cache);
+#endif
     ClassroomService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
     Result<Model::ClassroomQueryResult> query_classrooms(int campus_id,
                                                          const std::string &date);
     Result<Model::ClassroomQueryResult> query_classrooms(int campus_id,
                                                          const std::string &date,
+                                                         const std::vector<int> &sections);
+    Result<Model::ClassroomQueryResult> query_classrooms(int campus_id,
+                                                         const std::string &date,
                                                          const std::string &username,
                                                          const std::string &password);
+    Result<Model::ClassroomQueryResult> query_classrooms(int campus_id,
+                                                         const std::string &date,
+                                                         const std::string &username,
+                                                         const std::string &password,
+                                                         const std::vector<int> &sections);
 
 private:
     IHttpClient &m_http_client;

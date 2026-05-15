@@ -7,6 +7,15 @@ add_library(UBAANextCore STATIC
     src/Service/ExamService.cpp
     src/Service/ClassroomService.cpp
     src/Service/TermService.cpp
+    src/Service/GradeService.cpp
+    src/Service/JudgeService.cpp
+    src/Service/SigninService.cpp
+    src/Service/LibrarySeatService.cpp
+    src/Service/SpocService.cpp
+    src/Service/EvaluationService.cpp
+    src/Service/VenueReservationService.cpp
+    src/Service/YgdkService.cpp
+    src/Service/BykcService.cpp
     src/Service/FeatureService.cpp
     src/Protocol/ByxtSession.cpp
     src/Protocol/AppBuaaSession.cpp
@@ -39,6 +48,10 @@ target_link_libraries(UBAANextCore
     PUBLIC nlohmann_json::nlohmann_json
 )
 
+target_compile_definitions(UBAANextCore
+    PUBLIC UBAANEXT_ENABLE_MOCKS=$<BOOL:${UBAANEXT_ENABLE_MOCKS}>
+)
+
 if(WIN32)
-    target_link_libraries(UBAANextCore PRIVATE winhttp crypt32)
+    target_link_libraries(UBAANextCore PRIVATE winhttp crypt32 bcrypt)
 endif()

@@ -20,7 +20,9 @@ namespace UBAANext {
 
 class ExamService {
 public:
+#if UBAANEXT_ENABLE_MOCKS
     ExamService(IHttpClient &http_client, ICacheStore &cache);
+#endif
     ExamService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
     Result<std::vector<Model::Exam>> get_exams(const std::string &term_code = "2025-2026-2");

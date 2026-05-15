@@ -1,3 +1,11 @@
 option(UBAANEXT_ENABLE_CPP26_EXPERIMENTS "Enable experimental C++26 features" OFF)
 option(UBAANEXT_BUILD_TESTS "Build UBAA Next test targets" ON)
 option(UBAANEXT_FETCH_DEPS "Download missing third-party dependencies with FetchContent" OFF)
+
+if(NOT DEFINED UBAANEXT_ENABLE_MOCKS)
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        set(UBAANEXT_ENABLE_MOCKS OFF CACHE BOOL "Build and expose mock implementations")
+    else()
+        set(UBAANEXT_ENABLE_MOCKS ON CACHE BOOL "Build and expose mock implementations")
+    endif()
+endif()

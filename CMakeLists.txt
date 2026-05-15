@@ -33,7 +33,9 @@ if(UBAANEXT_BUILD_TESTS)
 endif()
 
 add_subdirectory(core)
-add_subdirectory(mocks)
+if(UBAANEXT_ENABLE_MOCKS)
+    add_subdirectory(mocks)
+endif()
 add_subdirectory(apps/cli)
 
 if(UBAANEXT_BUILD_TESTS)

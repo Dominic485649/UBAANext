@@ -1,11 +1,22 @@
 #include <UBAANext/Service/FeatureService.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Version.hpp>
 #include <UBAANext/Protocol/ScoreSession.hpp>
+#include <UBAANext/Service/BykcService.hpp>
+#include <UBAANext/Service/EvaluationService.hpp>
+#include <UBAANext/Service/JudgeService.hpp>
+#include <UBAANext/Service/LibrarySeatService.hpp>
+#include <UBAANext/Service/SigninService.hpp>
+#include <UBAANext/Service/SpocService.hpp>
+#include <UBAANext/Service/VenueReservationService.hpp>
+#include <UBAANext/Service/YgdkService.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <sstream>
 #include <utility>
+#include <vector>
 
 namespace UBAANext {
 
@@ -50,9 +61,23 @@ Model::FeatureRecord make_record(std::string id,
     return record;
 }
 
+std::vector<std::string> split_colon_fields(const std::string &text) {
+    std::vector<std::string> parts;
+    std::string item;
+    std::istringstream input(text);
+    while (std::getline(input, item, ':')) {
+        parts.push_back(item);
+    }
+    return parts;
+}
+
+#if UBAANEXT_ENABLE_MOCKS
 std::vector<Model::FeatureRecord> records_for(const std::string &domain, const std::string &operation) {
     if (domain == "announcement") {
         return {make_record("ann-1", "系统公告", "published", {{"source", "mock"}, {"operation", operation}})};
+    }
+    if (domain == "app") {
+        return {make_record("app-version", "UBAA Next", "current", {{"version", UBAANEXT_VERSION_STRING}, {"source", "mock"}, {"operation", operation}})};
     }
     if (domain == "grade") {
         return {make_record("grade-1", "高等数学", "posted", {{"score", "95"}, {"term", "2025-2026-2"}})};
@@ -83,18 +108,19 @@ std::vector<Model::FeatureRecord> records_for(const std::string &domain, const s
     }
     return {make_record(domain + "-1", operation, "available", {{"domain", domain}, {"operation", operation}})};
 }
+#endif
 
 } // namespace
 
 FeatureService::FeatureService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
-    : m_http_client(http_client), m_mode(mode) {
-    (void)cache;
-}
+    : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
 
 Result<Model::FeatureRecord> FeatureService::user_info() {
+#if UBAANEXT_ENABLE_MOCKS
     if (m_mode == ConnectionMode::Mock) {
         return make_record("user", "模拟用户", "active", {{"studentId", "mock-user"}, {"college", "BUAA"}});
     }
+#endif
 
     HttpRequest request;
     request.method = HttpMethod::Get;
@@ -136,8 +162,165 @@ Result<Model::FeatureRecord> FeatureService::user_info() {
 }
 
 Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string &domain, const std::string &operation) {
+#if UBAANEXT_ENABLE_MOCKS
     if (m_mode == ConnectionMode::Mock) {
         return mock_list(domain, operation);
+    }
+#endif
+
+    if (domain == "app") {
+        if (operation == "version") {
+            return std::vector<Model::FeatureRecord>{make_record("app-version", "UBAA Next", "current", {{"version", UBAANEXT_VERSION_STRING}, {"api", "local-cli"}})};
+        }
+        return make_error(ErrorCode::InvalidArgument, "未知的 app 查询操作: " + operation);
+    }
+
+    if (domain == "judge") {
+        JudgeService service(m_http_client, m_cache, m_mode);
+        JudgeAssignmentQuery query;
+        if (operation.rfind("assignments", 0) == 0) {
+            if (operation.rfind("assignments:", 0) == 0) {
+                auto parts = split_colon_fields(operation.substr(12));
+                if (!parts.empty()) query.course_id = parts[0];
+                query.include_expired = parts.size() > 1 && parts[1] == "include-expired";
+                query.include_history = parts.size() > 2 && parts[2] == "include-history";
+            }
+        } else {
+            query.course_id = operation;
+        }
+        return service.list_assignments(query);
+    }
+
+    if (domain == "spoc" && operation.rfind("assignments", 0) == 0) {
+        SpocService service(m_http_client, m_cache, m_mode);
+        SpocAssignmentQuery query;
+        if (operation.rfind("assignments:", 0) == 0) {
+            auto parts = split_colon_fields(operation.substr(12));
+            query.pending_only = !parts.empty() && parts[0] == "pending";
+            query.include_expired = parts.size() > 1 && parts[1] == "include-expired";
+        }
+        return service.list_assignments(query);
+    }
+
+    if (domain == "signin" && operation == "today") {
+        SigninService service(m_http_client, m_cache, m_mode);
+        return service.list_today();
+    }
+
+    if (domain == "evaluation" && operation == "list") {
+        EvaluationService service(m_http_client, m_cache, m_mode);
+        return service.list_evaluations();
+    }
+
+    if (domain == "ygdk") {
+        YgdkService service(m_http_client, m_cache, m_mode);
+        if (operation == "overview") {
+            return service.overview();
+        }
+        if (operation == "records") {
+            return service.records();
+        }
+        if (operation.rfind("records:", 0) == 0) {
+            auto rest = operation.substr(8);
+            auto sep = rest.find(':');
+            int page = sep == std::string::npos ? 1 : std::stoi(rest.substr(0, sep));
+            int size = sep == std::string::npos ? 20 : std::stoi(rest.substr(sep + 1));
+            return service.records(page, size);
+        }
+        return make_error(ErrorCode::InvalidArgument, "未知的 ygdk 查询操作: " + operation);
+    }
+
+    if (domain == "bykc") {
+        BykcService service(m_http_client, m_cache, m_mode);
+        if (operation == "profile") return service.profile();
+        if (operation == "courses") return service.courses();
+        if (operation.rfind("courses:", 0) == 0) {
+            auto parts = split_colon_fields(operation.substr(8));
+            BykcCourseQuery query;
+            if (!parts.empty() && !parts[0].empty()) query.page = std::stoi(parts[0]);
+            if (parts.size() > 1 && !parts[1].empty()) query.size = std::stoi(parts[1]);
+            if (parts.size() > 2) query.all = parts[2] == "all";
+            if (parts.size() > 3) query.status = parts[3];
+            if (parts.size() > 4) query.category = parts[4];
+            if (parts.size() > 5) query.sub_category = parts[5];
+            if (parts.size() > 6) query.campus = parts[6];
+            if (parts.size() > 7) query.keyword = parts[7];
+            return service.courses(query);
+        }
+        if (operation == "chosen") return service.chosen();
+        if (operation == "stats") return service.stats();
+        return make_error(ErrorCode::InvalidArgument, "未知的 bykc 查询操作: " + operation);
+    }
+
+    if (domain == "cgyy") {
+        VenueReservationService service(m_http_client, m_cache, m_mode);
+        if (operation == "sites") {
+            return service.list_sites();
+        }
+        if (operation == "purpose-types") {
+            return service.list_purpose_types();
+        }
+        if (operation == "day-info") {
+            return make_error(ErrorCode::InvalidArgument, "cgyy day-info 需要 --date 和 --id/--site-id");
+        }
+        if (operation.rfind("day-info:", 0) == 0) {
+            auto rest = operation.substr(9);
+            auto sep = rest.find(':');
+            return service.day_info(sep == std::string::npos ? "" : rest.substr(0, sep), sep == std::string::npos ? rest : rest.substr(sep + 1));
+        }
+        if (operation == "orders") {
+            return service.list_orders();
+        }
+        if (operation.rfind("orders:", 0) == 0) {
+            auto rest = operation.substr(7);
+            auto sep = rest.find(':');
+            int page = sep == std::string::npos ? 1 : std::stoi(rest.substr(0, sep));
+            int size = sep == std::string::npos ? 20 : std::stoi(rest.substr(sep + 1));
+            return service.list_orders(page, size);
+        }
+        return make_error(ErrorCode::InvalidArgument, "未知的 cgyy 查询操作: " + operation);
+    }
+
+    if (domain == "libbook") {
+        LibrarySeatService service(m_http_client, m_cache, m_mode);
+        if (operation == "libraries") {
+            return service.list_libraries("");
+        }
+        if (operation == "reservations") {
+            return service.list_reservations();
+        }
+        if (operation.rfind("reservations:", 0) == 0) {
+            auto rest = operation.substr(13);
+            auto sep = rest.find(':');
+            int page = sep == std::string::npos ? 1 : std::stoi(rest.substr(0, sep));
+            int size = sep == std::string::npos ? 20 : std::stoi(rest.substr(sep + 1));
+            return service.list_reservations(page, size);
+        }
+        if (operation == "areas") {
+            return service.list_areas("", "");
+        }
+        if (operation == "seats") {
+            return service.list_seats("", "");
+        }
+        if (operation.rfind("areas:", 0) == 0) {
+            auto rest = operation.substr(6);
+            auto first = rest.find(':');
+            auto second = first == std::string::npos ? std::string::npos : rest.find(':', first + 1);
+            return service.list_areas(first == std::string::npos ? rest : rest.substr(0, first),
+                                      first == std::string::npos ? "" : second == std::string::npos ? rest.substr(first + 1) : rest.substr(first + 1, second - first - 1),
+                                      second == std::string::npos ? "" : rest.substr(second + 1));
+        }
+        if (operation.rfind("seats:", 0) == 0) {
+            auto rest = operation.substr(6);
+            auto first = rest.find(':');
+            auto second = first == std::string::npos ? std::string::npos : rest.find(':', first + 1);
+            auto third = second == std::string::npos ? std::string::npos : rest.find(':', second + 1);
+            return service.list_seats(first == std::string::npos ? rest : rest.substr(0, first),
+                                      first == std::string::npos ? "" : second == std::string::npos ? rest.substr(first + 1) : rest.substr(first + 1, second - first - 1),
+                                      second == std::string::npos ? "" : third == std::string::npos ? rest.substr(second + 1) : rest.substr(second + 1, third - second - 1),
+                                      third == std::string::npos ? "" : rest.substr(third + 1));
+        }
+        return make_error(ErrorCode::InvalidArgument, "未知的 libbook 查询操作: " + operation);
     }
 
     if (domain == "grade") {
@@ -193,7 +376,7 @@ Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string
         }
     }
 
-    return make_error(ErrorCode::NotImplemented, domain + " " + operation + " 真实协议尚未接入，请先使用 --mock 验证命令形态");
+    return make_error(ErrorCode::NotImplemented, domain + " " + operation + " 真实协议尚未接入");
 }
 
 Result<Model::FeatureRecord> FeatureService::show(const std::string &domain,
@@ -202,10 +385,41 @@ Result<Model::FeatureRecord> FeatureService::show(const std::string &domain,
     if (id.empty()) {
         return make_error(ErrorCode::InvalidArgument, domain + " " + operation + " 需要 --id 或对应业务 ID");
     }
-    if (m_mode != ConnectionMode::Mock) {
-        return make_error(ErrorCode::NotImplemented, domain + " " + operation + " 真实协议尚未接入，请先使用 --mock 验证命令形态");
+#if UBAANEXT_ENABLE_MOCKS
+    if (m_mode == ConnectionMode::Mock) {
+        return mock_show(domain, operation, id);
     }
-    return mock_show(domain, operation, id);
+#endif
+    if (domain == "judge") {
+        JudgeService service(m_http_client, m_cache, m_mode);
+        if (operation == "details") {
+            return service.show_assignment_details(id);
+        }
+        return service.show_assignment(id);
+    }
+    if (domain == "spoc" && operation == "assignment") {
+        SpocService service(m_http_client, m_cache, m_mode);
+        return service.show_assignment(id);
+    }
+    if (domain == "bykc" && operation == "course") {
+        BykcService service(m_http_client, m_cache, m_mode);
+        return service.show_course(id);
+    }
+    if (domain == "cgyy") {
+        VenueReservationService service(m_http_client, m_cache, m_mode);
+        if (operation == "show") {
+            return service.show_order(id);
+        }
+        if (operation == "lock-code") {
+            return service.lock_code();
+        }
+        return make_error(ErrorCode::InvalidArgument, "未知的 cgyy 详情操作: " + operation);
+    }
+    if (domain == "libbook" && operation == "area") {
+        LibrarySeatService service(m_http_client, m_cache, m_mode);
+        return service.show_area(id);
+    }
+    return make_error(ErrorCode::NotImplemented, domain + " " + operation + " 真实协议尚未接入");
 }
 
 Result<Model::MutationResult> FeatureService::mutate(const std::string &domain,
@@ -215,13 +429,102 @@ Result<Model::MutationResult> FeatureService::mutate(const std::string &domain,
     if (!confirmed) {
         return make_error(ErrorCode::InvalidArgument, domain + " " + operation + " 是有副作用操作，必须显式传入 --confirm 或 --yes");
     }
-    Model::MutationResult result;
-    result.accepted = true;
-    result.message = domain + " " + operation + " 已通过安全门";
-    result.summary = make_record(id.empty() ? domain + "-mutation" : id, operation, "accepted", {{"domain", domain}});
-    return result;
+
+#if UBAANEXT_ENABLE_MOCKS
+    if (m_mode == ConnectionMode::Mock) {
+        Model::MutationResult result;
+        result.accepted = true;
+        result.message = domain + " " + operation + " 已通过安全门";
+        result.summary = make_record(id.empty() ? domain + "-mutation" : id, operation, "accepted", {{"domain", domain}});
+        return result;
+    }
+#endif
+
+    if (domain == "signin" && operation == "do") {
+        SigninService service(m_http_client, m_cache, m_mode);
+        return service.perform_signin(id);
+    }
+
+    if (domain == "bykc" && operation == "select") {
+        BykcService service(m_http_client, m_cache, m_mode);
+        return service.select_course(id);
+    }
+    if (domain == "bykc" && operation == "unselect") {
+        BykcService service(m_http_client, m_cache, m_mode);
+        return service.unselect_course(id);
+    }
+    if (domain == "bykc" && operation.rfind("sign:", 0) == 0) {
+        auto first = operation.find(':');
+        auto second = first == std::string::npos ? std::string::npos : operation.find(':', first + 1);
+        auto third = second == std::string::npos ? std::string::npos : operation.find(':', second + 1);
+        if (first == std::string::npos || second == std::string::npos || third == std::string::npos) {
+            return make_error(ErrorCode::InvalidArgument, "bykc sign 需要 --sign-type、--lat 和 --lng");
+        }
+        int sign_type = std::stoi(operation.substr(first + 1, second - first - 1));
+        double lat = std::stod(operation.substr(second + 1, third - second - 1));
+        double lng = std::stod(operation.substr(third + 1));
+        BykcService service(m_http_client, m_cache, m_mode);
+        return service.sign_course(id, lat, lng, sign_type);
+    }
+    if (domain == "evaluation" && operation == "submit") {
+        EvaluationService service(m_http_client, m_cache, m_mode);
+        return service.submit_evaluations(id);
+    }
+    if (domain == "ygdk" && operation.rfind("submit:", 0) == 0) {
+        auto rest = operation.substr(7);
+        auto first = rest.find('\n');
+        auto second = first == std::string::npos ? std::string::npos : rest.find('\n', first + 1);
+        auto third = second == std::string::npos ? std::string::npos : rest.find('\n', second + 1);
+        auto fourth = third == std::string::npos ? std::string::npos : rest.find('\n', third + 1);
+        if (first == std::string::npos || second == std::string::npos || third == std::string::npos || fourth == std::string::npos) {
+            return make_error(ErrorCode::InvalidArgument, "ygdk submit 参数不完整");
+        }
+        YgdkService service(m_http_client, m_cache, m_mode);
+        return service.submit_clockin(id,
+                                      rest.substr(0, first),
+                                      rest.substr(first + 1, second - first - 1),
+                                      rest.substr(second + 1, third - second - 1),
+                                      rest.substr(third + 1, fourth - third - 1) == "1",
+                                      rest.substr(fourth + 1));
+    }
+    if (domain == "cgyy" && operation.rfind("reserve:", 0) == 0) {
+        auto rest = operation.substr(8);
+        std::vector<std::string> parts;
+        size_t start = 0;
+        while (true) {
+            auto pos = rest.find('\n', start);
+            parts.push_back(pos == std::string::npos ? rest.substr(start) : rest.substr(start, pos - start));
+            if (pos == std::string::npos) break;
+            start = pos + 1;
+        }
+        if (parts.size() < 9) {
+            return make_error(ErrorCode::InvalidArgument, "cgyy reserve 参数不完整");
+        }
+        VenueReservationService service(m_http_client, m_cache, m_mode);
+        return service.reserve(parts[0], parts[1], parts[2], id, parts[3], parts[4], parts[5], parts[6], parts[7], parts[8]);
+    }
+    if (domain == "cgyy" && operation == "cancel") {
+        VenueReservationService service(m_http_client, m_cache, m_mode);
+        return service.cancel_order(id);
+    }
+    if (domain == "libbook" && operation.rfind("book:", 0) == 0) {
+        auto rest = operation.substr(5);
+        auto sep = rest.find('\n');
+        if (sep == std::string::npos) {
+            return make_error(ErrorCode::InvalidArgument, "libbook book 参数不完整");
+        }
+        LibrarySeatService service(m_http_client, m_cache, m_mode);
+        return service.reserve_seat(id, rest.substr(0, sep), rest.substr(sep + 1));
+    }
+    if (domain == "libbook" && operation == "cancel") {
+        LibrarySeatService service(m_http_client, m_cache, m_mode);
+        return service.cancel_booking(id);
+    }
+
+    return make_error(ErrorCode::NotImplemented, domain + " " + operation + " 真实写操作尚未接入");
 }
 
+#if UBAANEXT_ENABLE_MOCKS
 Result<std::vector<Model::FeatureRecord>> FeatureService::mock_list(const std::string &domain, const std::string &operation) const {
     return records_for(domain, operation);
 }
@@ -234,5 +537,6 @@ Result<Model::FeatureRecord> FeatureService::mock_show(const std::string &domain
     record.id = id;
     return record;
 }
+#endif
 
 } // namespace UBAANext

@@ -53,18 +53,22 @@ Result<std::vector<Model::Exam>> parse_real_exams(const std::string &body) {
 
 } // namespace
 
+#if UBAANEXT_ENABLE_MOCKS
 ExamService::ExamService(IHttpClient &http_client, ICacheStore &cache)
     : m_http_client(http_client), m_cache(cache), m_mode(ConnectionMode::Mock) {}
+#endif
 
 ExamService::ExamService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
     : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
 
 Result<std::vector<Model::Exam>> ExamService::get_exams(const std::string &term_code) {
     std::string cache_key = std::string(kCacheKeyExams) + ":" + term_code;
+#if UBAANEXT_ENABLE_MOCKS
     auto cached = m_cache.get(cache_key);
     if (m_mode == ConnectionMode::Mock && cached.has_value()) {
         return Parser::parse_exams(*cached);
     }
+#endif
 
     if (m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) {
         auto activate_result = Protocol::Byxt::ensure_session(m_http_client, m_mode);
@@ -92,6 +96,7 @@ Result<std::vector<Model::Exam>> ExamService::get_exams(const std::string &term_
         return parse_real_exams(response.body);
     }
 
+#if UBAANEXT_ENABLE_MOCKS
     HttpRequest req;
     req.method = HttpMethod::Get;
     req.url = "/exam/list";
@@ -112,6 +117,10 @@ Result<std::vector<Model::Exam>> ExamService::get_exams(const std::string &term_
     }
 
     return parsed;
+#else
+    (void)cache_key;
+    return make_error(ErrorCode::InvalidArgument, "考试查询需要 Direct 或 WebVPN 连接模式");
+#endif
 }
 
 } // namespace UBAANext

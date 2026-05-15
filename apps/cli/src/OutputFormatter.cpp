@@ -85,6 +85,34 @@ void OutputFormatter::print_exams(const std::vector<UBAANext::Model::Exam> &exam
     }
 }
 
+void OutputFormatter::print_grades(const std::vector<UBAANext::Model::Grade> &grades) {
+    if (m_json) {
+        json arr = json::array();
+        for (const auto &g : grades) {
+            arr.push_back({
+                {"id", g.id},
+                {"courseName", g.course_name},
+                {"courseCode", g.course_code},
+                {"courseType", g.course_type},
+                {"credit", g.credit},
+                {"score", g.score},
+                {"gradePoint", g.grade_point},
+                {"termCode", g.term_code},
+                {"status", g.raw_status},
+            });
+        }
+        json out = {{"ok", true}, {"data", {{"grades", arr}}}, {"error", nullptr}};
+        Console::println("{}", out.dump(2));
+        return;
+    }
+
+    Console::println("成绩:");
+    for (size_t i = 0; i < grades.size(); ++i) {
+        const auto &g = grades[i];
+        Console::println("{}. {} | {} | {} 学分 | {}", i + 1, g.course_name, g.score, g.credit, g.term_code);
+    }
+}
+
 void OutputFormatter::print_classrooms(const UBAANext::Model::ClassroomQueryResult &qr) {
     if (m_json) {
         json buildings = json::object();
@@ -249,7 +277,7 @@ void OutputFormatter::print_record(const std::string &key, const UBAANext::Model
 
 void OutputFormatter::print_mutation(const UBAANext::Model::MutationResult &result) {
     if (m_json) {
-        json out = {{"ok", true}, {"data", {{"message", result.message}, {"result", record_to_json(result.summary)}}}, {"error", nullptr}};
+        json out = {{"ok", true}, {"data", {{"accepted", result.accepted}, {"message", result.message}, {"result", record_to_json(result.summary)}}}, {"error", nullptr}};
         Console::println("{}", out.dump(2));
         return;
     }

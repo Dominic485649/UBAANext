@@ -31,6 +31,14 @@ UBAANext::TermService ServiceFactory::create_term_service() {
     return UBAANext::TermService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
 }
 
+UBAANext::GradeService ServiceFactory::create_grade_service() {
+    return UBAANext::GradeService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::JudgeService ServiceFactory::create_judge_service() {
+    return UBAANext::JudgeService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
 UBAANext::FeatureService ServiceFactory::create_feature_service() {
     return UBAANext::FeatureService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
 }

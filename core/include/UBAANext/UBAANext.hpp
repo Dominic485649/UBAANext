@@ -18,6 +18,7 @@
 #include <UBAANext/Model/Classroom.hpp>
 #include <UBAANext/Model/Course.hpp>
 #include <UBAANext/Model/Exam.hpp>
+#include <UBAANext/Model/Grade.hpp>
 #include <UBAANext/Model/Term.hpp>
 #include <UBAANext/Model/Week.hpp>
 
@@ -45,3 +46,4 @@
 #include <UBAANext/Service/ClassroomService.hpp>
 #include <UBAANext/Service/CourseService.hpp>
 #include <UBAANext/Service/ExamService.hpp>
+#include <UBAANext/Service/GradeService.hpp>

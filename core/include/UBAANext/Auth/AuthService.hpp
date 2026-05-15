@@ -24,7 +24,9 @@ namespace UBAANext {
  * @brief 连接模式
  */
 enum class ConnectionMode {
+#if UBAANEXT_ENABLE_MOCKS
     Mock,       ///< 模拟数据
+#endif
     Direct,     ///< 直连内网
     WebVPN,     ///< 通过 WebVPN 网关
 };
@@ -43,11 +45,13 @@ class AuthService {
 public:
     AuthService(IHttpClient &http_client, ISecureStore &secure_store);
 
+#if UBAANEXT_ENABLE_MOCKS
     /**
      * @brief 执行模拟登录（无网络调用）
      */
     Result<Model::Account> login_mock(const std::string &username,
                                       const std::string &password);
+#endif
 
     /**
      * @brief 执行真实 CAS 登录

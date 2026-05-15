@@ -59,6 +59,7 @@ bool is_allowed_redirect_url(const std::string &url) {
 AuthService::AuthService(IHttpClient &http_client, ISecureStore &secure_store)
     : m_http_client(http_client), m_session_manager(secure_store) {}
 
+#if UBAANEXT_ENABLE_MOCKS
 Result<Model::Account> AuthService::login_mock(const std::string &username,
                                                 const std::string &password) {
     if (username.empty()) {
@@ -76,6 +77,7 @@ Result<Model::Account> AuthService::login_mock(const std::string &username,
     m_session.set_account(account);
     return account;
 }
+#endif
 
 // ── 真实 CAS 登录 ──────────────────────────────────────────
 

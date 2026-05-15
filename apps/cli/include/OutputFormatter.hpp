@@ -10,6 +10,7 @@
 #include <UBAANext/Base/Error.hpp>
 #include <UBAANext/Model/Course.hpp>
 #include <UBAANext/Model/Exam.hpp>
+#include <UBAANext/Model/Grade.hpp>
 #include <UBAANext/Model/Classroom.hpp>
 #include <UBAANext/Model/Term.hpp>
 #include <UBAANext/Model/Week.hpp>
@@ -35,6 +36,7 @@ public:
 
     void print_courses(const std::vector<UBAANext::Model::Course> &courses, int week = 0);
     void print_exams(const std::vector<UBAANext::Model::Exam> &exams);
+    void print_grades(const std::vector<UBAANext::Model::Grade> &grades);
     void print_classrooms(const UBAANext::Model::ClassroomQueryResult &qr);
     void print_terms(const std::vector<UBAANext::Model::Term> &terms);
     void print_weeks(const std::vector<UBAANext::Model::Week> &weeks);

@@ -13,7 +13,14 @@ target_include_directories(ubaa
 
 target_link_libraries(ubaa
     PRIVATE UBAANextCore
-    PRIVATE UBAANextMocks
+)
+
+if(UBAANEXT_ENABLE_MOCKS)
+    target_link_libraries(ubaa PRIVATE UBAANextMocks)
+endif()
+
+target_compile_definitions(ubaa
+    PRIVATE UBAANEXT_ENABLE_MOCKS=$<BOOL:${UBAANEXT_ENABLE_MOCKS}>
 )
 
 if(WIN32)

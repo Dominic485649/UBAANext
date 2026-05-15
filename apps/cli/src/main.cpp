@@ -31,12 +31,16 @@
 #include "ServiceFactory.hpp"
 
 #include <UBAANext/Version.hpp>
+#include <UBAANext/Model/FeatureRecord.hpp>
+#include <UBAANext/Storage/MemoryCacheStore.hpp>
 #if defined(_WIN32)
 #include <UBAANext/Net/WinHttpClient.hpp>
 #endif
 
+#if UBAANEXT_ENABLE_MOCKS
 #include <UBAANextMocks/MockCacheStore.hpp>
 #include <UBAANextMocks/MockHttpClient.hpp>
+#endif
 
 #include <nlohmann/json.hpp>
 
@@ -44,6 +48,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
+#include <fstream>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -80,6 +86,40 @@ struct CliArgs {
     std::string library_id;
     std::string booking_id;
     std::string order_id;
+    std::string site_id;
+    std::string space_id;
+    std::string purpose_type;
+    std::string theme;
+    std::string phone;
+    std::string joiners;
+    std::string captcha;
+    std::string token;
+    std::string item_id;
+    std::string place;
+    std::string photo_path;
+    std::string seat_id;
+    std::string segment;
+    std::string sections;
+    std::string input;
+    int page = 1;
+    int size = 20;
+    bool all = false;
+    std::string status;
+    std::string category;
+    std::string sub_category;
+    std::string keyword;
+    bool include_expired = false;
+    bool include_history = false;
+    bool pending_only = false;
+    bool share = false;
+    bool has_lat = false;
+    bool has_lng = false;
+    double lat = 0.0;
+    double lng = 0.0;
+    int sign_type = 0;
+    std::string start_time;
+    std::string end_time;
+    std::string storey_id;
     bool confirmed = false;
     std::string error_message;  // 详细的错误信息
 };
@@ -91,6 +131,19 @@ struct CliArgs {
     auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), value);
     if (ec == std::errc{} && ptr == sv.data() + sv.size()) {
         return value;
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] std::optional<double> parse_double(std::string_view sv) {
+    try {
+        std::string text(sv);
+        size_t pos = 0;
+        double value = std::stod(text, &pos);
+        if (pos == text.size()) {
+            return value;
+        }
+    } catch (...) {
     }
     return std::nullopt;
 }
@@ -108,6 +161,28 @@ struct CliArgs {
 
 [[nodiscard]] bool is_valid_mode(const std::string &mode) {
     return mode == "vpn" || mode == "direct";
+}
+
+[[nodiscard]] std::optional<std::vector<int>> parse_sections_arg(const std::string &text) {
+    std::vector<int> sections;
+    std::string current;
+    for (char ch : text) {
+        if (ch == ',') {
+            if (current.empty()) return std::nullopt;
+            auto parsed = parse_int(current);
+            if (!parsed || *parsed < 1 || *parsed > 20) return std::nullopt;
+            sections.push_back(*parsed);
+            current.clear();
+        } else {
+            current.push_back(ch);
+        }
+    }
+    if (!current.empty()) {
+        auto parsed = parse_int(current);
+        if (!parsed || *parsed < 1 || *parsed > 20) return std::nullopt;
+        sections.push_back(*parsed);
+    }
+    return sections;
 }
 
 CliArgs parse_args(int argc, char *argv[]) {
@@ -128,7 +203,8 @@ CliArgs parse_args(int argc, char *argv[]) {
          args.command == "spoc" || args.command == "judge" ||
          args.command == "signin" || args.command == "ygdk" ||
          args.command == "evaluation" || args.command == "bykc" ||
-         args.command == "cgyy" || args.command == "libbook") &&
+         args.command == "cgyy" || args.command == "libbook" ||
+         args.command == "todo") &&
         i < argc) {
         args.subcommand = argv[i];
         ++i;
@@ -143,7 +219,12 @@ CliArgs parse_args(int argc, char *argv[]) {
     for (; i < argc; ++i) {
         std::string_view arg = argv[i];
         if (arg == "--mock") {
+#if UBAANEXT_ENABLE_MOCKS
             args.mock = true;
+#else
+            args.error_message = "Release 构建不支持 --mock";
+            args.parse_error = true;
+#endif
         } else if (arg == "--json") {
             args.json_output = true;
         } else if (arg == "--username" && i + 1 < argc) {
@@ -206,6 +287,112 @@ CliArgs parse_args(int argc, char *argv[]) {
             args.booking_id = argv[++i];
         } else if (arg == "--order-id" && i + 1 < argc) {
             args.order_id = argv[++i];
+        } else if (arg == "--site-id" && i + 1 < argc) {
+            args.site_id = argv[++i];
+        } else if (arg == "--page" && i + 1 < argc) {
+            if (auto v = parse_int(argv[++i])) {
+                if (*v < 1) {
+                    args.error_message = "--page 值必须大于等于 1";
+                    args.parse_error = true;
+                } else {
+                    args.page = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--page 值无效 '{}'", argv[i]);
+                args.parse_error = true;
+            }
+        } else if ((arg == "--size" || arg == "--limit") && i + 1 < argc) {
+            if (auto v = parse_int(argv[++i])) {
+                if (*v < 1 || *v > 200) {
+                    args.error_message = "--size 值必须在 1-200 之间";
+                    args.parse_error = true;
+                } else {
+                    args.size = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--size 值无效 '{}'", argv[i]);
+                args.parse_error = true;
+            }
+        } else if (arg == "--all") {
+            args.all = true;
+        } else if (arg == "--status" && i + 1 < argc) {
+            args.status = argv[++i];
+        } else if (arg == "--category" && i + 1 < argc) {
+            args.category = argv[++i];
+        } else if ((arg == "--sub-category" || arg == "--subcategory") && i + 1 < argc) {
+            args.sub_category = argv[++i];
+        } else if (arg == "--keyword" && i + 1 < argc) {
+            args.keyword = argv[++i];
+        } else if (arg == "--start-time" && i + 1 < argc) {
+            args.start_time = argv[++i];
+        } else if (arg == "--end-time" && i + 1 < argc) {
+            args.end_time = argv[++i];
+        } else if (arg == "--storey-id" && i + 1 < argc) {
+            args.storey_id = argv[++i];
+        } else if (arg == "--space-id" && i + 1 < argc) {
+            args.space_id = argv[++i];
+        } else if (arg == "--purpose-type" && i + 1 < argc) {
+            args.purpose_type = argv[++i];
+        } else if (arg == "--theme" && i + 1 < argc) {
+            args.theme = argv[++i];
+        } else if (arg == "--phone" && i + 1 < argc) {
+            args.phone = argv[++i];
+        } else if (arg == "--joiners" && i + 1 < argc) {
+            args.joiners = argv[++i];
+        } else if (arg == "--captcha" && i + 1 < argc) {
+            args.captcha = argv[++i];
+        } else if (arg == "--token" && i + 1 < argc) {
+            args.token = argv[++i];
+        } else if (arg == "--item-id" && i + 1 < argc) {
+            args.item_id = argv[++i];
+        } else if (arg == "--place" && i + 1 < argc) {
+            args.place = argv[++i];
+        } else if (arg == "--photo" && i + 1 < argc) {
+            args.photo_path = argv[++i];
+        } else if (arg == "--seat-id" && i + 1 < argc) {
+            args.seat_id = argv[++i];
+        } else if (arg == "--segment" && i + 1 < argc) {
+            args.segment = argv[++i];
+        } else if (arg == "--sections" && i + 1 < argc) {
+            args.sections = argv[++i];
+        } else if (arg == "--input" && i + 1 < argc) {
+            args.input = argv[++i];
+        } else if (arg == "--include-expired") {
+            args.include_expired = true;
+        } else if (arg == "--include-history") {
+            args.include_history = true;
+        } else if (arg == "--pending-only") {
+            args.pending_only = true;
+        } else if (arg == "--share") {
+            args.share = true;
+        } else if (arg == "--lat" && i + 1 < argc) {
+            if (auto v = parse_double(argv[++i])) {
+                args.lat = *v;
+                args.has_lat = true;
+            } else {
+                args.error_message = UBAANextCli::Console::format("--lat 值无效 '{}'", argv[i]);
+                args.parse_error = true;
+            }
+        } else if (arg == "--lng" && i + 1 < argc) {
+            if (auto v = parse_double(argv[++i])) {
+                args.lng = *v;
+                args.has_lng = true;
+            } else {
+                args.error_message = UBAANextCli::Console::format("--lng 值无效 '{}'", argv[i]);
+                args.parse_error = true;
+            }
+        } else if (arg == "--sign-type" && i + 1 < argc) {
+            if (auto v = parse_int(argv[++i])) {
+                if (*v != 1 && *v != 2) {
+                    args.error_message = "--sign-type 只能为 1(签到) 或 2(签退)";
+                    args.parse_error = true;
+                } else {
+                    args.sign_type = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--sign-type 值无效 '{}'", argv[i]);
+                args.parse_error = true;
+            }
         } else if (arg == "--confirm" || arg == "--yes") {
             args.confirmed = true;
         } else if (arg == "--base-url" && i + 1 < argc) {
@@ -272,17 +459,23 @@ CliArgs parse_args(int argc, char *argv[]) {
 AppContext build_context(bool mock, const std::string &mode, const CliConfig &config) {
     AppContext ctx;
     ctx.mock_mode = mock;
+#if UBAANEXT_ENABLE_MOCKS
     if (mock) {
         ctx.conn_mode = um::ConnectionMode::Mock;
-    } else {
+    } else
+#endif
+    {
         ctx.conn_mode = (mode == "direct") ? um::ConnectionMode::Direct : um::ConnectionMode::WebVPN;
     }
     ctx.config = config;
 
+#if UBAANEXT_ENABLE_MOCKS
     if (mock) {
         ctx.http = std::make_unique<UBAANextMocks::MockHttpClient>();
         ctx.cache = std::make_unique<UBAANextMocks::MockCacheStore>();
-    } else {
+    } else
+#endif
+    {
 #if defined(_WIN32)
         um::WinHttpConfig cfg;
         cfg.follow_redirects = false;
@@ -293,10 +486,9 @@ AppContext build_context(bool mock, const std::string &mode, const CliConfig &co
         client->load_cookies(get_cookie_file_path().string());
         ctx.http = std::move(client);
 #else
-        ctx.http = std::make_unique<UBAANextMocks::MockHttpClient>();
-        ctx.conn_mode = um::ConnectionMode::Mock;
+        ctx.http = nullptr;
 #endif
-        ctx.cache = std::make_unique<UBAANextMocks::MockCacheStore>();
+        ctx.cache = std::make_unique<um::MemoryCacheStore>();
     }
 #if defined(_WIN32)
     ctx.store = std::make_unique<UBAANextCli::PlainFileStore>(get_session_file_path(), true);
@@ -326,7 +518,9 @@ nlohmann::json get_help_json() {
     json login_opts = {
         {{"name", "--username"}, {"description", "学号"}, {"required", true}},
         {{"name", "--password"}, {"description", "密码"}, {"required", true}},
+#if UBAANEXT_ENABLE_MOCKS
         {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
+#endif
         {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
     };
     add_cmd("login", "登录", login_opts);
@@ -335,27 +529,35 @@ nlohmann::json get_help_json() {
     add_cmd("logout", "登出");
 
     json course_opts = {
+#if UBAANEXT_ENABLE_MOCKS
         {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
+#endif
         {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
     };
     add_cmd("course today", "显示今天的课程", course_opts);
 
     json course_date_opts = {
         {{"name", "--date"}, {"description", "日期 (yyyy-MM-dd)"}, {"required", true}},
+#if UBAANEXT_ENABLE_MOCKS
         {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
+#endif
         {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
     };
     add_cmd("course date", "显示指定日期的课程", course_date_opts);
 
     json course_week_opts = {
         {{"name", "--week"}, {"description", "周次 (1-30)"}, {"required", true}},
+#if UBAANEXT_ENABLE_MOCKS
         {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
+#endif
         {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
     };
     add_cmd("course week", "显示指定周次的课程", course_week_opts);
 
     json exam_opts = {
+#if UBAANEXT_ENABLE_MOCKS
         {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
+#endif
         {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
     };
     add_cmd("exam list", "显示考试列表", exam_opts);
@@ -363,13 +565,17 @@ nlohmann::json get_help_json() {
     json classroom_opts = {
         {{"name", "--campus"}, {"description", "校区 ID (1-10)"}, {"required", true}},
         {{"name", "--date"}, {"description", "日期 (yyyy-MM-dd)"}, {"required", true}},
+#if UBAANEXT_ENABLE_MOCKS
         {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
+#endif
         {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
     };
     add_cmd("classroom query", "查询空闲教室", classroom_opts);
 
     json term_opts = {
+#if UBAANEXT_ENABLE_MOCKS
         {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
+#endif
         {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
     };
     add_cmd("term list", "显示学期列表", term_opts);
@@ -384,6 +590,31 @@ nlohmann::json get_help_json() {
     add_cmd("config set", "设置配置项", config_set_opts);
 
     add_cmd("cache clear", "清除缓存");
+    add_cmd("user info", "显示用户信息");
+    add_cmd("app version", "显示应用版本信息");
+    add_cmd("app announcement", "显示公告");
+    add_cmd("grade list", "显示指定学期成绩");
+    add_cmd("grade all", "显示全部成绩");
+    add_cmd("spoc assignments", "显示 SPOC 作业");
+    add_cmd("spoc assignment show", "显示 SPOC 作业详情");
+    add_cmd("judge assignments", "显示希冀作业");
+    add_cmd("judge assignment show", "显示希冀作业概要");
+    add_cmd("judge assignment details", "显示希冀作业详情");
+    add_cmd("judge assignment details-batch", "批量显示希冀作业详情");
+    add_cmd("signin today", "显示今日签到");
+    add_cmd("signin do", "执行签到");
+    add_cmd("bykc profile", "显示博雅资料");
+    add_cmd("bykc courses", "显示博雅课程");
+    add_cmd("bykc chosen", "显示已选博雅课程");
+    add_cmd("bykc stats", "显示博雅统计");
+    add_cmd("cgyy sites", "显示场馆列表");
+    add_cmd("cgyy day-info", "显示场馆日期可预约信息");
+    add_cmd("libbook libraries", "显示图书馆列表");
+    add_cmd("libbook seats", "显示座位列表");
+    add_cmd("ygdk overview", "显示阳光打卡概览");
+    add_cmd("ygdk records", "显示阳光打卡记录");
+    add_cmd("evaluation list", "显示评教任务");
+    add_cmd("todo list", "显示待办聚合");
 
     return {{"ok", true}, {"data", {{"commands", commands}, {"version", UBAANEXT_VERSION_STRING}}}, {"error", nullptr}};
 }
@@ -395,25 +626,50 @@ void print_usage() {
     UBAANextCli::Console::println("  help                             显示帮助");
     UBAANextCli::Console::println("  login --username <id> --password <pw>");
     UBAANextCli::Console::println("                                   登录（默认 VPN 模式）");
+#if UBAANEXT_ENABLE_MOCKS
     UBAANextCli::Console::println("  login --mock --username <id> --password <pw>");
     UBAANextCli::Console::println("                                   模拟登录");
+#endif
     UBAANextCli::Console::println("  whoami                           显示当前用户");
     UBAANextCli::Console::println("  logout                           登出");
+#if UBAANEXT_ENABLE_MOCKS
     UBAANextCli::Console::println("  course today [--mock]            显示今天的课程");
+#else
+    UBAANextCli::Console::println("  course today                     显示今天的课程");
+#endif
     UBAANextCli::Console::println("  course date --date <yyyy-MM-dd>  显示指定日期课程");
+#if UBAANEXT_ENABLE_MOCKS
     UBAANextCli::Console::println("  course week [--mock] --week <n>  显示指定周次课程");
+#else
+    UBAANextCli::Console::println("  course week --week <n>           显示指定周次课程");
+#endif
+#if UBAANEXT_ENABLE_MOCKS
     UBAANextCli::Console::println("  exam list [--mock]               显示考试");
+#else
+    UBAANextCli::Console::println("  exam list                        显示考试");
+#endif
+#if UBAANEXT_ENABLE_MOCKS
     UBAANextCli::Console::println("  classroom query [--mock] --campus <id> --date <yyyy-MM-dd>");
+#else
+    UBAANextCli::Console::println("  classroom query --campus <id> --date <yyyy-MM-dd>");
+#endif
     UBAANextCli::Console::println("                                   查询空闲教室");
+#if UBAANEXT_ENABLE_MOCKS
     UBAANextCli::Console::println("  term list [--mock]               显示学期列表");
     UBAANextCli::Console::println("  week list [--mock]               显示教学周列表");
+#else
+    UBAANextCli::Console::println("  term list                        显示学期列表");
+    UBAANextCli::Console::println("  week list                        显示教学周列表");
+#endif
     UBAANextCli::Console::println("  config show                      显示当前配置");
     UBAANextCli::Console::println("  config set --key <key> --value <value>");
     UBAANextCli::Console::println("                                   设置配置项");
     UBAANextCli::Console::println("  cache clear                      清除缓存");
     UBAANextCli::Console::println("\n选项:");
     UBAANextCli::Console::println("  --json                           JSON 格式输出");
+#if UBAANEXT_ENABLE_MOCKS
     UBAANextCli::Console::println("  --mock                           使用模拟数据");
+#endif
     UBAANextCli::Console::println("  --mode vpn|direct                连接模式（默认 vpn）");
     UBAANextCli::Console::println("\n配置键:");
     UBAANextCli::Console::println("  mode      连接模式 (vpn|direct)");
@@ -452,6 +708,7 @@ ExitCode cmd_login(const CliArgs &args, ServiceFactory &factory, OutputFormatter
 
     auto auth = factory.create_auth_service();
 
+#if UBAANEXT_ENABLE_MOCKS
     if (mock) {
         auto result = auth.login_mock(args.username, args.password);
         if (!result) {
@@ -461,6 +718,9 @@ ExitCode cmd_login(const CliArgs &args, ServiceFactory &factory, OutputFormatter
         out.print_login_result("登录成功（模拟）。", *result);
         return ExitCode::Ok;
     }
+#else
+    (void)mock;
+#endif
 
     // 真实 CAS 登录
     um::ConnectionMode mode = um::ConnectionMode::WebVPN;  // 默认 VPN
@@ -622,10 +882,20 @@ ExitCode cmd_classroom_query(const CliArgs &args, ServiceFactory &factory, Outpu
         return ExitCode::InvalidArgument;
     }
 
+    std::vector<int> sections;
+    if (!args.sections.empty()) {
+        auto parsed_sections = parse_sections_arg(args.sections);
+        if (!parsed_sections) {
+            out.print_error({um::ErrorCode::InvalidArgument, "--sections 格式无效，应为 1,2,3 形式且节次在 1-20 之间"});
+            return ExitCode::InvalidArgument;
+        }
+        sections = *parsed_sections;
+    }
+
     auto service = factory.create_classroom_service();
     auto result = args.username.empty() || args.password.empty()
-        ? service.query_classrooms(args.campus, args.date)
-        : service.query_classrooms(args.campus, args.date, args.username, args.password);
+        ? service.query_classrooms(args.campus, args.date, sections)
+        : service.query_classrooms(args.campus, args.date, args.username, args.password, sections);
     if (!result) {
         out.print_error(result.error());
         return map_error_to_exit_code(result.error());
@@ -756,6 +1026,18 @@ ExitCode cmd_cache_clear(ServiceFactory & /*factory*/, OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
+ExitCode cmd_grade_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    auto service = factory.create_grade_service();
+    auto result = args.all ? service.list_all_grades() : service.list_grades(args.term.empty() ? "2025-2026-2" : args.term);
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    save_real_cookies(factory);
+    out.print_grades(*result);
+    return ExitCode::Ok;
+}
+
 ExitCode cmd_feature_list(ServiceFactory &factory, OutputFormatter &out,
                           const std::string &domain, const std::string &operation,
                           const std::string &key) {
@@ -767,6 +1049,81 @@ ExitCode cmd_feature_list(ServiceFactory &factory, OutputFormatter &out,
     }
     save_real_cookies(factory);
     out.print_records(key, *result);
+    return ExitCode::Ok;
+}
+
+std::vector<std::string> parse_judge_batch_input(const std::string &input) {
+    std::string text = input;
+    if (!input.empty() && input.front() == '@') {
+        std::ifstream file(input.substr(1));
+        text.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    }
+
+    std::vector<std::string> ids;
+    try {
+        auto json = nlohmann::json::parse(text);
+        if (json.is_array()) {
+            for (const auto &item : json) {
+                if (item.is_string()) ids.push_back(item.get<std::string>());
+                else if (item.is_object() && item.contains("assignmentId")) ids.push_back(item["assignmentId"].get<std::string>());
+            }
+        } else if (json.is_object() && json.contains("assignmentIds") && json["assignmentIds"].is_array()) {
+            for (const auto &item : json["assignmentIds"]) {
+                if (item.is_string()) ids.push_back(item.get<std::string>());
+            }
+        }
+    } catch (...) {
+        std::string current;
+        for (char ch : text) {
+            if (ch == ',' || ch == '\n' || ch == '\r' || ch == '\t' || ch == ' ') {
+                if (!current.empty()) {
+                    ids.push_back(current);
+                    current.clear();
+                }
+            } else {
+                current.push_back(ch);
+            }
+        }
+        if (!current.empty()) ids.push_back(current);
+    }
+    return ids;
+}
+
+ExitCode cmd_judge_details_batch(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.input.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "judge assignment details-batch 需要 --input <json|@file>"});
+        return ExitCode::InvalidArgument;
+    }
+    auto ids = parse_judge_batch_input(args.input);
+    if (ids.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "judge assignment details-batch 未解析到 assignment id"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        std::vector<um::Model::FeatureRecord> records;
+        for (const auto &id : ids) {
+            um::Model::FeatureRecord record;
+            record.id = id;
+            record.title = "评测任务";
+            record.status = "unsubmitted";
+            record.fields["source"] = "mock";
+            record.fields["submissionStatus"] = "unsubmitted";
+            records.push_back(std::move(record));
+        }
+        out.print_records("details", records);
+        return ExitCode::Ok;
+    }
+#endif
+
+    auto service = factory.create_judge_service();
+    auto result = service.show_assignment_details_batch(ids);
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    save_real_cookies(factory);
+    out.print_records("details", *result);
     return ExitCode::Ok;
 }
 
@@ -810,18 +1167,63 @@ ExitCode cmd_user_info(ServiceFactory &factory, OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
+bool is_pending_todo(const std::string &source, const um::Model::FeatureRecord &record) {
+    if (source == "signin") return record.status == "available";
+    if (source == "evaluation") return record.status == "pending";
+    if (source == "judge") return record.status == "available" || record.status == "unsubmitted" || record.status == "partial";
+    if (source == "spoc") return record.status == "open" || record.status == "available" || record.status == "pending";
+    return record.status == "pending" || record.status == "available" || record.status == "open";
+}
+
+void normalize_todo_record(const std::string &source, um::Model::FeatureRecord &record) {
+    record.fields["source"] = source;
+    if (record.fields.find("type") == record.fields.end()) record.fields["type"] = source;
+    if (record.fields.find("dueTime") == record.fields.end()) {
+        auto deadline = record.fields.find("deadline");
+        if (deadline != record.fields.end()) record.fields["dueTime"] = deadline->second;
+    }
+    if (record.fields.find("submissionStatus") == record.fields.end()) record.fields["submissionStatus"] = record.status;
+}
+
+void append_todo_records(std::vector<um::Model::FeatureRecord> &todos,
+                         const std::string &source,
+                         const std::vector<um::Model::FeatureRecord> &records,
+                         bool pending_only) {
+    for (auto record : records) {
+        if (pending_only && !is_pending_todo(source, record)) continue;
+        normalize_todo_record(source, record);
+        todos.push_back(std::move(record));
+    }
+}
+
+ExitCode cmd_todo_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    auto service = factory.create_feature_service();
+    std::vector<um::Model::FeatureRecord> todos;
+    const bool pending_only = true;
+    (void)args;
+
+    if (auto spoc = service.list("spoc", "assignments")) append_todo_records(todos, "spoc", *spoc, pending_only);
+    if (auto judge = service.list("judge", "assignments")) append_todo_records(todos, "judge", *judge, pending_only);
+    if (auto signin = service.list("signin", "today")) append_todo_records(todos, "signin", *signin, pending_only);
+    if (auto evaluation = service.list("evaluation", "list")) append_todo_records(todos, "evaluation", *evaluation, pending_only);
+
+    save_real_cookies(factory);
+    out.print_records("todos", todos);
+    return ExitCode::Ok;
+}
+
 // ── 主入口 ──────────────────────────────────────────────────
 
 int main(int argc, char *argv[]) {
     CliArgs args = parse_args(argc, argv);
 
+    OutputFormatter out(args.json_output);
+
     if (args.parse_error) {
-        OutputFormatter out(false);
         out.print_error({um::ErrorCode::InvalidArgument, args.error_message});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
-    OutputFormatter out(args.json_output);
 
     if (args.command.empty() || args.command == "help") {
         return static_cast<int>(cmd_help(out));
@@ -908,27 +1310,39 @@ int main(int argc, char *argv[]) {
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
+    if (args.command == "todo") {
+        if (args.subcommand == "list") return static_cast<int>(cmd_todo_list(args, factory, out));
+        out.print_error({um::ErrorCode::InvalidArgument, "未知的 todo 子命令: " + args.subcommand});
+        return static_cast<int>(ExitCode::InvalidArgument);
+    }
+
     if (args.command == "app") {
+        if (args.subcommand == "version") return static_cast<int>(cmd_feature_list(factory, out, "app", "version", "versions"));
         if (args.subcommand == "announcement") return static_cast<int>(cmd_feature_list(factory, out, "announcement", "list", "announcements"));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 app 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     if (args.command == "grade") {
-        if (args.subcommand == "list") return static_cast<int>(cmd_feature_list(factory, out, "grade", args.term.empty() ? "list" : args.term, "grades"));
+        if (args.subcommand == "list") return static_cast<int>(cmd_grade_list(args, factory, out));
+        if (args.subcommand == "all") {
+            args.all = true;
+            return static_cast<int>(cmd_grade_list(args, factory, out));
+        }
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 grade 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     if (args.command == "spoc") {
-        if (args.subcommand == "assignments") return static_cast<int>(cmd_feature_list(factory, out, "spoc", "assignments", "assignments"));
+        if (args.subcommand == "assignments") return static_cast<int>(cmd_feature_list(factory, out, "spoc", "assignments:" + std::string(args.pending_only ? "pending" : "all") + ":" + std::string(args.include_expired ? "include-expired" : "active"), "assignments"));
         if (args.subcommand == "assignment" && args.action == "show") return static_cast<int>(cmd_feature_show(factory, out, "spoc", "assignment", args.id, "assignment"));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 spoc 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     if (args.command == "judge") {
-        if (args.subcommand == "assignments") return static_cast<int>(cmd_feature_list(factory, out, "judge", args.course_id.empty() ? "assignments" : args.course_id, "assignments"));
+        if (args.subcommand == "assignments") return static_cast<int>(cmd_feature_list(factory, out, "judge", "assignments:" + args.course_id + ":" + std::string(args.include_expired ? "include-expired" : "active") + ":" + std::string(args.include_history ? "include-history" : "current"), "assignments"));
+        if (args.subcommand == "assignment" && args.action == "details-batch") return static_cast<int>(cmd_judge_details_batch(args, factory, out));
         if (args.subcommand == "assignment" && (args.action == "show" || args.action == "details")) return static_cast<int>(cmd_feature_show(factory, out, "judge", args.action, args.assignment_id.empty() ? args.id : args.assignment_id, args.action == "details" ? "details" : "assignment"));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 judge 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
@@ -936,15 +1350,15 @@ int main(int argc, char *argv[]) {
 
     if (args.command == "signin") {
         if (args.subcommand == "today") return static_cast<int>(cmd_feature_list(factory, out, "signin", "today", "signin"));
-        if (args.subcommand == "do") return static_cast<int>(cmd_feature_mutate(factory, out, "signin", "do", "today", args.confirmed));
+        if (args.subcommand == "do") return static_cast<int>(cmd_feature_mutate(factory, out, "signin", "do", args.course_id.empty() ? args.id : args.course_id, args.confirmed));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 signin 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     if (args.command == "ygdk") {
         if (args.subcommand == "overview") return static_cast<int>(cmd_feature_list(factory, out, "ygdk", "overview", "overview"));
-        if (args.subcommand == "records") return static_cast<int>(cmd_feature_list(factory, out, "ygdk", "records", "records"));
-        if (args.subcommand == "submit") return static_cast<int>(cmd_feature_mutate(factory, out, "ygdk", "submit", args.id, args.confirmed));
+        if (args.subcommand == "records") return static_cast<int>(cmd_feature_list(factory, out, "ygdk", "records:" + std::to_string(args.page) + ":" + std::to_string(args.size), "records"));
+        if (args.subcommand == "submit") return static_cast<int>(cmd_feature_mutate(factory, out, "ygdk", "submit:" + args.start_time + "\n" + args.end_time + "\n" + args.place + "\n" + (args.share ? "1" : "0") + "\n" + args.photo_path, args.item_id.empty() ? args.id : args.item_id, args.confirmed));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 ygdk 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
@@ -958,11 +1372,18 @@ int main(int argc, char *argv[]) {
 
     if (args.command == "bykc") {
         if (args.subcommand == "profile") return static_cast<int>(cmd_feature_list(factory, out, "bykc", "profile", "profile"));
-        if (args.subcommand == "courses") return static_cast<int>(cmd_feature_list(factory, out, "bykc", "courses", "courses"));
+        if (args.subcommand == "courses") return static_cast<int>(cmd_feature_list(factory, out, "bykc", "courses:" + std::to_string(args.page) + ":" + std::to_string(args.size) + (args.all ? ":all" : ":page") + ":" + args.status + ":" + args.category + ":" + args.sub_category + ":" + (args.campus > 0 ? std::to_string(args.campus) : std::string{}) + ":" + args.keyword, "courses"));
         if (args.subcommand == "chosen") return static_cast<int>(cmd_feature_list(factory, out, "bykc", "chosen", "courses"));
         if (args.subcommand == "stats") return static_cast<int>(cmd_feature_list(factory, out, "bykc", "stats", "stats"));
         if (args.subcommand == "course" && args.action == "show") return static_cast<int>(cmd_feature_show(factory, out, "bykc", "course", args.course_id.empty() ? args.id : args.course_id, "course"));
-        if (args.subcommand == "select" || args.subcommand == "unselect" || args.subcommand == "sign") return static_cast<int>(cmd_feature_mutate(factory, out, "bykc", args.subcommand, args.course_id.empty() ? args.id : args.course_id, args.confirmed));
+        if (args.subcommand == "select" || args.subcommand == "unselect") return static_cast<int>(cmd_feature_mutate(factory, out, "bykc", args.subcommand, args.course_id.empty() ? args.id : args.course_id, args.confirmed));
+        if (args.subcommand == "sign") {
+            if (!args.has_lat || !args.has_lng || args.sign_type == 0) {
+                out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 需要 --course-id、--sign-type、--lat 和 --lng"});
+                return static_cast<int>(ExitCode::InvalidArgument);
+            }
+            return static_cast<int>(cmd_feature_mutate(factory, out, "bykc", "sign:" + std::to_string(args.sign_type) + ":" + std::to_string(args.lat) + ":" + std::to_string(args.lng), args.course_id.empty() ? args.id : args.course_id, args.confirmed));
+        }
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 bykc 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
@@ -970,11 +1391,13 @@ int main(int argc, char *argv[]) {
     if (args.command == "cgyy") {
         if (args.subcommand == "sites") return static_cast<int>(cmd_feature_list(factory, out, "cgyy", "sites", "sites"));
         if (args.subcommand == "purpose-types") return static_cast<int>(cmd_feature_list(factory, out, "cgyy", "purpose-types", "purposeTypes"));
-        if (args.subcommand == "day-info") return static_cast<int>(cmd_feature_list(factory, out, "cgyy", "day-info", "dayInfo"));
-        if (args.subcommand == "reserve") return static_cast<int>(cmd_feature_mutate(factory, out, "cgyy", "reserve", args.id, args.confirmed));
+        if (args.subcommand == "day-info") return static_cast<int>(cmd_feature_list(factory, out, "cgyy", (args.date.empty() && args.site_id.empty() && args.id.empty()) ? "day-info" : "day-info:" + args.date + ":" + (args.site_id.empty() ? args.id : args.site_id), "dayInfo"));
+        if (args.subcommand == "orders") return static_cast<int>(cmd_feature_list(factory, out, "cgyy", "orders:" + std::to_string(args.page) + ":" + std::to_string(args.size), "orders"));
+        if (args.subcommand == "reserve") return static_cast<int>(cmd_feature_mutate(factory, out, "cgyy", "reserve:" + args.site_id + "\n" + args.space_id + "\n" + args.date + "\n" + args.purpose_type + "\n" + args.theme + "\n" + args.phone + "\n" + args.joiners + "\n" + args.captcha + "\n" + args.token, args.id, args.confirmed));
         if (args.subcommand == "order") {
             if (args.action == "cancel") return static_cast<int>(cmd_feature_mutate(factory, out, "cgyy", "cancel", args.order_id, args.confirmed));
-            if (args.action == "show" || args.action == "lock-code") return static_cast<int>(cmd_feature_show(factory, out, "cgyy", args.action, args.order_id, "order"));
+            if (args.action == "show") return static_cast<int>(cmd_feature_show(factory, out, "cgyy", "show", args.order_id, "order"));
+            if (args.action == "lock-code") return static_cast<int>(cmd_feature_show(factory, out, "cgyy", "lock-code", args.order_id.empty() ? "lock-code" : args.order_id, "order"));
         }
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 cgyy 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
@@ -982,11 +1405,11 @@ int main(int argc, char *argv[]) {
 
     if (args.command == "libbook") {
         if (args.subcommand == "libraries") return static_cast<int>(cmd_feature_list(factory, out, "libbook", "libraries", "libraries"));
-        if (args.subcommand == "areas") return static_cast<int>(cmd_feature_list(factory, out, "libbook", args.library_id.empty() ? "areas" : args.library_id, "areas"));
-        if (args.subcommand == "seats") return static_cast<int>(cmd_feature_list(factory, out, "libbook", args.area_id.empty() ? "seats" : args.area_id, "seats"));
-        if (args.subcommand == "reservations") return static_cast<int>(cmd_feature_list(factory, out, "libbook", "reservations", "reservations"));
+        if (args.subcommand == "areas") return static_cast<int>(cmd_feature_list(factory, out, "libbook", args.library_id.empty() ? "areas" : "areas:" + args.library_id + ":" + args.date + ":" + args.storey_id, "areas"));
+        if (args.subcommand == "seats") return static_cast<int>(cmd_feature_list(factory, out, "libbook", args.area_id.empty() ? "seats" : "seats:" + args.area_id + ":" + args.date + ":" + args.start_time + ":" + args.end_time, "seats"));
+        if (args.subcommand == "reservations") return static_cast<int>(cmd_feature_list(factory, out, "libbook", "reservations:" + std::to_string(args.page) + ":" + std::to_string(args.size), "reservations"));
         if (args.subcommand == "area" && args.action == "show") return static_cast<int>(cmd_feature_show(factory, out, "libbook", "area", args.area_id.empty() ? args.id : args.area_id, "area"));
-        if (args.subcommand == "book") return static_cast<int>(cmd_feature_mutate(factory, out, "libbook", "book", args.area_id.empty() ? args.id : args.area_id, args.confirmed));
+        if (args.subcommand == "book") return static_cast<int>(cmd_feature_mutate(factory, out, "libbook", "book:" + args.date + "\n" + args.segment, args.seat_id.empty() ? args.id : args.seat_id, args.confirmed));
         if (args.subcommand == "cancel") return static_cast<int>(cmd_feature_mutate(factory, out, "libbook", "cancel", args.booking_id.empty() ? args.id : args.booking_id, args.confirmed));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 libbook 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);

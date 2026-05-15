@@ -69,17 +69,21 @@ Result<std::vector<Model::Week>> parse_real_weeks(const std::string &body) {
 
 } // namespace
 
+#if UBAANEXT_ENABLE_MOCKS
 TermService::TermService(IHttpClient &http_client, ICacheStore &cache)
     : m_http_client(http_client), m_cache(cache), m_mode(ConnectionMode::Mock) {}
+#endif
 
 TermService::TermService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
     : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
 
 Result<std::vector<Model::Term>> TermService::get_terms() {
+#if UBAANEXT_ENABLE_MOCKS
     auto cached = m_cache.get(kCacheKeyTerms);
     if (m_mode == ConnectionMode::Mock && cached.has_value()) {
         return Parser::parse_terms(*cached);
     }
+#endif
 
     if (m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) {
         auto activate_result = Protocol::Byxt::ensure_session(m_http_client, m_mode);
@@ -106,6 +110,7 @@ Result<std::vector<Model::Term>> TermService::get_terms() {
         return parse_real_terms(response.body);
     }
 
+#if UBAANEXT_ENABLE_MOCKS
     HttpRequest req;
     req.method = HttpMethod::Get;
     req.url = "/schedule/terms";
@@ -126,15 +131,20 @@ Result<std::vector<Model::Term>> TermService::get_terms() {
     }
 
     return parsed;
+#else
+    return make_error(ErrorCode::InvalidArgument, "学期查询需要 Direct 或 WebVPN 连接模式");
+#endif
 }
 
 Result<std::vector<Model::Week>> TermService::get_weeks(const std::string &term_code) {
     std::string cache_key = "cache:week:" + term_code;
 
+#if UBAANEXT_ENABLE_MOCKS
     auto cached = m_cache.get(cache_key);
     if (m_mode == ConnectionMode::Mock && cached.has_value()) {
         return Parser::parse_weeks(*cached);
     }
+#endif
 
     if (m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) {
         auto activate_result = Protocol::Byxt::ensure_session(m_http_client, m_mode);
@@ -161,6 +171,7 @@ Result<std::vector<Model::Week>> TermService::get_weeks(const std::string &term_
         return parse_real_weeks(response.body);
     }
 
+#if UBAANEXT_ENABLE_MOCKS
     HttpRequest req;
     req.method = HttpMethod::Get;
     req.url = "/schedule/weeks";
@@ -181,6 +192,10 @@ Result<std::vector<Model::Week>> TermService::get_weeks(const std::string &term_
     }
 
     return parsed;
+#else
+    (void)cache_key;
+    return make_error(ErrorCode::InvalidArgument, "周次查询需要 Direct 或 WebVPN 连接模式");
+#endif
 }
 
 } // namespace UBAANext

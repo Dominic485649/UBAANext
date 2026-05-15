@@ -94,6 +94,7 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
     REQUIRE_FALSE(json["data"]["commands"].empty());
 }
 
+#if UBAANEXT_ENABLE_MOCKS
 TEST_CASE("CLI login mock 命令", "[cli][integration]") {
     auto result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--json"});
     REQUIRE(result.exit_code == 0);
@@ -244,19 +245,23 @@ TEST_CASE("CLI cache clear 命令", "[cli][integration]") {
 TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
         {"user", "info", "--mock", "--json"},
+        {"app", "version", "--mock", "--json"},
         {"app", "announcement", "--mock", "--json"},
         {"grade", "list", "--mock", "--term", "2025-2026-2", "--json"},
-        {"spoc", "assignments", "--mock", "--json"},
+        {"grade", "all", "--mock", "--json"},
+        {"classroom", "query", "--mock", "--campus", "1", "--date", "2026-05-15", "--sections", "1,2", "--json"},
+        {"spoc", "assignments", "--mock", "--pending-only", "--include-expired", "--json"},
         {"spoc", "assignment", "show", "--mock", "--id", "spoc-1", "--json"},
-        {"judge", "assignments", "--mock", "--course-id", "course-1", "--json"},
+        {"judge", "assignments", "--mock", "--course-id", "course-1", "--include-history", "--include-expired", "--json"},
         {"judge", "assignment", "show", "--mock", "--assignment-id", "judge-1", "--json"},
         {"judge", "assignment", "details", "--mock", "--assignment-id", "judge-1", "--json"},
+        {"judge", "assignment", "details-batch", "--mock", "--input", "judge-1", "--json"},
         {"signin", "today", "--mock", "--json"},
         {"ygdk", "overview", "--mock", "--json"},
         {"ygdk", "records", "--mock", "--json"},
         {"evaluation", "list", "--mock", "--json"},
         {"bykc", "profile", "--mock", "--json"},
-        {"bykc", "courses", "--mock", "--json"},
+        {"bykc", "courses", "--mock", "--status", "available", "--category", "通识", "--keyword", "课程", "--json"},
         {"bykc", "chosen", "--mock", "--json"},
         {"bykc", "course", "show", "--mock", "--course-id", "bykc-1", "--json"},
         {"bykc", "stats", "--mock", "--json"},
@@ -296,7 +301,7 @@ TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integratio
         {"evaluation", "submit", "--mock", "--confirm", "--json"},
         {"bykc", "select", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
         {"bykc", "unselect", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
-        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
+        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--lat", "39.981", "--lng", "116.347", "--confirm", "--json"},
         {"cgyy", "reserve", "--mock", "--confirm", "--json"},
         {"cgyy", "order", "cancel", "--mock", "--order-id", "cgyy-1", "--confirm", "--json"},
         {"libbook", "book", "--mock", "--area-id", "libbook-1", "--confirm", "--json"},
@@ -313,12 +318,59 @@ TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integratio
     }
 }
 
+#endif
+
+TEST_CASE("CLI 签到真实写操作要求课程 ID", "[cli][integration]") {
+    auto result = run_cli({"signin", "do", "--confirm", "--json"});
+    REQUIRE(result.exit_code == 2);
+
+    auto json = parse_json_output(result.stdout_output);
+    REQUIRE(json["ok"] == false);
+    REQUIRE(json["error"]["code"] == "InvalidArgument");
+}
+
+TEST_CASE("CLI 博雅签到要求显式定位和签到类型", "[cli][integration]") {
+    auto result = run_cli({"bykc", "sign", "--course-id", "1", "--confirm", "--json"});
+    REQUIRE(result.exit_code == 2);
+
+    auto json = parse_json_output(result.stdout_output);
+    REQUIRE(json["ok"] == false);
+    REQUIRE(json["error"]["code"] == "InvalidArgument");
+}
+
+TEST_CASE("CLI 图书馆座位真实模式要求查询 ID", "[cli][integration]") {
+    auto areas_result = run_cli({"libbook", "areas", "--json"});
+    REQUIRE(areas_result.exit_code == 2);
+    auto areas_json = parse_json_output(areas_result.stdout_output);
+    REQUIRE(areas_json["ok"] == false);
+    REQUIRE(areas_json["error"]["code"] == "InvalidArgument");
+
+    auto seats_result = run_cli({"libbook", "seats", "--json"});
+    REQUIRE(seats_result.exit_code == 2);
+    auto seats_json = parse_json_output(seats_result.stdout_output);
+    REQUIRE(seats_json["ok"] == false);
+    REQUIRE(seats_json["error"]["code"] == "InvalidArgument");
+}
+
 TEST_CASE("CLI 未知命令返回 InvalidArgument", "[cli][integration]") {
     auto result = run_cli({"unknown", "--json"});
     REQUIRE(result.exit_code == 2);  // InvalidArgument
 }
 
 TEST_CASE("CLI 缺少必要参数返回 InvalidArgument", "[cli][integration]") {
+#if UBAANEXT_ENABLE_MOCKS
     auto result = run_cli({"login", "--mock", "--json"});
+#else
+    auto result = run_cli({"login", "--json"});
+#endif
     REQUIRE(result.exit_code == 2);  // InvalidArgument
 }
+
+#if !UBAANEXT_ENABLE_MOCKS
+TEST_CASE("CLI Release 构建拒绝 mock 选项", "[cli][integration]") {
+    auto result = run_cli({"course", "today", "--mock", "--json"});
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    REQUIRE(json["ok"] == false);
+}
+#endif
