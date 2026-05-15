@@ -6,6 +6,7 @@
 #include "OutputFormatter.hpp"
 
 #include "Console.hpp"
+#include "SecurityRedaction.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -297,14 +298,15 @@ void OutputFormatter::print_version(const std::string &version) {
 }
 
 void OutputFormatter::print_error(const UBAANext::Error &error) {
+    const auto message = redact_sensitive_text(error.message);
     if (m_json) {
-        json err = {{"code", std::string(error_code_to_string(error.code))}, {"message", error.message}};
+        json err = {{"code", std::string(error_code_to_string(error.code))}, {"message", message}};
         json out = {{"ok", false}, {"data", nullptr}, {"error", err}};
         Console::println("{}", out.dump(2));
         return;
     }
 
-    Console::eprintln("错误: {}", error.message);
+    Console::eprintln("错误: {}", message);
 }
 
 void OutputFormatter::print_message(const std::string &msg) {

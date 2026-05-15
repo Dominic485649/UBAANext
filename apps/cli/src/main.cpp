@@ -28,6 +28,7 @@
 #include "ExitCodes.hpp"
 #include "OutputFormatter.hpp"
 #include "PlainFileStore.hpp"
+#include "SecurityRedaction.hpp"
 #include "ServiceFactory.hpp"
 
 #include <UBAANext/Version.hpp>
@@ -425,6 +426,19 @@ CliArgs parse_args(int argc, char *argv[]) {
 
 [[nodiscard]] std::filesystem::path get_app_data_dir() {
 #if defined(_WIN32)
+    char *override_buf = nullptr;
+    std::size_t override_len = 0;
+    if (_dupenv_s(&override_buf, &override_len, "UBAANEXT_APP_DATA_DIR") == 0 && override_buf != nullptr) {
+        std::filesystem::path path = override_buf;
+        free(override_buf);
+        if (!path.empty()) return path;
+    }
+#else
+    if (const char *override_dir = std::getenv("UBAANEXT_APP_DATA_DIR")) {
+        if (*override_dir != '\0') return override_dir;
+    }
+#endif
+#if defined(_WIN32)
     char *buf = nullptr;
     std::size_t len = 0;
     if (_dupenv_s(&buf, &len, "LOCALAPPDATA") == 0 && buf != nullptr) {
@@ -761,7 +775,11 @@ ExitCode cmd_whoami(ServiceFactory &factory, OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
-ExitCode cmd_logout(ServiceFactory &factory, OutputFormatter &out) {
+ExitCode cmd_logout(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "logout 会清除本地会话，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
     auto auth = factory.create_auth_service();
     auto result = auth.logout();
     if (!result) {
@@ -957,10 +975,11 @@ ExitCode cmd_week_list(const CliArgs & /*args*/, ServiceFactory &factory, Output
 }
 
 ExitCode cmd_config_show(OutputFormatter &out, const CliConfig &config) {
+    const auto proxy = UBAANextCli::redact_proxy_url(config.proxy);
     if (out.is_json()) {
         nlohmann::json data = {
             {"mode",         config.mode},
-            {"proxy",        config.proxy},
+            {"proxy",        proxy},
             {"cacheEnabled", config.cache_enabled},
             {"sessionPath",  get_session_file_path().string()},
             {"cookiePath",   get_cookie_file_path().string()},
@@ -972,7 +991,7 @@ ExitCode cmd_config_show(OutputFormatter &out, const CliConfig &config) {
     } else {
         UBAANextCli::Console::println("当前配置:");
         UBAANextCli::Console::println("  模式:     {}", config.mode);
-        UBAANextCli::Console::println("  代理:     {}", config.proxy.empty() ? "(无)" : config.proxy);
+        UBAANextCli::Console::println("  代理:     {}", proxy.empty() ? "(无)" : proxy);
         UBAANextCli::Console::println("  缓存:     {}", config.cache_enabled ? "启用" : "禁用");
         UBAANextCli::Console::println("  会话文件: {}", get_session_file_path().string());
         UBAANextCli::Console::println("  Cookie:   {}", get_cookie_file_path().string());
@@ -983,6 +1002,10 @@ ExitCode cmd_config_show(OutputFormatter &out, const CliConfig &config) {
 }
 
 ExitCode cmd_config_set(const CliArgs &args, OutputFormatter &out, CliConfig &config) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "config set 会修改本地配置，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
     if (args.config_key.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "config set 需要 --key <key>"});
         return ExitCode::InvalidArgument;
@@ -1002,7 +1025,7 @@ ExitCode cmd_config_set(const CliArgs &args, OutputFormatter &out, CliConfig &co
         }
         config.mode = value;
     } else if (key == "proxy") {
-        config.proxy = value;
+        config.proxy = (value == "none" || value == "off") ? std::string{} : value;
     } else if (key == "cache") {
         if (value == "true" || value == "1" || value == "yes") {
             config.cache_enabled = true;
@@ -1022,11 +1045,15 @@ ExitCode cmd_config_set(const CliArgs &args, OutputFormatter &out, CliConfig &co
     std::filesystem::create_directories(config_path.parent_path());
     config.save(config_path.string());
 
-    out.print_message(UBAANextCli::Console::format("配置已更新: {} = {}", key, value));
+    out.print_message(UBAANextCli::Console::format("配置已更新: {} = {}", key, key == "proxy" ? UBAANextCli::redact_proxy_url(value) : value));
     return ExitCode::Ok;
 }
 
-ExitCode cmd_cache_clear(ServiceFactory & /*factory*/, OutputFormatter &out) {
+ExitCode cmd_cache_clear(const CliArgs &args, ServiceFactory & /*factory*/, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cache clear 会清除本地缓存，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
     // v0.4 简化实现：mock 模式下缓存随进程销毁
     out.print_message("缓存已清除。");
     return ExitCode::Ok;
@@ -1740,7 +1767,7 @@ int main(int argc, char *argv[]) {
         return static_cast<int>(cmd_whoami(factory, out));
     }
     if (args.command == "logout") {
-        return static_cast<int>(cmd_logout(factory, out));
+        return static_cast<int>(cmd_logout(args, factory, out));
     }
 
     if (args.command == "course") {
@@ -1783,7 +1810,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (args.command == "cache") {
-        if (args.subcommand == "clear") return static_cast<int>(cmd_cache_clear(factory, out));
+        if (args.subcommand == "clear") return static_cast<int>(cmd_cache_clear(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 cache 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }

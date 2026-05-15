@@ -35,7 +35,12 @@ struct CliResult {
 
 [[nodiscard]] CliResult run_cli(const std::vector<std::string> &args) {
     // 构建命令行 - 用引号包裹路径以防空格
-    std::string cmd = "\"";
+    static const auto app_data_dir = (std::filesystem::temp_directory_path() / "ubaanext-cli-tests").string();
+    std::filesystem::create_directories(app_data_dir);
+
+    std::string cmd = "set \"UBAANEXT_APP_DATA_DIR=";
+    cmd += app_data_dir;
+    cmd += "\" && \"";
     cmd += UBAA_CLI_PATH;
     cmd += "\"";
     for (const auto &arg : args) {
@@ -170,7 +175,7 @@ TEST_CASE("CLI logout 命令", "[cli][integration]") {
     auto login_result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--json"});
     REQUIRE(login_result.exit_code == 0);
 
-    auto result = run_cli({"logout", "--json"});
+    auto result = run_cli({"logout", "--confirm", "--json"});
     REQUIRE(result.exit_code == 0);
 
     auto json = parse_json_output(result.stdout_output);
@@ -278,8 +283,25 @@ TEST_CASE("CLI config show 命令", "[cli][integration]") {
     REQUIRE(json["data"].contains("version"));
 }
 
+TEST_CASE("CLI config proxy 输出会脱敏凭据", "[cli][integration]") {
+    auto set_result = run_cli({"config", "set", "--key", "proxy", "--value", "http://user:secret@example.com:8080", "--confirm", "--json"});
+    REQUIRE(set_result.exit_code == 0);
+    REQUIRE(set_result.stdout_output.find("user:secret") == std::string::npos);
+    REQUIRE(set_result.stdout_output.find("[REDACTED]") != std::string::npos);
+
+    auto show_result = run_cli({"config", "show", "--json"});
+    REQUIRE(show_result.exit_code == 0);
+    REQUIRE(show_result.stdout_output.find("user:secret") == std::string::npos);
+    auto json = parse_json_output(show_result.stdout_output);
+    REQUIRE(json["ok"] == true);
+    REQUIRE(json["data"]["proxy"].get<std::string>() == "http://[REDACTED]@example.com:8080");
+
+    auto clear_result = run_cli({"config", "set", "--key", "proxy", "--value", "none", "--confirm", "--json"});
+    REQUIRE(clear_result.exit_code == 0);
+}
+
 TEST_CASE("CLI cache clear 命令", "[cli][integration]") {
-    auto result = run_cli({"cache", "clear", "--json"});
+    auto result = run_cli({"cache", "clear", "--confirm", "--json"});
     REQUIRE(result.exit_code == 0);
 
     auto json = parse_json_output(result.stdout_output);
@@ -334,6 +356,9 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
 
 TEST_CASE("CLI 有副作用命令需要 confirm", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
+        {"logout", "--json"},
+        {"config", "set", "--key", "mode", "--value", "direct", "--json"},
+        {"cache", "clear", "--json"},
         {"signin", "do", "--mock", "--json"},
         {"ygdk", "submit", "--mock", "--json"},
         {"evaluation", "submit", "--mock", "--json"},

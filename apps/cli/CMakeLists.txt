@@ -4,6 +4,7 @@ add_executable(ubaa
     src/ServiceFactory.cpp
     src/OutputFormatter.cpp
     src/CliConfig.cpp
+    src/SecurityRedaction.cpp
 )
 
 target_include_directories(ubaa
