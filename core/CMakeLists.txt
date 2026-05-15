@@ -17,6 +17,7 @@ add_library(UBAANextCore STATIC
     src/Service/YgdkService.cpp
     src/Service/BykcService.cpp
     src/Service/FeatureService.cpp
+    src/Service/ResponseUtils.cpp
     src/Protocol/ByxtSession.cpp
     src/Protocol/AppBuaaSession.cpp
     src/Protocol/ScoreSession.cpp

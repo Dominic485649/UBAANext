@@ -73,6 +73,7 @@ MockHttpClient::MockHttpClient() {
 }
 
 UBAANext::Result<UBAANext::HttpResponse> MockHttpClient::send(const UBAANext::HttpRequest &request) {
+    ++m_request_counts[request.url];
     // 检查是否有为该 URL 配置的错误
     auto err_it = m_errors.find(request.url);
     if (err_it != m_errors.end()) {
@@ -114,6 +115,11 @@ void MockHttpClient::set_network_error(const std::string &url_pattern, std::stri
 void MockHttpClient::set_http_error(const std::string &url_pattern, int status_code, std::string body) {
     m_errors[url_pattern] = ErrorConfig{std::nullopt, status_code, std::move(body)};
     m_responses.erase(url_pattern);
+}
+
+int MockHttpClient::request_count(const std::string &url_pattern) const {
+    auto it = m_request_counts.find(url_pattern);
+    return it == m_request_counts.end() ? 0 : it->second;
 }
 
 } // namespace UBAANextMocks

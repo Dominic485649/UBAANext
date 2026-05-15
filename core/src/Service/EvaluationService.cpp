@@ -2,9 +2,8 @@
 
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/EvaluationParser.hpp>
+#include <UBAANext/Service/ResponseUtils.hpp>
 
-#include <algorithm>
-#include <cctype>
 #include <iomanip>
 #include <map>
 #include <sstream>
@@ -32,14 +31,6 @@ std::string url_encode(const std::string &value) {
     return out.str();
 }
 
-bool response_is_login(const HttpResponse &response) {
-    if (response.status_code == 401 || response.status_code == 403) return true;
-    const auto &body = response.body;
-    return body.find("name=\"execution\"") != std::string::npos ||
-           body.find("统一身份认证") != std::string::npos ||
-           body.find("sso.buaa.edu.cn") != std::string::npos;
-}
-
 void apply_headers(HttpRequest &request) {
     request.headers["Accept"] = "application/json, text/plain, */*";
     request.headers["Accept-Language"] = "zh-CN,zh;q=0.9";
@@ -52,28 +43,6 @@ std::string json_string(const nlohmann::json &json, const char *key) {
     if (json[key].is_string()) return json[key].get<std::string>();
     if (json[key].is_number_integer()) return std::to_string(json[key].get<long long>());
     return {};
-}
-
-bool envelope_ok(const nlohmann::json &json) {
-    if (!json.contains("code")) return true;
-    const auto &code = json["code"];
-    if (code.is_number_integer()) {
-        auto value = code.get<int>();
-        return value == 0 || value == 200;
-    }
-    if (code.is_string()) {
-        auto value = code.get<std::string>();
-        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        return value == "0" || value == "200" || value == "success";
-    }
-    return false;
-}
-
-nlohmann::json envelope_data(const nlohmann::json &json) {
-    if (json.contains("result")) return json["result"];
-    if (json.contains("content")) return json["content"];
-    if (json.contains("data")) return json["data"];
-    return json;
 }
 
 Model::FeatureRecord make_record(std::string id, std::string title, std::string status, std::map<std::string, std::string> fields = {}) {
@@ -113,7 +82,7 @@ Result<void> EvaluationService::activate_session() {
     apply_headers(request);
     auto response = m_http_client.send(request);
     if (!response) return make_error(ErrorCode::NetworkError, "激活评教会话失败: " + response.error().message);
-    if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "评教会话已过期，请重新登录");
+    if (ServiceResponse::is_session_expired_response(*response)) return make_error(ErrorCode::SessionExpired, "评教会话已过期，请重新登录");
     if (response->status_code < 200 || response->status_code >= 300) return make_error(ErrorCode::NetworkError, "评教会话激活返回: " + std::to_string(response->status_code));
     m_activated = true;
     return {};
@@ -130,12 +99,7 @@ Result<nlohmann::json> EvaluationService::request_json(HttpMethod method, const 
     }
     auto response = m_http_client.send(request);
     if (!response) return make_error(ErrorCode::NetworkError, "请求评教失败: " + response.error().message);
-    if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "评教会话已过期，请重新登录");
-    if (response->status_code < 200 || response->status_code >= 300) return make_error(ErrorCode::NetworkError, "评教请求返回: " + std::to_string(response->status_code));
-    auto json = nlohmann::json::parse(response->body, nullptr, false);
-    if (json.is_discarded()) return make_error(ErrorCode::ParseError, "解析评教 JSON 失败");
-    if (!envelope_ok(json)) return make_error(ErrorCode::NetworkError, json.value("message", json.value("msg", std::string("评教请求失败"))));
-    return envelope_data(json);
+    return ServiceResponse::parse_json_response(*response, "评教");
 }
 
 Result<std::string> EvaluationService::current_xnxq() {

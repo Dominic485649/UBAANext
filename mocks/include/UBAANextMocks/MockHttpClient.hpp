@@ -52,8 +52,11 @@ public:
      */
     void set_http_error(const std::string &url_pattern, int status_code, std::string body);
 
+    [[nodiscard]] int request_count(const std::string &url_pattern) const;
+
 private:
     std::map<std::string, std::string> m_responses;
+    std::map<std::string, int> m_request_counts;
 
     struct ErrorConfig {
         std::optional<std::string> network_error;
