@@ -1,0 +1,13 @@
+{
+  "list": [
+    {
+      "record_id": "record-1",
+      "item_name": "跑步",
+      "state": "approved",
+      "place": "操场",
+      "start_time": "2026-03-01 08:00",
+      "end_time": "2026-03-01 09:00",
+      "create_time_fmt": "2026-03-01 09:05"
+    }
+  ]
+}

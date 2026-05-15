@@ -19,6 +19,7 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/BykcParserTests.cpp
         unit/EvaluationParserTests.cpp
         unit/SigninParserTests.cpp
+        unit/YgdkParserTests.cpp
         unit/TermServiceTests.cpp
         unit/VpnCipherTests.cpp
     )

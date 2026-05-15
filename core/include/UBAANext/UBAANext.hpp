@@ -26,6 +26,7 @@
 #include <UBAANext/Model/Spoc.hpp>
 #include <UBAANext/Model/Term.hpp>
 #include <UBAANext/Model/Week.hpp>
+#include <UBAANext/Model/Ygdk.hpp>
 
 // ── 网络层 ───────────────────────────────────────────────────────
 #include <UBAANext/Net/CookieJar.hpp>
@@ -51,6 +52,7 @@
 #include <UBAANext/Parser/JudgeParser.hpp>
 #include <UBAANext/Parser/SigninParser.hpp>
 #include <UBAANext/Parser/SpocParser.hpp>
+#include <UBAANext/Parser/YgdkParser.hpp>
 
 // ── 服务层 ─────────────────────────────────────────────────────────
 #include <UBAANext/Service/ClassroomService.hpp>

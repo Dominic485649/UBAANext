@@ -1,6 +1,7 @@
 #include <UBAANext/Service/YgdkService.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Parser/YgdkParser.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -135,6 +136,30 @@ Model::FeatureRecord make_record(std::string id, std::string title, std::string 
     return record;
 }
 
+Model::FeatureRecord overview_to_record(const Model::YgdkOverview &overview) {
+    return make_record(overview.classify.id, overview.classify.name, "available", {
+        {"termName", overview.term_name},
+        {"termCount", overview.term_count},
+        {"termGoodCount", overview.term_good_count},
+        {"weekCount", overview.week_count},
+        {"monthCount", overview.month_count},
+        {"dayCount", overview.day_count},
+    });
+}
+
+Model::FeatureRecord item_to_record(const Model::YgdkItem &item) {
+    return make_record(item.id, item.name, "item", {{"classifyId", item.classify_id}, {"sort", item.sort}});
+}
+
+Model::FeatureRecord record_to_record(const Model::YgdkRecord &record) {
+    return make_record(record.id, record.item_name, record.state, {
+        {"place", record.place},
+        {"startTime", record.start_time},
+        {"endTime", record.end_time},
+        {"createdAt", record.created_at},
+    });
+}
+
 std::string mime_for_file(const std::filesystem::path &path) {
     auto ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
@@ -242,55 +267,46 @@ Result<nlohmann::json> YgdkService::post_form(const std::string &url, const std:
     return data;
 }
 
-Result<std::vector<Model::FeatureRecord>> YgdkService::overview() {
+Result<std::pair<Model::YgdkOverview, std::vector<Model::YgdkItem>>> YgdkService::overview_data() {
     auto classifies = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Classify/getList");
     if (!classifies) return make_error(classifies.error().code, classifies.error().message);
-    auto list = classifies->contains("list") && (*classifies)["list"].is_array() ? (*classifies)["list"] : nlohmann::json::array();
-    if (list.empty()) return make_error(ErrorCode::ParseError, "未获取到阳光打卡分类");
-    auto classify = list.front();
-    for (const auto &item : list) {
-        if (json_string(item, "name").find("体育") != std::string::npos) {
-            classify = item;
-            break;
-        }
-    }
-    auto classify_id = json_string(classify, "classify_id");
-    auto items = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Item/getList", {{"page", "1"}, {"limit", "1000"}, {"classify_id", classify_id}}, {{"page", "1"}, {"limit", "1000"}, {"classify_id", classify_id}});
-    auto count = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Clockin/getCount", {}, {{"classify_id", classify_id}, {"user_id", m_uid}});
+    auto classify_list = Parser::parse_ygdk_classifies(*classifies);
+    if (classify_list.empty()) return make_error(ErrorCode::ParseError, "未获取到阳光打卡分类");
+    auto classify = Parser::select_ygdk_sports_classify(classify_list);
+    auto items = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Item/getList", {{"page", "1"}, {"limit", "1000"}, {"classify_id", classify.id}}, {{"page", "1"}, {"limit", "1000"}, {"classify_id", classify.id}});
+    auto count = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Clockin/getCount", {}, {{"classify_id", classify.id}, {"user_id", m_uid}});
     auto term = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Term/get");
+    return std::make_pair(Parser::parse_ygdk_overview(classify, term ? &*term : nullptr, count ? &*count : nullptr),
+                          items ? Parser::parse_ygdk_items(*items, classify.id) : std::vector<Model::YgdkItem>{});
+}
 
+Result<std::vector<Model::FeatureRecord>> YgdkService::overview() {
+    auto data = overview_data();
+    if (!data) return make_error(data.error().code, data.error().message);
     std::vector<Model::FeatureRecord> records;
-    records.push_back(make_record(classify_id, json_string(classify, "name"), "available", {
-        {"termName", term ? json_string(*term, "name") : ""},
-        {"termCount", count ? json_string(*count, "term_count") : ""},
-        {"termGoodCount", count ? json_string(*count, "term_good_count") : ""},
-        {"weekCount", count ? json_string(*count, "week_count") : ""},
-        {"monthCount", count ? json_string(*count, "month_count") : ""},
-        {"dayCount", count ? json_string(*count, "day_count") : ""},
-    }));
-    if (items && items->contains("list") && (*items)["list"].is_array()) {
-        for (const auto &item : (*items)["list"]) {
-            records.push_back(make_record(json_string(item, "item_id"), json_string(item, "name"), "item", {{"classifyId", classify_id}, {"sort", json_string(item, "sort")}}));
-        }
-    }
+    records.push_back(overview_to_record(data->first));
+    for (const auto &item : data->second) records.push_back(item_to_record(item));
     return records;
 }
 
-Result<std::vector<Model::FeatureRecord>> YgdkService::records(int page, int size) {
+Result<std::vector<Model::YgdkRecord>> YgdkService::record_list(int page, int size) {
     auto classifies = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Classify/getList");
     if (!classifies) return make_error(classifies.error().code, classifies.error().message);
-    auto list = classifies->contains("list") && (*classifies)["list"].is_array() ? (*classifies)["list"] : nlohmann::json::array();
-    if (list.empty()) return make_error(ErrorCode::ParseError, "未获取到阳光打卡分类");
-    auto classify_id = json_string(list.front(), "classify_id");
+    auto classify_list = Parser::parse_ygdk_classifies(*classifies);
+    if (classify_list.empty()) return make_error(ErrorCode::ParseError, "未获取到阳光打卡分类");
+    auto classify_id = classify_list.front().id;
     auto page_text = std::to_string(page < 1 ? 1 : page);
     auto size_text = std::to_string(size < 1 ? 20 : size);
     auto data = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Clockin/getList", {{"page", page_text}, {"limit", size_text}, {"classify_id", classify_id}, {"user_id", m_uid}}, {{"page", page_text}, {"limit", size_text}, {"classify_id", classify_id}, {"user_id", m_uid}});
     if (!data) return make_error(data.error().code, data.error().message);
-    auto records_json = data->contains("list") && (*data)["list"].is_array() ? (*data)["list"] : nlohmann::json::array();
+    return Parser::parse_ygdk_records(*data);
+}
+
+Result<std::vector<Model::FeatureRecord>> YgdkService::records(int page, int size) {
+    auto result = record_list(page, size);
+    if (!result) return make_error(result.error().code, result.error().message);
     std::vector<Model::FeatureRecord> records;
-    for (const auto &record : records_json) {
-        records.push_back(make_record(json_string(record, "record_id"), json_string(record, "item_name"), json_string(record, "state"), {{"place", json_string(record, "place")}, {"startTime", json_string(record, "start_time")}, {"endTime", json_string(record, "end_time")}, {"createdAt", json_string(record, "create_time_fmt")}}));
-    }
+    for (const auto &record : *result) records.push_back(record_to_record(record));
     return records;
 }
 

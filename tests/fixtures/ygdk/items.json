@@ -1,0 +1,6 @@
+{
+  "list": [
+    {"item_id": "item-1", "name": "跑步", "sort": 1},
+    {"item_id": "item-2", "name": "健走", "sort": "2"}
+  ]
+}
