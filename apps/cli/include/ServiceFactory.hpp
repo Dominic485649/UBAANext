@@ -13,11 +13,17 @@
 #include <UBAANext/Service/ClassroomService.hpp>
 #include <UBAANext/Service/CourseService.hpp>
 #include <UBAANext/Service/ExamService.hpp>
+#include <UBAANext/Service/BykcService.hpp>
+#include <UBAANext/Service/EvaluationService.hpp>
 #include <UBAANext/Service/FeatureService.hpp>
 #include <UBAANext/Service/GradeService.hpp>
 #include <UBAANext/Service/JudgeService.hpp>
+#include <UBAANext/Service/LibrarySeatService.hpp>
+#include <UBAANext/Service/SigninService.hpp>
 #include <UBAANext/Service/SpocService.hpp>
 #include <UBAANext/Service/TermService.hpp>
+#include <UBAANext/Service/VenueReservationService.hpp>
+#include <UBAANext/Service/YgdkService.hpp>
 
 namespace UBAANextCli {
 
@@ -39,6 +45,12 @@ public:
     [[nodiscard]] UBAANext::GradeService create_grade_service();
     [[nodiscard]] UBAANext::JudgeService create_judge_service();
     [[nodiscard]] UBAANext::SpocService create_spoc_service();
+    [[nodiscard]] UBAANext::SigninService create_signin_service();
+    [[nodiscard]] UBAANext::YgdkService create_ygdk_service();
+    [[nodiscard]] UBAANext::EvaluationService create_evaluation_service();
+    [[nodiscard]] UBAANext::BykcService create_bykc_service();
+    [[nodiscard]] UBAANext::VenueReservationService create_venue_reservation_service();
+    [[nodiscard]] UBAANext::LibrarySeatService create_library_seat_service();
     [[nodiscard]] UBAANext::FeatureService create_feature_service();
 
     [[nodiscard]] UBAANext::IHttpClient &http_client() { return *m_ctx.http; }

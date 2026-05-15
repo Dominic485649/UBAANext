@@ -1314,6 +1314,252 @@ ExitCode cmd_feature_mutate(ServiceFactory &factory, OutputFormatter &out,
     return ExitCode::Ok;
 }
 
+template <typename T>
+ExitCode print_records_result(ServiceFactory &factory, OutputFormatter &out, const std::string &key, const um::Result<std::vector<T>> &result) {
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    save_real_cookies(factory);
+    out.print_records(key, *result);
+    return ExitCode::Ok;
+}
+
+ExitCode print_record_result(ServiceFactory &factory, OutputFormatter &out, const std::string &key, const um::Result<um::Model::FeatureRecord> &result) {
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    save_real_cookies(factory);
+    out.print_record(key, *result);
+    return ExitCode::Ok;
+}
+
+ExitCode print_mutation_result(ServiceFactory &factory, OutputFormatter &out, const um::Result<um::Model::MutationResult> &result) {
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    save_real_cookies(factory);
+    out.print_mutation(*result);
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_bykc_profile(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "bykc", "profile", "profile");
+#endif
+    auto service = factory.create_bykc_service();
+    return print_records_result(factory, out, "profile", service.profile());
+}
+
+ExitCode cmd_bykc_courses(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "bykc", "courses", "courses");
+#endif
+    auto service = factory.create_bykc_service();
+    um::BykcCourseQuery query;
+    query.page = args.page;
+    query.size = args.size;
+    query.all = args.all;
+    query.status = args.status;
+    query.category = args.category;
+    query.sub_category = args.sub_category;
+    query.campus = args.campus > 0 ? std::to_string(args.campus) : std::string{};
+    query.keyword = args.keyword;
+    return print_records_result(factory, out, "courses", service.courses(query));
+}
+
+ExitCode cmd_bykc_chosen(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "bykc", "chosen", "courses");
+#endif
+    auto service = factory.create_bykc_service();
+    return print_records_result(factory, out, "courses", service.chosen());
+}
+
+ExitCode cmd_bykc_stats(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "bykc", "stats", "stats");
+#endif
+    auto service = factory.create_bykc_service();
+    return print_records_result(factory, out, "stats", service.stats());
+}
+
+ExitCode cmd_bykc_course_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    const auto id = args.course_id.empty() ? args.id : args.course_id;
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "bykc", "course", id, "course");
+#endif
+    auto service = factory.create_bykc_service();
+    return print_record_result(factory, out, "course", service.show_course(id));
+}
+
+ExitCode cmd_bykc_select(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out, bool select) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, std::string("bykc ") + (select ? "select" : "unselect") + " 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "bykc", select ? "select" : "unselect", args.course_id.empty() ? args.id : args.course_id, args.confirmed);
+#endif
+    auto service = factory.create_bykc_service();
+    const auto id = args.course_id.empty() ? args.id : args.course_id;
+    return print_mutation_result(factory, out, select ? service.select_course(id) : service.unselect_course(id));
+}
+
+ExitCode cmd_bykc_sign(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+    if (!args.has_lat || !args.has_lng || args.sign_type == 0) {
+        out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 需要 --course-id、--sign-type、--lat 和 --lng"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "bykc", "sign", args.course_id.empty() ? args.id : args.course_id, args.confirmed);
+#endif
+    auto service = factory.create_bykc_service();
+    return print_mutation_result(factory, out, service.sign_course(args.course_id.empty() ? args.id : args.course_id, args.lat, args.lng, args.sign_type));
+}
+
+ExitCode cmd_cgyy_sites(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "cgyy", "sites", "sites");
+#endif
+    auto service = factory.create_venue_reservation_service();
+    return print_records_result(factory, out, "sites", service.list_sites());
+}
+
+ExitCode cmd_cgyy_purpose_types(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "cgyy", "purpose-types", "purposeTypes");
+#endif
+    auto service = factory.create_venue_reservation_service();
+    return print_records_result(factory, out, "purposeTypes", service.list_purpose_types());
+}
+
+ExitCode cmd_cgyy_day_info(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "cgyy", "day-info", "dayInfo");
+#endif
+    auto service = factory.create_venue_reservation_service();
+    return print_records_result(factory, out, "dayInfo", service.day_info(args.date, args.site_id.empty() ? args.id : args.site_id));
+}
+
+ExitCode cmd_cgyy_orders(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "cgyy", "orders", "orders");
+#endif
+    auto service = factory.create_venue_reservation_service();
+    return print_records_result(factory, out, "orders", service.list_orders(args.page, args.size));
+}
+
+ExitCode cmd_cgyy_order_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "cgyy", "show", args.order_id, "order");
+#endif
+    auto service = factory.create_venue_reservation_service();
+    return print_record_result(factory, out, "order", service.show_order(args.order_id));
+}
+
+ExitCode cmd_cgyy_lock_code(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "cgyy", "lock-code", args.order_id.empty() ? "lock-code" : args.order_id, "order");
+#endif
+    auto service = factory.create_venue_reservation_service();
+    return print_record_result(factory, out, "order", service.lock_code());
+}
+
+ExitCode cmd_cgyy_reserve(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "cgyy", "reserve", args.id, args.confirmed);
+#endif
+    auto service = factory.create_venue_reservation_service();
+    return print_mutation_result(factory, out, service.reserve(args.site_id, args.space_id, args.date, args.id, args.purpose_type, args.theme, args.phone, args.joiners, args.captcha, args.token));
+}
+
+ExitCode cmd_cgyy_cancel(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy order cancel 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "cgyy", "cancel", args.order_id, args.confirmed);
+#endif
+    auto service = factory.create_venue_reservation_service();
+    return print_mutation_result(factory, out, service.cancel_order(args.order_id));
+}
+
+ExitCode cmd_libbook_libraries(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "libbook", "libraries", "libraries");
+#endif
+    auto service = factory.create_library_seat_service();
+    return print_records_result(factory, out, "libraries", service.list_libraries(""));
+}
+
+ExitCode cmd_libbook_areas(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "libbook", "areas", "areas");
+#endif
+    auto service = factory.create_library_seat_service();
+    return print_records_result(factory, out, "areas", service.list_areas(args.library_id, args.date, args.storey_id));
+}
+
+ExitCode cmd_libbook_seats(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "libbook", "seats", "seats");
+#endif
+    auto service = factory.create_library_seat_service();
+    return print_records_result(factory, out, "seats", service.list_seats(args.area_id, args.date, args.start_time, args.end_time));
+}
+
+ExitCode cmd_libbook_reservations(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "libbook", "reservations", "reservations");
+#endif
+    auto service = factory.create_library_seat_service();
+    return print_records_result(factory, out, "reservations", service.list_reservations(args.page, args.size));
+}
+
+ExitCode cmd_libbook_area_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "libbook", "area", args.area_id.empty() ? args.id : args.area_id, "area");
+#endif
+    auto service = factory.create_library_seat_service();
+    return print_record_result(factory, out, "area", service.show_area(args.area_id.empty() ? args.id : args.area_id));
+}
+
+ExitCode cmd_libbook_book(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "libbook book 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "libbook", "book", args.seat_id.empty() ? args.id : args.seat_id, args.confirmed);
+#endif
+    auto service = factory.create_library_seat_service();
+    return print_mutation_result(factory, out, service.reserve_seat(args.seat_id.empty() ? args.id : args.seat_id, args.date, args.segment));
+}
+
+ExitCode cmd_libbook_cancel(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "libbook cancel 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "libbook", "cancel", args.booking_id.empty() ? args.id : args.booking_id, args.confirmed);
+#endif
+    auto service = factory.create_library_seat_service();
+    return print_mutation_result(factory, out, service.cancel_booking(args.booking_id.empty() ? args.id : args.booking_id));
+}
+
 ExitCode cmd_user_info(ServiceFactory &factory, OutputFormatter &out) {
     auto service = factory.create_feature_service();
     auto result = service.user_info();
@@ -1530,46 +1776,41 @@ int main(int argc, char *argv[]) {
     }
 
     if (args.command == "bykc") {
-        if (args.subcommand == "profile") return static_cast<int>(cmd_feature_list(factory, out, "bykc", "profile", "profile"));
-        if (args.subcommand == "courses") return static_cast<int>(cmd_feature_list(factory, out, "bykc", "courses:" + std::to_string(args.page) + ":" + std::to_string(args.size) + (args.all ? ":all" : ":page") + ":" + args.status + ":" + args.category + ":" + args.sub_category + ":" + (args.campus > 0 ? std::to_string(args.campus) : std::string{}) + ":" + args.keyword, "courses"));
-        if (args.subcommand == "chosen") return static_cast<int>(cmd_feature_list(factory, out, "bykc", "chosen", "courses"));
-        if (args.subcommand == "stats") return static_cast<int>(cmd_feature_list(factory, out, "bykc", "stats", "stats"));
-        if (args.subcommand == "course" && args.action == "show") return static_cast<int>(cmd_feature_show(factory, out, "bykc", "course", args.course_id.empty() ? args.id : args.course_id, "course"));
-        if (args.subcommand == "select" || args.subcommand == "unselect") return static_cast<int>(cmd_feature_mutate(factory, out, "bykc", args.subcommand, args.course_id.empty() ? args.id : args.course_id, args.confirmed));
-        if (args.subcommand == "sign") {
-            if (!args.has_lat || !args.has_lng || args.sign_type == 0) {
-                out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 需要 --course-id、--sign-type、--lat 和 --lng"});
-                return static_cast<int>(ExitCode::InvalidArgument);
-            }
-            return static_cast<int>(cmd_feature_mutate(factory, out, "bykc", "sign:" + std::to_string(args.sign_type) + ":" + std::to_string(args.lat) + ":" + std::to_string(args.lng), args.course_id.empty() ? args.id : args.course_id, args.confirmed));
-        }
+        if (args.subcommand == "profile") return static_cast<int>(cmd_bykc_profile(factory, out));
+        if (args.subcommand == "courses") return static_cast<int>(cmd_bykc_courses(args, factory, out));
+        if (args.subcommand == "chosen") return static_cast<int>(cmd_bykc_chosen(factory, out));
+        if (args.subcommand == "stats") return static_cast<int>(cmd_bykc_stats(factory, out));
+        if (args.subcommand == "course" && args.action == "show") return static_cast<int>(cmd_bykc_course_show(args, factory, out));
+        if (args.subcommand == "select") return static_cast<int>(cmd_bykc_select(args, factory, out, true));
+        if (args.subcommand == "unselect") return static_cast<int>(cmd_bykc_select(args, factory, out, false));
+        if (args.subcommand == "sign") return static_cast<int>(cmd_bykc_sign(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 bykc 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     if (args.command == "cgyy") {
-        if (args.subcommand == "sites") return static_cast<int>(cmd_feature_list(factory, out, "cgyy", "sites", "sites"));
-        if (args.subcommand == "purpose-types") return static_cast<int>(cmd_feature_list(factory, out, "cgyy", "purpose-types", "purposeTypes"));
-        if (args.subcommand == "day-info") return static_cast<int>(cmd_feature_list(factory, out, "cgyy", (args.date.empty() && args.site_id.empty() && args.id.empty()) ? "day-info" : "day-info:" + args.date + ":" + (args.site_id.empty() ? args.id : args.site_id), "dayInfo"));
-        if (args.subcommand == "orders") return static_cast<int>(cmd_feature_list(factory, out, "cgyy", "orders:" + std::to_string(args.page) + ":" + std::to_string(args.size), "orders"));
-        if (args.subcommand == "reserve") return static_cast<int>(cmd_feature_mutate(factory, out, "cgyy", "reserve:" + args.site_id + "\n" + args.space_id + "\n" + args.date + "\n" + args.purpose_type + "\n" + args.theme + "\n" + args.phone + "\n" + args.joiners + "\n" + args.captcha + "\n" + args.token, args.id, args.confirmed));
+        if (args.subcommand == "sites") return static_cast<int>(cmd_cgyy_sites(factory, out));
+        if (args.subcommand == "purpose-types") return static_cast<int>(cmd_cgyy_purpose_types(factory, out));
+        if (args.subcommand == "day-info") return static_cast<int>(cmd_cgyy_day_info(args, factory, out));
+        if (args.subcommand == "orders") return static_cast<int>(cmd_cgyy_orders(args, factory, out));
+        if (args.subcommand == "reserve") return static_cast<int>(cmd_cgyy_reserve(args, factory, out));
         if (args.subcommand == "order") {
-            if (args.action == "cancel") return static_cast<int>(cmd_feature_mutate(factory, out, "cgyy", "cancel", args.order_id, args.confirmed));
-            if (args.action == "show") return static_cast<int>(cmd_feature_show(factory, out, "cgyy", "show", args.order_id, "order"));
-            if (args.action == "lock-code") return static_cast<int>(cmd_feature_show(factory, out, "cgyy", "lock-code", args.order_id.empty() ? "lock-code" : args.order_id, "order"));
+            if (args.action == "cancel") return static_cast<int>(cmd_cgyy_cancel(args, factory, out));
+            if (args.action == "show") return static_cast<int>(cmd_cgyy_order_show(args, factory, out));
+            if (args.action == "lock-code") return static_cast<int>(cmd_cgyy_lock_code(args, factory, out));
         }
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 cgyy 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     if (args.command == "libbook") {
-        if (args.subcommand == "libraries") return static_cast<int>(cmd_feature_list(factory, out, "libbook", "libraries", "libraries"));
-        if (args.subcommand == "areas") return static_cast<int>(cmd_feature_list(factory, out, "libbook", args.library_id.empty() ? "areas" : "areas:" + args.library_id + ":" + args.date + ":" + args.storey_id, "areas"));
-        if (args.subcommand == "seats") return static_cast<int>(cmd_feature_list(factory, out, "libbook", args.area_id.empty() ? "seats" : "seats:" + args.area_id + ":" + args.date + ":" + args.start_time + ":" + args.end_time, "seats"));
-        if (args.subcommand == "reservations") return static_cast<int>(cmd_feature_list(factory, out, "libbook", "reservations:" + std::to_string(args.page) + ":" + std::to_string(args.size), "reservations"));
-        if (args.subcommand == "area" && args.action == "show") return static_cast<int>(cmd_feature_show(factory, out, "libbook", "area", args.area_id.empty() ? args.id : args.area_id, "area"));
-        if (args.subcommand == "book") return static_cast<int>(cmd_feature_mutate(factory, out, "libbook", "book:" + args.date + "\n" + args.segment, args.seat_id.empty() ? args.id : args.seat_id, args.confirmed));
-        if (args.subcommand == "cancel") return static_cast<int>(cmd_feature_mutate(factory, out, "libbook", "cancel", args.booking_id.empty() ? args.id : args.booking_id, args.confirmed));
+        if (args.subcommand == "libraries") return static_cast<int>(cmd_libbook_libraries(factory, out));
+        if (args.subcommand == "areas") return static_cast<int>(cmd_libbook_areas(args, factory, out));
+        if (args.subcommand == "seats") return static_cast<int>(cmd_libbook_seats(args, factory, out));
+        if (args.subcommand == "reservations") return static_cast<int>(cmd_libbook_reservations(args, factory, out));
+        if (args.subcommand == "area" && args.action == "show") return static_cast<int>(cmd_libbook_area_show(args, factory, out));
+        if (args.subcommand == "book") return static_cast<int>(cmd_libbook_book(args, factory, out));
+        if (args.subcommand == "cancel") return static_cast<int>(cmd_libbook_cancel(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 libbook 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }

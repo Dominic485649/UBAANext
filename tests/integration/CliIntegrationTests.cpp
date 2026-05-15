@@ -288,10 +288,44 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
 }
 
 TEST_CASE("CLI 有副作用命令需要 confirm", "[cli][integration]") {
-    auto result = run_cli({"signin", "do", "--mock", "--json"});
-    REQUIRE(result.exit_code == 2);
-    auto json = parse_json_output(result.stdout_output);
-    REQUIRE(json["ok"] == false);
+    const std::vector<std::vector<std::string>> commands = {
+        {"signin", "do", "--mock", "--json"},
+        {"ygdk", "submit", "--mock", "--json"},
+        {"evaluation", "submit", "--mock", "--json"},
+        {"bykc", "select", "--mock", "--course-id", "bykc-1", "--json"},
+        {"bykc", "unselect", "--mock", "--course-id", "bykc-1", "--json"},
+        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--lat", "39.981", "--lng", "116.347", "--json"},
+        {"cgyy", "reserve", "--mock", "--json"},
+        {"cgyy", "order", "cancel", "--mock", "--order-id", "cgyy-1", "--json"},
+        {"libbook", "book", "--mock", "--seat-id", "libbook-1", "--json"},
+        {"libbook", "cancel", "--mock", "--booking-id", "libbook-1", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        INFO(result.stdout_output);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        REQUIRE(json["ok"] == false);
+        REQUIRE(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
+TEST_CASE("CLI 直接服务写操作保留分隔符参数", "[cli][integration]") {
+    auto bykc = run_cli({"bykc", "sign", "--mock", "--course-id", "bykc:1", "--sign-type", "1", "--lat", "39.981", "--lng", "116.347", "--confirm", "--json"});
+    REQUIRE(bykc.exit_code == 0);
+    auto bykc_json = parse_json_output(bykc.stdout_output);
+    REQUIRE(bykc_json["ok"] == true);
+
+    auto cgyy = run_cli({"cgyy", "reserve", "--mock", "--id", "time:1", "--site-id", "site:1", "--space-id", "space:1", "--date", "2026-05-15", "--purpose-type", "purpose:1", "--theme", "组会:安全", "--phone", "13800000000", "--joiners", "张三\\n李四", "--captcha", "captcha:1", "--token", "token:1", "--confirm", "--json"});
+    REQUIRE(cgyy.exit_code == 0);
+    auto cgyy_json = parse_json_output(cgyy.stdout_output);
+    REQUIRE(cgyy_json["ok"] == true);
+
+    auto libbook = run_cli({"libbook", "book", "--mock", "--seat-id", "seat:1", "--date", "2026-05-15", "--segment", "08:00-10:00\\n10:00-12:00", "--confirm", "--json"});
+    REQUIRE(libbook.exit_code == 0);
+    auto libbook_json = parse_json_output(libbook.stdout_output);
+    REQUIRE(libbook_json["ok"] == true);
 }
 
 TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integration]") {

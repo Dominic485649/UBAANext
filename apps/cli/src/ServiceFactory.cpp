@@ -43,6 +43,30 @@ UBAANext::SpocService ServiceFactory::create_spoc_service() {
     return UBAANext::SpocService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
 }
 
+UBAANext::SigninService ServiceFactory::create_signin_service() {
+    return UBAANext::SigninService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::YgdkService ServiceFactory::create_ygdk_service() {
+    return UBAANext::YgdkService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::EvaluationService ServiceFactory::create_evaluation_service() {
+    return UBAANext::EvaluationService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::BykcService ServiceFactory::create_bykc_service() {
+    return UBAANext::BykcService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::VenueReservationService ServiceFactory::create_venue_reservation_service() {
+    return UBAANext::VenueReservationService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::LibrarySeatService ServiceFactory::create_library_seat_service() {
+    return UBAANext::LibrarySeatService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
 UBAANext::FeatureService ServiceFactory::create_feature_service() {
     return UBAANext::FeatureService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
 }
