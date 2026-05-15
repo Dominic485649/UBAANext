@@ -1,18 +1,13 @@
 #include <UBAANext/Service/VenueReservationService.hpp>
 
+#include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/VenueReservationParser.hpp>
-
-#ifdef _WIN32
-#include <windows.h>
-#include <bcrypt.h>
-#endif
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <ctime>
-#include <functional>
 #include <iomanip>
 #include <map>
 #include <sstream>
@@ -55,39 +50,11 @@ std::int64_t now_millis() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-#ifdef _WIN32
-std::string bytes_to_hex(const std::vector<unsigned char> &data) {
-    std::ostringstream out;
-    out << std::hex << std::setfill('0');
-    for (auto byte : data) out << std::setw(2) << static_cast<int>(byte);
-    return out.str();
-}
-#endif
-
-std::string md5_hex(const std::string &input) {
-#ifdef _WIN32
-    BCRYPT_ALG_HANDLE alg = nullptr;
-    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_MD5_ALGORITHM, nullptr, 0) != 0) return {};
-    DWORD hash_len = 0;
-    DWORD cb = 0;
-    if (BCryptGetProperty(alg, BCRYPT_HASH_LENGTH, reinterpret_cast<PUCHAR>(&hash_len), sizeof(hash_len), &cb, 0) != 0) {
-        BCryptCloseAlgorithmProvider(alg, 0);
-        return {};
-    }
-    std::vector<unsigned char> hash(hash_len);
-    if (BCryptHash(alg, nullptr, 0, reinterpret_cast<PUCHAR>(const_cast<char *>(input.data())), static_cast<ULONG>(input.size()), hash.data(), static_cast<ULONG>(hash.size())) != 0) {
-        BCryptCloseAlgorithmProvider(alg, 0);
-        return {};
-    }
-    BCryptCloseAlgorithmProvider(alg, 0);
-    return bytes_to_hex(hash);
-#else
-    (void)input;
-    return {};
-#endif
+Result<std::string> md5_hex(const std::string &input) {
+    return default_crypto_provider().md5_hex(input);
 }
 
-std::string sign_request(const std::string &path, const std::map<std::string, std::string> &params, std::int64_t timestamp) {
+Result<std::string> sign_request(const std::string &path, const std::map<std::string, std::string> &params, std::int64_t timestamp) {
     std::string normalized = path.empty() || path.front() != '/' ? "/" + path : path;
     std::string payload = sign_prefix + normalized;
     for (const auto &[key, value] : params) {
@@ -216,6 +183,7 @@ Result<nlohmann::json> VenueReservationService::request_json(HttpMethod method,
     auto request_params = params;
     if (method == HttpMethod::Get && request_params.find("nocache") == request_params.end()) request_params["nocache"] = std::to_string(timestamp);
     auto sign = sign_request(path, method == HttpMethod::Get ? request_params : sign_params, timestamp);
+    if (!sign) return make_error(sign.error().code, sign.error().message);
 
     HttpRequest request;
     request.method = method;
@@ -227,7 +195,7 @@ Result<nlohmann::json> VenueReservationService::request_json(HttpMethod method,
     request.headers["Referer"] = referer_url;
     request.headers["app-key"] = app_key;
     request.headers["timestamp"] = std::to_string(timestamp);
-    request.headers["sign"] = sign;
+    request.headers["sign"] = *sign;
     if (authorize) request.headers["cgAuthorization"] = m_access_token;
     for (const auto &[key, value] : extra_headers) request.headers[key] = value;
     if (method != HttpMethod::Get) {

@@ -1,12 +1,8 @@
 #include <UBAANext/Service/LibrarySeatService.hpp>
 
+#include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/LibrarySeatParser.hpp>
-
-#ifdef _WIN32
-#include <windows.h>
-#include <bcrypt.h>
-#endif
 
 #include <ctime>
 #include <iomanip>
@@ -15,7 +11,6 @@
 #include <sstream>
 #include <utility>
 #include <vector>
-#include <algorithm>
 
 namespace UBAANext {
 
@@ -23,9 +18,7 @@ namespace {
 
 constexpr const char *base_url = "https://booking.lib.buaa.edu.cn";
 constexpr const char *cas_login_url = "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fbooking.lib.buaa.edu.cn%2Fv4%2Flogin%2Fcas";
-#ifdef _WIN32
 constexpr const char *reserve_iv = "ZZWBKJ_ZHIHUAWEI";
-#endif
 
 std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
     return mode == ConnectionMode::WebVPN ? VpnCipher::to_vpn_url(url) : url;
@@ -86,79 +79,26 @@ std::string today_yyyy_mm_dd() {
     return out.str();
 }
 
-#ifdef _WIN32
-std::string base64_encode(const std::vector<unsigned char> &data) {
-    static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string out;
-    for (size_t i = 0; i < data.size(); i += 3) {
-        unsigned int value = data[i] << 16;
-        if (i + 1 < data.size()) value |= data[i + 1] << 8;
-        if (i + 2 < data.size()) value |= data[i + 2];
-        out.push_back(alphabet[(value >> 18) & 0x3f]);
-        out.push_back(alphabet[(value >> 12) & 0x3f]);
-        out.push_back(i + 1 < data.size() ? alphabet[(value >> 6) & 0x3f] : '=');
-        out.push_back(i + 2 < data.size() ? alphabet[value & 0x3f] : '=');
-    }
-    return out;
-}
-
 std::string libbook_aes_key(const std::string &day) {
     std::string digits;
     for (char ch : day) {
         if (ch >= '0' && ch <= '9') digits.push_back(ch);
     }
     if (digits.size() != 8) return {};
-    std::string reversed = digits;
-    std::reverse(reversed.begin(), reversed.end());
+    std::string reversed(digits.rbegin(), digits.rend());
     return digits + reversed;
 }
-#endif
 
 Result<std::string> encrypt_reserve_payload(const nlohmann::json &body, const std::string &day) {
-#ifdef _WIN32
     auto key = libbook_aes_key(day);
     if (key.empty()) return make_error(ErrorCode::InvalidArgument, "libbook book 需要有效 --date <yyyy-MM-dd>");
     auto plain = body.dump();
     std::vector<unsigned char> data(plain.begin(), plain.end());
     auto pad = 16 - (data.size() % 16);
     data.insert(data.end(), pad, static_cast<unsigned char>(pad));
-
-    BCRYPT_ALG_HANDLE alg = nullptr;
-    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_AES_ALGORITHM, nullptr, 0) != 0) return make_error(ErrorCode::NetworkError, "打开 LibBook AES 算法失败");
-    auto close_alg = [&]() { if (alg) BCryptCloseAlgorithmProvider(alg, 0); };
-    if (BCryptSetProperty(alg, BCRYPT_CHAINING_MODE, reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_CBC)), static_cast<ULONG>((wcslen(BCRYPT_CHAIN_MODE_CBC) + 1) * sizeof(wchar_t)), 0) != 0) {
-        close_alg();
-        return make_error(ErrorCode::NetworkError, "设置 LibBook AES CBC 模式失败");
-    }
-    BCRYPT_KEY_HANDLE key_handle = nullptr;
-    std::vector<unsigned char> key_bytes(key.begin(), key.end());
-    if (BCryptGenerateSymmetricKey(alg, &key_handle, nullptr, 0, key_bytes.data(), static_cast<ULONG>(key_bytes.size()), 0) != 0) {
-        close_alg();
-        return make_error(ErrorCode::NetworkError, "生成 LibBook AES 密钥失败");
-    }
-    std::vector<unsigned char> iv(reserve_iv, reserve_iv + std::char_traits<char>::length(reserve_iv));
-    ULONG out_len = 0;
-    if (BCryptEncrypt(key_handle, data.data(), static_cast<ULONG>(data.size()), nullptr, iv.data(), static_cast<ULONG>(iv.size()), nullptr, 0, &out_len, 0) != 0) {
-        BCryptDestroyKey(key_handle);
-        close_alg();
-        return make_error(ErrorCode::NetworkError, "计算 LibBook AES 输出长度失败");
-    }
-    std::vector<unsigned char> out(out_len);
-    iv.assign(reserve_iv, reserve_iv + std::char_traits<char>::length(reserve_iv));
-    if (BCryptEncrypt(key_handle, data.data(), static_cast<ULONG>(data.size()), nullptr, iv.data(), static_cast<ULONG>(iv.size()), out.data(), static_cast<ULONG>(out.size()), &out_len, 0) != 0) {
-        BCryptDestroyKey(key_handle);
-        close_alg();
-        return make_error(ErrorCode::NetworkError, "LibBook AES 加密失败");
-    }
-    BCryptDestroyKey(key_handle);
-    close_alg();
-    out.resize(out_len);
-    return base64_encode(out);
-#else
-    (void)body;
-    (void)day;
-    return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 LibBook AES 加密实现");
-#endif
+    auto encrypted = default_crypto_provider().aes_cbc_encrypt(data, key, reserve_iv);
+    if (!encrypted) return make_error(encrypted.error().code, "LibBook " + encrypted.error().message);
+    return base64_encode(*encrypted);
 }
 
 void apply_headers(HttpRequest &request) {

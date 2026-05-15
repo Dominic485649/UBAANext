@@ -23,6 +23,7 @@ add_library(UBAANextCore STATIC
     src/Protocol/ScoreSession.cpp
     src/Net/CookieJar.cpp
     src/Net/VpnCipher.cpp
+    src/Crypto/CryptoProvider.cpp
     src/Storage/SecureStoreAdapter.cpp
     src/Storage/MemoryCacheStore.cpp
     src/Parser/JsonParser.cpp
