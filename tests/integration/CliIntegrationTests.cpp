@@ -181,6 +181,11 @@ TEST_CASE("CLI logout 命令", "[cli][integration]") {
     auto json = parse_json_output(result.stdout_output);
     REQUIRE(json["ok"] == true);
     REQUIRE(json["data"].contains("message"));
+
+    auto whoami = run_cli({"whoami", "--json"});
+    REQUIRE(whoami.exit_code != 0);
+    auto whoami_json = parse_json_output(whoami.stdout_output);
+    require_error_envelope(whoami_json);
 }
 
 TEST_CASE("CLI course today mock 命令", "[cli][integration]") {

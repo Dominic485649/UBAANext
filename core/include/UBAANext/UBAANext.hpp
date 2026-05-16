@@ -35,6 +35,8 @@
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Net/HttpRequest.hpp>
 #include <UBAANext/Net/HttpResponse.hpp>
+#include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Net/WinHttpClient.hpp>
 
 // ── 存储层 ──────────────────────────────────────────────────────────
 #include <UBAANext/Storage/CacheStore.hpp>
@@ -42,10 +44,18 @@
 #include <UBAANext/Storage/SecureStore.hpp>
 #include <UBAANext/Storage/SecureStoreAdapter.hpp>
 
+// ── 加密 ───────────────────────────────────────────────────────────
+#include <UBAANext/Crypto/CryptoProvider.hpp>
+
 // ── 认证 ───────────────────────────────────────────────────────────
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Auth/Session.hpp>
 #include <UBAANext/Auth/SessionManager.hpp>
+
+// ── 协议 ───────────────────────────────────────────────────────────
+#include <UBAANext/Protocol/AppBuaaSession.hpp>
+#include <UBAANext/Protocol/ByxtSession.hpp>
+#include <UBAANext/Protocol/ScoreSession.hpp>
 
 // ── 解析 ──────────────────────────────────────────────────────────
 #include <UBAANext/Parser/BykcParser.hpp>
@@ -59,7 +69,18 @@
 #include <UBAANext/Parser/YgdkParser.hpp>
 
 // ── 服务层 ─────────────────────────────────────────────────────────
+#include <UBAANext/Service/BykcService.hpp>
 #include <UBAANext/Service/ClassroomService.hpp>
 #include <UBAANext/Service/CourseService.hpp>
+#include <UBAANext/Service/EvaluationService.hpp>
 #include <UBAANext/Service/ExamService.hpp>
+#include <UBAANext/Service/FeatureService.hpp>
 #include <UBAANext/Service/GradeService.hpp>
+#include <UBAANext/Service/JudgeService.hpp>
+#include <UBAANext/Service/LibrarySeatService.hpp>
+#include <UBAANext/Service/ResponseUtils.hpp>
+#include <UBAANext/Service/SigninService.hpp>
+#include <UBAANext/Service/SpocService.hpp>
+#include <UBAANext/Service/TermService.hpp>
+#include <UBAANext/Service/VenueReservationService.hpp>
+#include <UBAANext/Service/YgdkService.hpp>

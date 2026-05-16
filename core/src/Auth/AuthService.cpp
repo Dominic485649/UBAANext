@@ -23,6 +23,22 @@ static const char *UC_USERINFO_URL = "https://uc.buaa.edu.cn/api/uc/userinfo";
 
 namespace {
 
+std::string connection_mode_to_string(ConnectionMode mode) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (mode == ConnectionMode::Mock) return "mock";
+#endif
+    return mode == ConnectionMode::Direct ? "direct" : "vpn";
+}
+
+ConnectionMode connection_mode_from_string(const std::string &mode, ConnectionMode fallback) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (mode == "mock") return ConnectionMode::Mock;
+#endif
+    if (mode == "direct") return ConnectionMode::Direct;
+    if (mode == "vpn" || mode == "webvpn") return ConnectionMode::WebVPN;
+    return fallback;
+}
+
 std::string extract_host(const std::string &url) {
     auto scheme_end = url.find("://");
     if (scheme_end == std::string::npos) {
@@ -73,7 +89,7 @@ Result<Model::Account> AuthService::login_mock(const std::string &username,
     account.student_id = username;
     account.display_name = "Test User";
 
-    m_session_manager.save_session(username, account);
+    m_session_manager.save_session(username, account, connection_mode_to_string(m_conn_mode));
     m_session.set_account(account);
     return account;
 }
@@ -463,7 +479,8 @@ activate_uc:
         }
 
         // 持久化并激活会话
-        m_session_manager.save_session(username, account);
+        m_conn_mode = mode;
+        m_session_manager.save_session(username, account, connection_mode_to_string(mode));
         m_session.set_account(account);
 
         return account;
@@ -496,6 +513,7 @@ Result<Model::Account> AuthService::restore_session() {
     if (!account) {
         return make_error(ErrorCode::SessionExpired, "未找到已保存的会话");
     }
+    m_conn_mode = connection_mode_from_string(m_session_manager.connection_mode(), m_conn_mode);
     m_session.set_account(*account);
     return std::move(*account);
 }

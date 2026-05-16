@@ -39,7 +39,7 @@ public:
      * @param username 用于登录的学号
      * @param account  要持久化的账户数据（复制到存储，移动到缓存）
      */
-    void save_session(const std::string &username, Model::Account account);
+    void save_session(const std::string &username, Model::Account account, const std::string &connection_mode = "");
 
     /**
      * @brief 从存储中恢复之前保存的会话
@@ -61,11 +61,13 @@ public:
      * @return 用户名字符串，无活跃会话时返回空字符串
      */
     [[nodiscard]] const std::string &current_username() const;
+    [[nodiscard]] const std::string &connection_mode() const;
 
 private:
     ISecureStore &m_store;                    ///< 持久存储（非拥有）
     std::optional<Model::Account> m_current;  ///< 内存中的会话缓存
     std::string m_username;                   ///< 当前会话的用户名
+    std::string m_connection_mode;            ///< 当前会话的连接模式
 };
 
 } // namespace UBAANext

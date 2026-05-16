@@ -21,9 +21,10 @@ TEST_CASE("SessionManager 保存和恢复会话", "[SessionManager]") {
     account.access_token = "at_123";
     account.refresh_token = "rt_456";
 
-    mgr.save_session("20260000", account);
+    mgr.save_session("20260000", account, "vpn");
     REQUIRE(mgr.has_session());
     REQUIRE(mgr.current_username() == "20260000");
+    REQUIRE(mgr.connection_mode() == "vpn");
 }
 
 TEST_CASE("SessionManager 从存储中恢复", "[SessionManager]") {
@@ -37,7 +38,7 @@ TEST_CASE("SessionManager 从存储中恢复", "[SessionManager]") {
     account.access_token = "at_123";
     account.refresh_token = "rt_456";
 
-    mgr1.save_session("20260000", account);
+    mgr1.save_session("20260000", account, "direct");
 
     um::SessionManager mgr2(store);
     auto restored = mgr2.restore_session();
@@ -45,6 +46,7 @@ TEST_CASE("SessionManager 从存储中恢复", "[SessionManager]") {
     REQUIRE(restored->student_id == "20260000");
     REQUIRE(restored->display_name == "Test User");
     REQUIRE(restored->access_token == "at_123");
+    REQUIRE(mgr2.connection_mode() == "direct");
 }
 
 TEST_CASE("SessionManager 清除会话", "[SessionManager]") {
@@ -61,6 +63,7 @@ TEST_CASE("SessionManager 清除会话", "[SessionManager]") {
     mgr.clear_session();
     REQUIRE_FALSE(mgr.has_session());
     REQUIRE(mgr.current_username().empty());
+    REQUIRE(mgr.connection_mode().empty());
 }
 
 TEST_CASE("SessionManager 无会话时恢复返回 nullopt", "[SessionManager]") {

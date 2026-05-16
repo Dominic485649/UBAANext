@@ -56,3 +56,19 @@ TEST_CASE("AuthService 登出清除会话", "[AuthService]") {
     REQUIRE(result.has_value());
     REQUIRE_FALSE(auth.has_session());
 }
+
+TEST_CASE("AuthService 恢复会话时同步连接模式", "[AuthService]") {
+    UBAANextMocks::MockHttpClient http_client;
+    UBAANextMocks::MockSecureStore secure_store;
+
+    um::AuthService auth1(http_client, secure_store);
+    auth1.set_connection_mode(um::ConnectionMode::Direct);
+    auto login = auth1.login_mock("20260000", "test");
+    REQUIRE(login.has_value());
+
+    um::AuthService auth2(http_client, secure_store);
+    auth2.set_connection_mode(um::ConnectionMode::WebVPN);
+    auto restored = auth2.restore_session();
+    REQUIRE(restored.has_value());
+    REQUIRE(auth2.connection_mode() == um::ConnectionMode::Direct);
+}

@@ -50,6 +50,7 @@
 #include <filesystem>
 #include <optional>
 #include <fstream>
+#include <system_error>
 #include <set>
 #include <string>
 #include <string_view>
@@ -715,6 +716,18 @@ void print_usage() {
 
 void save_real_cookies(ServiceFactory &factory);
 
+void clear_real_cookies(ServiceFactory &factory) {
+#if defined(_WIN32)
+    if (auto *win_http = dynamic_cast<um::WinHttpClient *>(&factory.http_client())) {
+        win_http->cookies().clear();
+    }
+    std::error_code ec;
+    std::filesystem::remove(get_cookie_file_path(), ec);
+#else
+    (void)factory;
+#endif
+}
+
 ExitCode cmd_version(OutputFormatter &out) {
     out.print_version(UBAANEXT_VERSION_STRING);
     return ExitCode::Ok;
@@ -800,6 +813,8 @@ ExitCode cmd_logout(const CliArgs &args, ServiceFactory &factory, OutputFormatte
         out.print_error(result.error());
         return ExitCode::General;
     }
+    clear_real_cookies(factory);
+    factory.context().cache->clear();
 
     out.print_message("已登出。");
     return ExitCode::Ok;
@@ -1506,6 +1521,7 @@ ExitCode cmd_cgyy_order_show(const CliArgs &args, ServiceFactory &factory, Outpu
 }
 
 ExitCode cmd_cgyy_lock_code(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    (void)args;
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "cgyy", "lock-code", args.order_id.empty() ? "lock-code" : args.order_id, "order");
 #endif

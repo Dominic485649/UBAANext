@@ -18,7 +18,8 @@ namespace UBAANext {
 SessionManager::SessionManager(ISecureStore &store) : m_store(store) {}
 
 void SessionManager::save_session(const std::string &username,
-                                   Model::Account account) {
+                                   Model::Account account,
+                                   const std::string &connection_mode) {
     // 输入验证：用户名不能为空
     if (username.empty()) {
         return;  // 静默忽略无效调用
@@ -26,6 +27,7 @@ void SessionManager::save_session(const std::string &username,
 
     // 更新内存缓存（使用移动语义避免不必要的拷贝）
     m_username = username;
+    m_connection_mode = connection_mode;
     m_current = account;
 
     // 持久化到安全存储
@@ -34,6 +36,11 @@ void SessionManager::save_session(const std::string &username,
     m_store.set_string("session.display_name", account.display_name);
     m_store.set_string("session.access_token", account.access_token);
     m_store.set_string("session.refresh_token", account.refresh_token);
+    if (!connection_mode.empty()) {
+        m_store.set_string("session.connection_mode", connection_mode);
+    } else {
+        m_store.remove("session.connection_mode");
+    }
     m_store.set_string("session.active", "true");
 }
 
@@ -48,6 +55,7 @@ std::optional<Model::Account> SessionManager::restore_session() {
     auto username = m_store.get_string("session.username");
     auto student_id = m_store.get_string("session.student_id");
     auto display_name = m_store.get_string("session.display_name");
+    auto connection_mode = m_store.get_string("session.connection_mode");
 
     // 如果任何必需字段缺失，则会话无效
     if (!username || !student_id || !display_name) {
@@ -66,6 +74,7 @@ std::optional<Model::Account> SessionManager::restore_session() {
 
     // 更新内存缓存
     m_username = std::move(*username);
+    m_connection_mode = connection_mode ? std::move(*connection_mode) : std::string{};
     m_current = account;
     return account;
 }
@@ -77,11 +86,13 @@ void SessionManager::clear_session() {
     m_store.remove("session.display_name");
     m_store.remove("session.access_token");
     m_store.remove("session.refresh_token");
+    m_store.remove("session.connection_mode");
     m_store.remove("session.active");
 
     // 清除内存缓存
     m_current.reset();
     m_username.clear();
+    m_connection_mode.clear();
 }
 
 bool SessionManager::has_session() const {
@@ -90,6 +101,10 @@ bool SessionManager::has_session() const {
 
 const std::string &SessionManager::current_username() const {
     return m_username;
+}
+
+const std::string &SessionManager::connection_mode() const {
+    return m_connection_mode;
 }
 
 } // namespace UBAANext
