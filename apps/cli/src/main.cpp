@@ -1602,7 +1602,7 @@ ExitCode cmd_libbook_book(const CliArgs &args, ServiceFactory &factory, OutputFo
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "libbook", "book", args.seat_id.empty() ? args.id : args.seat_id, args.confirmed);
 #endif
     auto service = factory.create_library_seat_service();
-    return print_mutation_result(factory, out, service.reserve_seat(args.seat_id.empty() ? args.id : args.seat_id, args.date, args.segment));
+    return print_mutation_result(factory, out, service.reserve_seat(args.seat_id.empty() ? args.id : args.seat_id, args.date, args.segment, args.start_time, args.end_time));
 }
 
 ExitCode cmd_libbook_cancel(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {

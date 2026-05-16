@@ -7,6 +7,7 @@
 #include <ctime>
 #include <iomanip>
 #include <map>
+#include <optional>
 #include <regex>
 #include <sstream>
 #include <utility>
@@ -99,6 +100,16 @@ Result<std::string> encrypt_reserve_payload(const nlohmann::json &body, const st
     auto encrypted = default_crypto_provider().aes_cbc_encrypt(data, key, reserve_iv);
     if (!encrypted) return make_error(encrypted.error().code, "LibBook " + encrypted.error().message);
     return base64_encode(*encrypted);
+}
+
+std::optional<std::pair<std::string, std::string>> parse_time_range(const std::string &segment) {
+    auto separator = segment.find('-');
+    if (separator == std::string::npos) separator = segment.find('~');
+    if (separator == std::string::npos) return std::nullopt;
+    auto start = segment.substr(0, separator);
+    auto end = segment.substr(separator + 1);
+    if (start.size() != 5 || end.size() != 5 || start[2] != ':' || end[2] != ':') return std::nullopt;
+    return std::make_pair(start, end);
 }
 
 void apply_headers(HttpRequest &request) {
@@ -359,18 +370,31 @@ Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_reservations(
     return to_records(*records);
 }
 
-Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string &seat_id, const std::string &day, const std::string &segment) {
+Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string &seat_id,
+                                                               const std::string &day,
+                                                               const std::string &segment,
+                                                               const std::string &start_time,
+                                                               const std::string &end_time) {
     if (seat_id.empty()) {
         return make_error(ErrorCode::InvalidArgument, "libbook book 需要 --seat-id <id>");
     }
     if (day.empty()) {
         return make_error(ErrorCode::InvalidArgument, "libbook book 需要 --date <yyyy-MM-dd>");
     }
-    if (segment.empty()) {
-        return make_error(ErrorCode::InvalidArgument, "libbook book 需要 --segment <segment>");
+    if (segment.empty() && (start_time.empty() || end_time.empty())) {
+        return make_error(ErrorCode::InvalidArgument, "libbook book 需要 --segment <segment> 或 --start-time/--end-time");
     }
 
-    auto encrypted = encrypt_reserve_payload({{"seat_id", seat_id}, {"segment", segment}, {"day", day}, {"start_time", ""}, {"end_time", ""}}, day);
+    std::string resolved_start = start_time;
+    std::string resolved_end = end_time;
+    if ((resolved_start.empty() || resolved_end.empty()) && !segment.empty()) {
+        if (auto range = parse_time_range(segment)) {
+            resolved_start = range->first;
+            resolved_end = range->second;
+        }
+    }
+
+    auto encrypted = encrypt_reserve_payload({{"seat_id", seat_id}, {"segment", segment}, {"day", day}, {"start_time", resolved_start}, {"end_time", resolved_end}}, day);
     if (!encrypted) {
         return make_error(encrypted.error().code, encrypted.error().message);
     }
@@ -386,7 +410,7 @@ Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string
     Model::MutationResult result;
     result.accepted = true;
     result.message = message;
-    result.summary = make_record(seat_id, "图书馆座位预约", "reserved", {{"day", day}, {"segment", segment}, {"raw", json->dump()}});
+    result.summary = make_record(seat_id, "图书馆座位预约", "reserved", {{"day", day}, {"segment", segment}, {"startTime", resolved_start}, {"endTime", resolved_end}, {"raw", json->dump()}});
     return result;
 }
 

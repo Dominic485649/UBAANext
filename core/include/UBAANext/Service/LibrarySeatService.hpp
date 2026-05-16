@@ -29,7 +29,11 @@ public:
     Result<Model::FeatureRecord> show_area(const std::string &area_id);
     Result<std::vector<Model::FeatureRecord>> list_seats(const std::string &area_id, const std::string &day, const std::string &start_time = "08:00", const std::string &end_time = "22:00");
     Result<std::vector<Model::FeatureRecord>> list_reservations(int page = 1, int limit = 20);
-    Result<Model::MutationResult> reserve_seat(const std::string &seat_id, const std::string &day, const std::string &segment);
+    Result<Model::MutationResult> reserve_seat(const std::string &seat_id,
+                                               const std::string &day,
+                                               const std::string &segment,
+                                               const std::string &start_time = "",
+                                               const std::string &end_time = "");
     Result<Model::MutationResult> cancel_booking(const std::string &booking_id);
 
 private:
