@@ -118,33 +118,34 @@ Model::FeatureRecord detail_to_record(const Model::JudgeAssignmentDetail &detail
 JudgeService::JudgeService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
     : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
 
+namespace {
+
+Result<HttpResponse> send_judge_request(IHttpClient &http_client, ConnectionMode mode, const std::string &url, const char *failure_message) {
+    std::string current_url = url;
+    for (int redirects = 0; redirects < 8; ++redirects) {
+        HttpRequest request;
+        request.method = HttpMethod::Get;
+        request.url = resolve_for_mode(current_url, mode);
+        apply_judge_headers(request);
+
+        auto response = http_client.send(request);
+        if (!response) return make_error(ErrorCode::NetworkError, std::string(failure_message) + ": " + response.error().message);
+        if (response->status_code < 300 || response->status_code >= 400) return *response;
+
+        auto location = header_value(*response, "Location");
+        if (location.empty()) return make_error(ErrorCode::NetworkError, "希冀跳转缺少 Location");
+        current_url = resolve_redirect_url(current_url, location);
+    }
+    return make_error(ErrorCode::NetworkError, "希冀跳转次数过多");
+}
+
+} // namespace
+
 Result<void> JudgeService::ensure_session() {
     (void)m_cache;
 
-    HttpRequest request;
-    request.method = HttpMethod::Get;
-    request.url = resolve_for_mode("https://sso.buaa.edu.cn/login?service=http%3A%2F%2Fjudge.buaa.edu.cn%2F", m_mode);
-    apply_judge_headers(request);
-
-    auto response = m_http_client.send(request);
-    if (!response) {
-        return make_error(ErrorCode::NetworkError, "激活希冀会话失败: " + response.error().message);
-    }
-
-    if (response->status_code >= 300 && response->status_code < 400) {
-        auto location = header_value(*response, "Location");
-        if (location.empty()) {
-            return make_error(ErrorCode::NetworkError, "希冀登录跳转缺少 Location");
-        }
-        HttpRequest redirect;
-        redirect.method = HttpMethod::Get;
-        redirect.url = resolve_for_mode(resolve_redirect_url("https://sso.buaa.edu.cn/login?service=http%3A%2F%2Fjudge.buaa.edu.cn%2F", location), m_mode);
-        apply_judge_headers(redirect);
-        response = m_http_client.send(redirect);
-        if (!response) {
-            return make_error(ErrorCode::NetworkError, "跟随希冀登录跳转失败: " + response.error().message);
-        }
-    }
+    auto response = send_judge_request(m_http_client, m_mode, "https://sso.buaa.edu.cn/login?service=http%3A%2F%2Fjudge.buaa.edu.cn%2F", "激活希冀会话失败");
+    if (!response) return make_error(response.error().code, response.error().message);
 
     if (is_sso_or_login_page(*response)) {
         return make_error(ErrorCode::SessionExpired, "希冀会话已过期，请重新登录");
@@ -161,15 +162,8 @@ Result<std::string> JudgeService::get_html(const std::string &url) {
         return make_error(session.error().code, session.error().message);
     }
 
-    HttpRequest request;
-    request.method = HttpMethod::Get;
-    request.url = resolve_for_mode(url, m_mode);
-    apply_judge_headers(request);
-
-    auto response = m_http_client.send(request);
-    if (!response) {
-        return make_error(ErrorCode::NetworkError, "请求希冀失败: " + response.error().message);
-    }
+    auto response = send_judge_request(m_http_client, m_mode, url, "请求希冀失败");
+    if (!response) return make_error(response.error().code, response.error().message);
     if (is_sso_or_login_page(*response)) {
         return make_error(ErrorCode::SessionExpired, "希冀会话已过期，请重新登录");
     }
