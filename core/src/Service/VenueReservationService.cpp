@@ -345,7 +345,8 @@ Result<std::vector<Model::VenueSpaceInfo>> VenueReservationService::day_spaces(c
 }
 
 Result<std::vector<Model::VenueOrder>> VenueReservationService::orders(int page, int size) {
-    auto data = request_json(HttpMethod::Get, "/api/orders/mine", {{"page", std::to_string(page < 1 ? 1 : page)}, {"size", std::to_string(size < 1 ? 20 : size)}});
+    auto upstream_page = page < 1 ? 0 : page - 1;
+    auto data = request_json(HttpMethod::Get, "/api/orders/mine", {{"page", std::to_string(upstream_page)}, {"size", std::to_string(size < 1 ? 20 : size)}});
     if (!data) return make_error(data.error().code, data.error().message);
     return Parser::parse_venue_orders(*data);
 }

@@ -49,6 +49,8 @@ public:
             auto auth = request.headers.find("cgAuthorization");
             REQUIRE(auth != request.headers.end());
             CHECK(auth->second == "access-token-1");
+            CHECK(request.url.find("page=0") != std::string::npos);
+            CHECK(request.url.find("size=20") != std::string::npos);
             response.body = R"JSON({"code":200,"data":{"content":[{"id":"order-1","theme":"组会","status":"reserved","reservationDate":"2026-05-15"}]}})JSON";
         } else {
             response.status_code = 500;
