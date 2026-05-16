@@ -4,11 +4,13 @@
 #include <UBAANext/Parser/EvaluationParser.hpp>
 #include <UBAANext/Service/ResponseUtils.hpp>
 
+#include <cctype>
 #include <iomanip>
 #include <map>
+#include <regex>
+#include <set>
 #include <sstream>
 #include <utility>
-#include <set>
 
 namespace UBAANext {
 
@@ -36,6 +38,41 @@ void apply_headers(HttpRequest &request) {
     request.headers["Accept-Language"] = "zh-CN,zh;q=0.9";
     request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
     request.headers["X-Requested-With"] = "XMLHttpRequest";
+}
+
+std::string header_value(const HttpResponse &response, const std::string &name) {
+    for (const auto &[key, value] : response.headers) {
+        if (key.size() != name.size()) continue;
+        bool same = true;
+        for (size_t i = 0; i < key.size(); ++i) {
+            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
+                same = false;
+                break;
+            }
+        }
+        if (same) {
+            auto newline = value.find('\n');
+            return newline == std::string::npos ? value : value.substr(0, newline);
+        }
+    }
+    return {};
+}
+
+std::string resolve_redirect_url(const std::string &base_url, const std::string &location) {
+    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) return location;
+    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
+    std::smatch match;
+    if (!std::regex_search(base_url, match, url_re)) return location;
+    std::string authority = match[1].str();
+    std::string path = match.size() > 2 ? match[2].str() : "/";
+    if (location.rfind("//", 0) == 0) {
+        auto colon = authority.find(':');
+        return authority.substr(0, colon) + ":" + location;
+    }
+    if (!location.empty() && location.front() == '/') return authority + location;
+    auto slash = path.find_last_of('/');
+    std::string base_path = slash == std::string::npos ? "/" : path.substr(0, slash + 1);
+    return authority + base_path + location;
 }
 
 std::string json_string(const nlohmann::json &json, const char *key) {
@@ -73,15 +110,44 @@ Model::FeatureRecord task_to_record(const Model::EvaluationTask &task) {
 EvaluationService::EvaluationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
     : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
 
+namespace {
+
+Result<HttpResponse> send_evaluation_request(IHttpClient &http_client,
+                                             ConnectionMode mode,
+                                             HttpMethod method,
+                                             const std::string &url,
+                                             const nlohmann::json &body,
+                                             const char *failure_message) {
+    std::string current_url = url;
+    for (int redirects = 0; redirects < 8; ++redirects) {
+        HttpRequest request;
+        request.method = method;
+        request.url = resolve_for_mode(current_url, mode);
+        apply_headers(request);
+        if (method == HttpMethod::Post) {
+            request.headers["Content-Type"] = "application/json";
+            if (!body.is_null()) request.body = body.dump();
+        }
+
+        auto response = http_client.send(request);
+        if (!response) return make_error(ErrorCode::NetworkError, std::string(failure_message) + ": " + response.error().message);
+        if (response->status_code < 300 || response->status_code >= 400) return *response;
+
+        auto location = header_value(*response, "Location");
+        if (location.empty()) return make_error(ErrorCode::NetworkError, "评教跳转缺少 Location");
+        current_url = resolve_redirect_url(current_url, location);
+        method = HttpMethod::Get;
+    }
+    return make_error(ErrorCode::NetworkError, "评教跳转次数过多");
+}
+
+} // namespace
+
 Result<void> EvaluationService::activate_session() {
     (void)m_cache;
     if (m_activated) return {};
-    HttpRequest request;
-    request.method = HttpMethod::Get;
-    request.url = resolve_for_mode("https://spoc.buaa.edu.cn/pjxt/cas", m_mode);
-    apply_headers(request);
-    auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "激活评教会话失败: " + response.error().message);
+    auto response = send_evaluation_request(m_http_client, m_mode, HttpMethod::Get, "https://spoc.buaa.edu.cn/pjxt/cas", nlohmann::json(nullptr), "激活评教会话失败");
+    if (!response) return make_error(response.error().code, response.error().message);
     if (ServiceResponse::is_session_expired_response(*response)) return make_error(ErrorCode::SessionExpired, "评教会话已过期，请重新登录");
     if (response->status_code < 200 || response->status_code >= 300) return make_error(ErrorCode::NetworkError, "评教会话激活返回: " + std::to_string(response->status_code));
     m_activated = true;
@@ -89,16 +155,8 @@ Result<void> EvaluationService::activate_session() {
 }
 
 Result<nlohmann::json> EvaluationService::request_json(HttpMethod method, const std::string &url, const nlohmann::json &body) {
-    HttpRequest request;
-    request.method = method;
-    request.url = resolve_for_mode(url, m_mode);
-    apply_headers(request);
-    if (method == HttpMethod::Post) {
-        request.headers["Content-Type"] = "application/json";
-        if (!body.is_null()) request.body = body.dump();
-    }
-    auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "请求评教失败: " + response.error().message);
+    auto response = send_evaluation_request(m_http_client, m_mode, method, url, body, "请求评教失败");
+    if (!response) return make_error(response.error().code, response.error().message);
     return ServiceResponse::parse_json_response(*response, "评教");
 }
 
