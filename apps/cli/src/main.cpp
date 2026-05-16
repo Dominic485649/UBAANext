@@ -1107,6 +1107,14 @@ um::Model::FeatureRecord judge_summary_to_record(const um::Model::JudgeAssignmen
     record.status = assignment.status.empty() ? "available" : assignment.status;
     record.fields["courseId"] = assignment.course_id;
     record.fields["courseName"] = assignment.course_name;
+    record.fields["startTime"] = assignment.start_time;
+    record.fields["dueTime"] = assignment.due_time;
+    record.fields["maxScore"] = assignment.max_score;
+    record.fields["myScore"] = assignment.my_score;
+    record.fields["totalProblems"] = std::to_string(assignment.total_problems);
+    record.fields["submittedCount"] = std::to_string(assignment.submitted_count);
+    record.fields["submissionStatus"] = record.status;
+    record.fields["submissionStatusText"] = assignment.status_text;
     return record;
 }
 

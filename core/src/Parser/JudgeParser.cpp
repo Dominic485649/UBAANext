@@ -73,6 +73,18 @@ std::string submission_status_text(int submitted, int total, const std::string &
     return "已完成";
 }
 
+std::string normalize_score(std::string score) {
+    auto dot = score.find('.');
+    if (dot == std::string::npos) return score;
+    while (!score.empty() && score.back() == '0') score.pop_back();
+    if (!score.empty() && score.back() == '.') score.pop_back();
+    return score;
+}
+
+std::string normalize_datetime(std::string value) {
+    return std::count(value.begin(), value.end(), ':') == 1 ? value + ":00" : value;
+}
+
 std::string lower_ascii(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
         return static_cast<char>(std::tolower(ch));
@@ -106,7 +118,13 @@ void collect_judge_assignment_links(const std::string &html,
         std::string assignment_id = match[2].matched ? match[2].str() : match[4].matched ? match[4].str() : match[6].str();
         std::string title = clean_html_text(match[7].str());
         if (assignment_id.empty() || title.empty()) continue;
-        records.push_back({assignment_id, course.id, course.name, title, status.empty() ? "available" : status});
+        Model::JudgeAssignmentSummary record;
+        record.id = assignment_id;
+        record.course_id = course.id;
+        record.course_name = course.name;
+        record.title = title;
+        record.status = status.empty() ? "available" : status;
+        records.push_back(std::move(record));
     }
 }
 
@@ -160,19 +178,22 @@ Result<Model::JudgeAssignmentDetail> parse_judge_assignment_detail_html(const st
     std::regex time_re(R"JUDGE(作业时间[^\d]*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?)\s*至\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?))JUDGE");
     std::smatch time_match;
     if (std::regex_search(text, time_match, time_re)) {
-        detail.start_time = time_match[1].str();
-        detail.due_time = time_match[2].str();
+        detail.start_time = normalize_datetime(time_match[1].str());
+        detail.due_time = normalize_datetime(time_match[2].str());
     }
     std::regex max_score_re(R"JUDGE(作业满分[^\d]*([\d.]+))JUDGE");
     std::smatch max_score_match;
-    if (std::regex_search(text, max_score_match, max_score_re)) detail.max_score = max_score_match[1].str();
+    if (std::regex_search(text, max_score_match, max_score_re)) detail.max_score = normalize_score(max_score_match[1].str());
     std::regex my_score_re(R"JUDGE(总分[^\d]*([\d.]+))JUDGE");
     std::smatch my_score_match;
-    if (std::regex_search(text, my_score_match, my_score_re)) detail.my_score = my_score_match[1].str();
+    if (std::regex_search(text, my_score_match, my_score_re)) detail.my_score = normalize_score(my_score_match[1].str());
     std::regex total_re(R"JUDGE(共\s*(\d+)\s*道)JUDGE");
     std::smatch total_match;
     if (std::regex_search(text, total_match, total_re)) detail.total_problems = std::stoi(total_match[1].str());
-    detail.submitted_count = count_occurrences(text, "得分：") + count_occurrences(text, "得分:") + count_occurrences(text, "最后一次提交时间") + count_occurrences(text, "初次提交时间");
+    detail.submitted_count = count_occurrences(text, "得分：") + count_occurrences(text, "得分:");
+    if (detail.submitted_count == 0) {
+        detail.submitted_count = count_occurrences(text, "最后一次提交时间") + count_occurrences(text, "初次提交时间");
+    }
     if (detail.total_problems > 0 && detail.submitted_count > detail.total_problems) detail.submitted_count = detail.total_problems;
     detail.status = detail.total_problems <= 0 ? "unknown" : detail.submitted_count <= 0 ? "unsubmitted" : detail.submitted_count < detail.total_problems ? "partial" : "submitted";
     detail.status_text = submission_status_text(detail.submitted_count, detail.total_problems, detail.my_score, detail.max_score);

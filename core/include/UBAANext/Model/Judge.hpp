@@ -17,6 +17,13 @@ struct JudgeAssignmentSummary {
     std::string course_name;
     std::string title;
     std::string status;
+    std::string start_time;
+    std::string due_time;
+    std::string max_score;
+    std::string my_score;
+    int total_problems = 0;
+    int submitted_count = 0;
+    std::string status_text;
 };
 
 struct JudgeAssignmentDetail {

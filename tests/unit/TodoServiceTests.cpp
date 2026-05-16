@@ -31,6 +31,34 @@ constexpr const char *kJudgeAssignmentsHtml = R"HTML(
 </table>
 </body></html>
 )HTML";
+constexpr const char *kJudgeDetailUnsubmittedHtml = R"HTML(
+<!doctype html>
+<html><body>
+<div>作业时间：2026-03-10 08:00 至 2026-03-20 23:59</div>
+<div>作业满分：100</div>
+<div>共 1 道题</div>
+<article>题目一 未提交</article>
+</body></html>
+)HTML";
+constexpr const char *kJudgeDetailExpiredHtml = R"HTML(
+<!doctype html>
+<html><body>
+<div>作业时间：2026-02-01 08:00 至 2026-02-08 23:59</div>
+<div>作业满分：100</div>
+<div>共 1 道题</div>
+<article>题目一 未提交</article>
+</body></html>
+)HTML";
+constexpr const char *kJudgeDetailSubmittedHtml = R"HTML(
+<!doctype html>
+<html><body>
+<div>作业时间：2026-01-01 08:00 至 2026-01-08 23:59</div>
+<div>作业满分：100</div>
+<div>共 1 道题</div>
+<article>题目一 得分：100</article>
+<div>总分：100</div>
+</body></html>
+)HTML";
 constexpr const char *kEvaluationTermUrl = "https://spoc.buaa.edu.cn/pjxt/component/queryXnxq";
 constexpr const char *kEvaluationTasksUrl = "https://spoc.buaa.edu.cn/pjxt/personnelEvaluation/listObtainPersonnelEvaluationTasks?rwmc=&sfyp=0&pageNum=1&pageSize=10";
 constexpr const char *kEvaluationQuestionnairesUrl = "https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/getQuestionnaireListToTask?rwid=task-1&sfyp=0&pageNum=1&pageSize=999";
@@ -80,6 +108,12 @@ public:
             response.body = kJudgeCoursesHtml;
         } else if (request.url == "https://judge.buaa.edu.cn/assignment/index.jsp") {
             response.body = kJudgeAssignmentsHtml;
+        } else if (request.url == "https://judge.buaa.edu.cn/assignment/index.jsp?assignID=9001") {
+            response.body = kJudgeDetailUnsubmittedHtml;
+        } else if (request.url == "https://judge.buaa.edu.cn/assignment/index.jsp?assignID=9002") {
+            response.body = kJudgeDetailExpiredHtml;
+        } else if (request.url == "https://judge.buaa.edu.cn/assignment/index.jsp?assignID=9003") {
+            response.body = kJudgeDetailSubmittedHtml;
         } else if (request.url == "https://uc.buaa.edu.cn/api/uc/userinfo") {
             response.body = R"JSON({"code":0,"data":{"schoolid":"20260000"}})JSON";
         } else if (request.url == "https://iclass.buaa.edu.cn:8347/app/user/login.action?password=&phone=20260000&userLevel=1&verificationType=2&verificationUrl=") {

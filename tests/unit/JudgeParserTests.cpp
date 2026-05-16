@@ -47,7 +47,12 @@ TEST_CASE("parse_judge_assignments_html 解析作业并过滤题面链接", "[Ju
 }
 
 TEST_CASE("parse_judge_assignment_detail_html 解析详情与提交状态", "[JudgeParser]") {
-    um::Model::JudgeAssignmentSummary summary{"9001", "1001", "程序设计基础", "第一周练习 A+B", "available"};
+    um::Model::JudgeAssignmentSummary summary;
+    summary.id = "9001";
+    summary.course_id = "1001";
+    summary.course_name = "程序设计基础";
+    summary.title = "第一周练习 A+B";
+    summary.status = "available";
     auto detail = um::Parser::parse_judge_assignment_detail_html(load_fixture("judge/detail.html"), summary);
 
     REQUIRE(detail.has_value());
@@ -60,7 +65,7 @@ TEST_CASE("parse_judge_assignment_detail_html 解析详情与提交状态", "[Ju
     CHECK(detail->max_score == "100");
     CHECK(detail->my_score == "50");
     CHECK(detail->total_problems == 3);
-    CHECK(detail->submitted_count == 3);
-    CHECK(detail->status == "submitted");
-    CHECK(detail->status_text == "已完成 50/100");
+    CHECK(detail->submitted_count == 2);
+    CHECK(detail->status == "partial");
+    CHECK(detail->status_text == "进行中(2/3)");
 }

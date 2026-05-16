@@ -93,6 +93,14 @@ void apply_judge_headers(HttpRequest &request) {
 Model::FeatureRecord assignment_to_record(const Model::JudgeAssignmentSummary &assignment, std::map<std::string, std::string> fields = {}) {
     fields["courseId"] = assignment.course_id;
     fields["courseName"] = assignment.course_name;
+    fields["startTime"] = assignment.start_time;
+    fields["dueTime"] = assignment.due_time;
+    fields["maxScore"] = assignment.max_score;
+    fields["myScore"] = assignment.my_score;
+    fields["totalProblems"] = std::to_string(assignment.total_problems);
+    fields["submittedCount"] = std::to_string(assignment.submitted_count);
+    fields["submissionStatus"] = assignment.status.empty() ? "available" : assignment.status;
+    fields["submissionStatusText"] = assignment.status_text;
     return make_record(assignment.id, assignment.title, assignment.status.empty() ? "available" : assignment.status, std::move(fields));
 }
 
@@ -198,11 +206,27 @@ Result<std::vector<Model::JudgeAssignmentSummary>> JudgeService::list_assignment
         auto html = get_html("https://judge.buaa.edu.cn/assignment/index.jsp");
         if (!html) return make_error(html.error().code, html.error().message);
         auto assignments = Parser::parse_judge_assignments_html(*html, course);
-        records.insert(records.end(), assignments.begin(), assignments.end());
+        for (auto &assignment : assignments) {
+            auto detail_html = get_html("https://judge.buaa.edu.cn/assignment/index.jsp?assignID=" + assignment.id);
+            if (!detail_html) return make_error(detail_html.error().code, detail_html.error().message);
+            auto detail = Parser::parse_judge_assignment_detail_html(*detail_html, assignment);
+            if (!detail) return make_error(detail.error().code, detail.error().message);
+            assignment.status = assignment.status == "expired" ? "expired" : detail->status;
+            assignment.start_time = detail->start_time;
+            assignment.due_time = detail->due_time;
+            assignment.max_score = detail->max_score;
+            assignment.my_score = detail->my_score;
+            assignment.total_problems = detail->total_problems;
+            assignment.submitted_count = detail->submitted_count;
+            assignment.status_text = detail->status_text;
+            records.push_back(std::move(assignment));
+        }
     }
 
     std::sort(records.begin(), records.end(), [](const auto &lhs, const auto &rhs) {
-        return std::tie(lhs.course_name, lhs.title, lhs.id) < std::tie(rhs.course_name, rhs.title, rhs.id);
+        auto lhs_due = lhs.due_time.empty() ? "9999-99-99 99:99:99" : lhs.due_time;
+        auto rhs_due = rhs.due_time.empty() ? "9999-99-99 99:99:99" : rhs.due_time;
+        return std::tie(lhs_due, lhs.course_name, lhs.title, lhs.id) < std::tie(rhs_due, rhs.course_name, rhs.title, rhs.id);
     });
     records.erase(std::remove_if(records.begin(), records.end(), [&](const auto &record) {
         if (!query.include_expired && record.status == "expired") return true;
