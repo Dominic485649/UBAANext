@@ -25,6 +25,7 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/SigninServiceTests.cpp
         unit/JudgeServiceTests.cpp
         unit/YgdkParserTests.cpp
+        unit/YgdkServiceTests.cpp
         unit/VenueReservationParserTests.cpp
         unit/VenueReservationServiceTests.cpp
         unit/LibrarySeatParserTests.cpp

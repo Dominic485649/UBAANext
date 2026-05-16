@@ -1,14 +1,18 @@
 #include <UBAANext/Service/YgdkService.hpp>
 
+#include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/YgdkParser.hpp>
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <regex>
 #include <sstream>
@@ -17,6 +21,9 @@
 namespace UBAANext {
 
 namespace {
+
+constexpr const char *default_place = "操场";
+constexpr const char *transparent_png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lmCcAAAAASUVORK5CYII=";
 
 std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
     return mode == ConnectionMode::WebVPN ? VpnCipher::to_vpn_url(url) : url;
@@ -177,6 +184,149 @@ Result<std::string> read_binary_file(const std::string &path_text) {
     return buffer.str();
 }
 
+std::string default_transparent_photo() {
+    auto bytes = base64_decode(transparent_png_base64);
+    return std::string(bytes.begin(), bytes.end());
+}
+
+std::string trim_copy(const std::string &value) {
+    auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char ch) { return std::isspace(ch); });
+    auto last = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char ch) { return std::isspace(ch); }).base();
+    if (first >= last) return {};
+    return std::string(first, last);
+}
+
+struct ClockinTimeRange {
+    std::string start_epoch;
+    std::string end_epoch;
+    std::string formatted;
+};
+
+constexpr long long shanghai_offset_seconds = 8 * 60 * 60;
+
+std::tm utc_tm(std::time_t value) {
+    std::tm utc{};
+#ifdef _WIN32
+    gmtime_s(&utc, &value);
+#else
+    gmtime_r(&value, &utc);
+#endif
+    return utc;
+}
+
+std::tm shanghai_tm(std::time_t value) {
+    return utc_tm(value + shanghai_offset_seconds);
+}
+
+long long days_from_civil(int year, unsigned month, unsigned day) {
+    year -= month <= 2;
+    const int era = (year >= 0 ? year : year - 399) / 400;
+    const unsigned year_of_era = static_cast<unsigned>(year - era * 400);
+    const unsigned day_of_year = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+    const unsigned day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    return era * 146097LL + static_cast<long long>(day_of_era) - 719468;
+}
+
+std::time_t shanghai_epoch_from_tm(const std::tm &value) {
+    const int year = value.tm_year + 1900;
+    const auto month = static_cast<unsigned>(value.tm_mon + 1);
+    const auto day = static_cast<unsigned>(value.tm_mday);
+    auto seconds = days_from_civil(year, month, day) * 24 * 60 * 60;
+    seconds += value.tm_hour * 60 * 60 + value.tm_min * 60 + value.tm_sec;
+    seconds -= shanghai_offset_seconds;
+    return static_cast<std::time_t>(seconds);
+}
+
+std::string format_date_time(const std::tm &value) {
+    std::ostringstream out;
+    out << std::put_time(&value, "%Y-%m-%d %H:%M");
+    return out.str();
+}
+
+std::string format_hour_minute(const std::tm &value) {
+    std::ostringstream out;
+    out << std::put_time(&value, "%H:%M");
+    return out.str();
+}
+
+std::string format_clockin_time_range(std::time_t start, std::time_t end) {
+    auto start_local = shanghai_tm(start);
+    auto end_local = shanghai_tm(end);
+    return format_date_time(start_local) + "-" + format_hour_minute(end_local);
+}
+
+Result<std::time_t> parse_clockin_time(const std::string &value) {
+    std::tm parsed{};
+    parsed.tm_isdst = -1;
+    std::istringstream input(value);
+    input >> std::get_time(&parsed, "%Y-%m-%d %H:%M");
+    if (input.fail() || !input.eof()) return make_error(ErrorCode::InvalidArgument, "时间格式错误，请使用 yyyy-MM-dd HH:mm");
+    return shanghai_epoch_from_tm(parsed);
+}
+
+ClockinTimeRange default_clockin_time_range() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    auto local = shanghai_tm(now_time);
+    bool use_previous_day = local.tm_hour < 9;
+    int start_hour = std::clamp(local.tm_hour - 1, 8, 21);
+    if (use_previous_day) {
+        now_time -= 24 * 60 * 60;
+        local = shanghai_tm(now_time);
+        start_hour = 20;
+    }
+    local.tm_hour = start_hour;
+    local.tm_min = 0;
+    local.tm_sec = 0;
+    auto start = shanghai_epoch_from_tm(local);
+    auto end = start + 60 * 60;
+    return {std::to_string(start), std::to_string(end), format_clockin_time_range(start, end)};
+}
+
+Result<ClockinTimeRange> resolve_clockin_time_range(const std::string &start_time, const std::string &end_time) {
+    auto normalized_start = trim_copy(start_time);
+    auto normalized_end = trim_copy(end_time);
+    if ((normalized_start.empty() && !normalized_end.empty()) || (!normalized_start.empty() && normalized_end.empty())) return make_error(ErrorCode::InvalidArgument, "ygdk submit 需要同时提供 --start-time 和 --end-time");
+    if (normalized_start.empty() && normalized_end.empty()) return default_clockin_time_range();
+
+    auto start = parse_clockin_time(normalized_start);
+    if (!start) return make_error(start.error().code, start.error().message);
+    auto end = parse_clockin_time(normalized_end);
+    if (!end) return make_error(end.error().code, end.error().message);
+
+    auto start_local = shanghai_tm(*start);
+    auto end_local = shanghai_tm(*end);
+    if (start_local.tm_year != end_local.tm_year || start_local.tm_yday != end_local.tm_yday) return make_error(ErrorCode::InvalidArgument, "当前仅支持同一天内的一小时打卡");
+    if (*end <= *start) return make_error(ErrorCode::InvalidArgument, "结束时间必须晚于开始时间");
+
+    return ClockinTimeRange{std::to_string(*start), std::to_string(*end), format_clockin_time_range(*start, *end)};
+}
+
+int item_sort_value(const Model::YgdkItem &item) {
+    try {
+        return item.sort.empty() ? std::numeric_limits<int>::max() : std::stoi(item.sort);
+    } catch (...) {
+        return std::numeric_limits<int>::max();
+    }
+}
+
+Result<Model::YgdkItem> select_clockin_item(const std::vector<Model::YgdkItem> &items, const std::string &requested_item_id) {
+    auto normalized_item_id = trim_copy(requested_item_id);
+    if (items.empty()) return make_error(ErrorCode::ParseError, "未获取到阳光打卡项目列表");
+    if (!normalized_item_id.empty()) {
+        for (const auto &item : items) {
+            if (item.id == normalized_item_id) return item;
+        }
+        return make_error(ErrorCode::InvalidArgument, "所选阳光打卡项目不存在: " + normalized_item_id);
+    }
+    for (const auto &item : items) {
+        if (item.name.find("跑") != std::string::npos) return item;
+    }
+    return *std::min_element(items.begin(), items.end(), [](const auto &left, const auto &right) {
+        return item_sort_value(left) < item_sort_value(right);
+    });
+}
+
 void append_multipart_field(std::string &body, const std::string &boundary, const std::string &name, const std::string &value) {
     body += "--" + boundary + "\r\n";
     body += "Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n";
@@ -316,83 +466,77 @@ Result<Model::MutationResult> YgdkService::submit_clockin(const std::string &ite
                                                           const std::string &place,
                                                           bool share_to_square,
                                                           const std::string &photo_path) {
-    if (item_id.empty()) return make_error(ErrorCode::InvalidArgument, "ygdk submit 需要 --item-id <id>");
-    if (start_time.empty() || end_time.empty()) return make_error(ErrorCode::InvalidArgument, "ygdk submit 需要 --start-time 和 --end-time");
-    if (place.empty()) return make_error(ErrorCode::InvalidArgument, "ygdk submit 需要 --place");
+    auto resolved_time = resolve_clockin_time_range(start_time, end_time);
+    if (!resolved_time) return make_error(resolved_time.error().code, resolved_time.error().message);
+    auto normalized_place = trim_copy(place);
+    auto resolved_place = normalized_place.empty() ? std::string(default_place) : normalized_place;
 
     auto login = ensure_session();
     if (!login) return make_error(login.error().code, login.error().message);
 
-    std::string image_name;
-    if (!photo_path.empty()) {
-        auto file = read_binary_file(photo_path);
-        if (!file) return make_error(file.error().code, file.error().message);
-        auto path = std::filesystem::path(photo_path);
-        std::string boundary = "----UBAANextYgdkBoundary7MA4YWxkTrZu0gW";
-        std::string upload_body;
-        append_multipart_field(upload_body, boundary, "uid", m_uid);
-        append_multipart_field(upload_body, boundary, "token", m_token);
-        append_multipart_file(upload_body, boundary, "file", path, *file);
-        upload_body += "--" + boundary + "--\r\n";
-
-        HttpRequest upload;
-        upload.method = HttpMethod::Post;
-        upload.url = resolve_for_mode("https://ygdk.buaa.edu.cn/api/Front/Upload/File/post", m_mode);
-        upload.headers["Accept"] = "application/json, text/plain, */*";
-        upload.headers["Content-Type"] = "multipart/form-data; boundary=" + boundary;
-        upload.headers["X-Requested-With"] = "XMLHttpRequest";
-        upload.body = std::move(upload_body);
-        auto upload_response = m_http_client.send(upload);
-        if (!upload_response) return make_error(ErrorCode::NetworkError, "上传阳光打卡图片失败: " + upload_response.error().message);
-        auto upload_data = unwrap_response(upload_response->body);
-        if (upload_data.contains("__session_expired")) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
-        if (upload_data.contains("__error")) return make_error(ErrorCode::NetworkError, upload_data["__error"].get<std::string>());
-        image_name = json_string(upload_data, "file_name");
-        if (image_name.empty()) return make_error(ErrorCode::ParseError, "阳光打卡图片上传响应缺少 file_name");
-    }
-
     auto classifies = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Classify/getList");
     if (!classifies) return make_error(classifies.error().code, classifies.error().message);
-    auto list = classifies->contains("list") && (*classifies)["list"].is_array() ? (*classifies)["list"] : nlohmann::json::array();
-    if (list.empty()) return make_error(ErrorCode::ParseError, "未获取到阳光打卡分类");
-    auto classify = list.front();
-    for (const auto &entry : list) {
-        if (json_string(entry, "name").find("体育") != std::string::npos) {
-            classify = entry;
-            break;
-        }
-    }
-    auto classify_id = json_string(classify, "classify_id");
-    auto items = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Item/getList", {{"page", "1"}, {"limit", "1000"}, {"classify_id", classify_id}}, {{"page", "1"}, {"limit", "1000"}, {"classify_id", classify_id}});
+    auto classify_list = Parser::parse_ygdk_classifies(*classifies);
+    if (classify_list.empty()) return make_error(ErrorCode::ParseError, "未获取到阳光打卡分类");
+    auto classify = Parser::select_ygdk_sports_classify(classify_list);
+    auto items = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Item/getList", {{"page", "1"}, {"limit", "1000"}, {"classify_id", classify.id}}, {{"page", "1"}, {"limit", "1000"}, {"classify_id", classify.id}});
     if (!items) return make_error(items.error().code, items.error().message);
-    std::string item_name;
-    auto item_list = items->contains("list") && (*items)["list"].is_array() ? (*items)["list"] : nlohmann::json::array();
-    for (const auto &entry : item_list) {
-        if (json_string(entry, "item_id") == item_id) {
-            item_name = json_string(entry, "name");
-            break;
-        }
-    }
-    if (item_name.empty()) return make_error(ErrorCode::InvalidArgument, "所选阳光打卡项目不存在: " + item_id);
+    auto selected_item = select_clockin_item(Parser::parse_ygdk_items(*items, classify.id), item_id);
+    if (!selected_item) return make_error(selected_item.error().code, selected_item.error().message);
+
+    auto file_content = photo_path.empty() ? Result<std::string>(default_transparent_photo()) : read_binary_file(photo_path);
+    if (!file_content) return make_error(file_content.error().code, file_content.error().message);
+    auto path = photo_path.empty() ? std::filesystem::path("ygdk_auto.png") : std::filesystem::path(photo_path);
+    std::string boundary = "----UBAANextYgdkBoundary7MA4YWxkTrZu0gW";
+    std::string upload_body;
+    append_multipart_field(upload_body, boundary, "uid", m_uid);
+    append_multipart_field(upload_body, boundary, "token", m_token);
+    append_multipart_file(upload_body, boundary, "file", path, *file_content);
+    upload_body += "--" + boundary + "--\r\n";
+
+    HttpRequest upload;
+    upload.method = HttpMethod::Post;
+    upload.url = resolve_for_mode("https://ygdk.buaa.edu.cn/api/Front/Upload/File/post", m_mode);
+    upload.headers["Accept"] = "application/json, text/plain, */*";
+    upload.headers["Content-Type"] = "multipart/form-data; boundary=" + boundary;
+    upload.headers["X-Requested-With"] = "XMLHttpRequest";
+    upload.body = std::move(upload_body);
+    auto upload_response = m_http_client.send(upload);
+    if (!upload_response) return make_error(ErrorCode::NetworkError, "上传阳光打卡图片失败: " + upload_response.error().message);
+    auto upload_data = unwrap_response(upload_response->body);
+    if (upload_data.contains("__session_expired")) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
+    if (upload_data.contains("__error")) return make_error(ErrorCode::NetworkError, upload_data["__error"].get<std::string>());
+    auto image_name = json_string(upload_data, "file_name");
+    if (image_name.empty()) return make_error(ErrorCode::ParseError, "阳光打卡图片上传响应缺少 file_name");
 
     auto data = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Clockin/clockin",
                           {},
-                          {{"start_time", start_time},
-                           {"end_time", end_time},
+                          {{"start_time", resolved_time->start_epoch},
+                           {"end_time", resolved_time->end_epoch},
                            {"place_type", "1"},
-                           {"place", place},
+                           {"place", resolved_place},
                            {"isopen", share_to_square ? "1" : "0"},
-                           {"form_time_fmt", start_time + " - " + end_time},
-                           {"images", image_name.empty() ? "[]" : "[\"" + image_name + "\"]"},
-                           {"classify_id", classify_id},
-                           {"item_id", item_id},
-                           {"item_name", item_name}});
+                           {"form_time_fmt", resolved_time->formatted},
+                           {"images", "[\"" + image_name + "\"]"},
+                           {"classify_id", classify.id},
+                           {"item_id", selected_item->id},
+                           {"item_name", selected_item->name}});
     if (!data) return make_error(data.error().code, data.error().message);
 
     Model::MutationResult result;
     result.accepted = true;
     result.message = "阳光打卡提交成功";
-    result.summary = make_record(json_string(*data, "record_id"), "阳光打卡", "submitted", {{"raw", data->dump()}});
+    result.summary = make_record(json_string(*data, "record_id"), "阳光打卡", "submitted", {
+        {"classifyId", classify.id},
+        {"itemId", selected_item->id},
+        {"itemName", selected_item->name},
+        {"place", resolved_place},
+        {"startTime", resolved_time->start_epoch},
+        {"endTime", resolved_time->end_epoch},
+        {"formTime", resolved_time->formatted},
+        {"image", image_name},
+        {"raw", data->dump()},
+    });
     return result;
 }
 
