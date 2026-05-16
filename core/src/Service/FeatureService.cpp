@@ -106,7 +106,7 @@ std::vector<Model::FeatureRecord> records_for(const std::string &domain, const s
     if (domain == "libbook") {
         return {make_record("libbook-1", operation == "libraries" ? "图书馆" : "座位预约", "available", {{"operation", operation}})};
     }
-    return {make_record(domain + "-1", operation, "available", {{"domain", domain}, {"operation", operation}})};
+    return {};
 }
 #endif
 
@@ -389,14 +389,18 @@ Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string
 Result<Model::FeatureRecord> FeatureService::show(const std::string &domain,
                                                   const std::string &operation,
                                                   const std::string &id) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (m_mode == ConnectionMode::Mock) {
+        return mock_show(domain, operation, id.empty() ? operation : id);
+    }
+#endif
+    if (domain == "cgyy" && operation == "lock-code") {
+        VenueReservationService service(m_http_client, m_cache, m_mode);
+        return service.lock_code();
+    }
     if (id.empty()) {
         return make_error(ErrorCode::InvalidArgument, domain + " " + operation + " 需要 --id 或对应业务 ID");
     }
-#if UBAANEXT_ENABLE_MOCKS
-    if (m_mode == ConnectionMode::Mock) {
-        return mock_show(domain, operation, id);
-    }
-#endif
     if (domain == "judge") {
         JudgeService service(m_http_client, m_cache, m_mode);
         if (operation == "details") {
@@ -416,9 +420,6 @@ Result<Model::FeatureRecord> FeatureService::show(const std::string &domain,
         VenueReservationService service(m_http_client, m_cache, m_mode);
         if (operation == "show") {
             return service.show_order(id);
-        }
-        if (operation == "lock-code") {
-            return service.lock_code();
         }
         return make_error(ErrorCode::InvalidArgument, "未知的 cgyy 详情操作: " + operation);
     }
@@ -529,14 +530,17 @@ Result<Model::MutationResult> FeatureService::mutate(const std::string &domain,
 
 #if UBAANEXT_ENABLE_MOCKS
 Result<std::vector<Model::FeatureRecord>> FeatureService::mock_list(const std::string &domain, const std::string &operation) const {
-    return records_for(domain, operation);
+    auto records = records_for(domain, operation);
+    if (records.empty()) return make_error(ErrorCode::NotImplemented, domain + " " + operation + " mock 尚未接入");
+    return records;
 }
 
 Result<Model::FeatureRecord> FeatureService::mock_show(const std::string &domain,
                                                        const std::string &operation,
                                                        const std::string &id) const {
     auto records = records_for(domain, operation);
-    auto record = records.empty() ? make_record(id, operation, "available") : records.front();
+    if (records.empty()) return make_error(ErrorCode::NotImplemented, domain + " " + operation + " mock 尚未接入");
+    auto record = records.front();
     record.id = id;
     return record;
 }
