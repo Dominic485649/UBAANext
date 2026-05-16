@@ -1,6 +1,7 @@
 #include <UBAANext/Parser/VenueReservationParser.hpp>
 
 #include <functional>
+#include <map>
 #include <utility>
 
 namespace UBAANext {
@@ -17,6 +18,25 @@ std::string json_string(const nlohmann::json &json, const char *key) {
 std::string order_title(const nlohmann::json &order) {
     auto title = json_string(order, "theme");
     return title.empty() ? json_string(order, "venueSpaceName") : title;
+}
+
+bool json_bool(const nlohmann::json &json, const char *key) {
+    if (!json.contains(key) || json[key].is_null()) return false;
+    if (json[key].is_boolean()) return json[key].get<bool>();
+    if (json[key].is_number_integer()) return json[key].get<int>() != 0;
+    if (json[key].is_string()) return json[key].get<std::string>() == "true" || json[key].get<std::string>() == "1";
+    return false;
+}
+
+bool slot_is_reservable(const nlohmann::json &slot) {
+    auto status = json_string(slot, "reservationStatus");
+    return status == "1" && json_string(slot, "tradeNo").empty() && json_string(slot, "orderId").empty() && !json_bool(slot, "takeUp");
+}
+
+std::string slot_label(const nlohmann::json &slot) {
+    auto begin = json_string(slot, "beginTime");
+    auto end = json_string(slot, "endTime");
+    return begin.empty() || end.empty() ? json_string(slot, "id") : begin + "-" + end;
 }
 
 } // namespace
@@ -65,16 +85,45 @@ std::vector<Model::VenueSpaceInfo> parse_venue_day_info(const nlohmann::json &da
     std::vector<Model::VenueSpaceInfo> records;
     auto spaces_by_date = data.contains("reservationDateSpaceInfo") && data["reservationDateSpaceInfo"].is_object() ? data["reservationDateSpaceInfo"] : nlohmann::json::object();
     auto token = json_string(data, "token");
+    std::map<std::string, nlohmann::json> slots;
+    if (data.contains("spaceTimeInfo") && data["spaceTimeInfo"].is_array()) {
+        for (const auto &slot : data["spaceTimeInfo"]) {
+            auto id = json_string(slot, "id");
+            if (!id.empty()) slots[id] = slot;
+        }
+    }
     for (const auto &[day, spaces] : spaces_by_date.items()) {
         if (!spaces.is_array()) continue;
         for (const auto &space : spaces) {
-            Model::VenueSpaceInfo record;
-            record.id = json_string(space, "id");
-            record.name = json_string(space, "spaceName");
-            record.date = day;
-            record.site_id = site_id;
-            record.token = token;
-            if (!record.id.empty()) records.push_back(std::move(record));
+            auto space_id = json_string(space, "id");
+            auto space_name = json_string(space, "spaceName");
+            if (space_id.empty()) continue;
+            bool emitted_slot = false;
+            for (const auto &[time_id, slot] : slots) {
+                if (!space.contains(time_id) || !space[time_id].is_object()) continue;
+                const auto &space_slot = space[time_id];
+                Model::VenueSpaceInfo record;
+                record.id = space_id + ":" + time_id;
+                record.name = space_name;
+                record.date = day;
+                record.site_id = site_id;
+                record.token = token;
+                record.time_id = time_id;
+                record.time_label = slot_label(slot);
+                record.status = json_string(space_slot, "reservationStatus");
+                record.reservable = slot_is_reservable(space_slot) ? "true" : "false";
+                records.push_back(std::move(record));
+                emitted_slot = true;
+            }
+            if (!emitted_slot) {
+                Model::VenueSpaceInfo record;
+                record.id = space_id;
+                record.name = space_name;
+                record.date = day;
+                record.site_id = site_id;
+                record.token = token;
+                if (!record.id.empty()) records.push_back(std::move(record));
+            }
         }
     }
     return records;

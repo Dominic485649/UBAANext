@@ -63,10 +63,30 @@ Result<std::string> md5_hex(const std::string &input) {
 Result<long long> parse_numeric_id(const std::string &value, const char *name) {
     long long parsed = 0;
     auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
-    if (result.ec != std::errc{} || result.ptr != value.data() + value.size()) {
-        return make_error(ErrorCode::InvalidArgument, std::string("cgyy reserve 需要数字形式的 ") + name);
+    if (value.empty() || result.ec != std::errc{} || result.ptr != value.data() + value.size() || parsed <= 0) {
+        return make_error(ErrorCode::InvalidArgument, std::string("cgyy 需要数字形式的 ") + name);
     }
     return parsed;
+}
+
+int count_joiners(const std::string &joiners) {
+    int count = 0;
+    bool in_entry = false;
+    for (char ch : joiners) {
+        if (ch == '\n' || ch == '\r' || ch == ',' || ch == ';') {
+            if (in_entry) ++count;
+            in_entry = false;
+        } else if (!std::isspace(static_cast<unsigned char>(ch))) {
+            in_entry = true;
+        }
+    }
+    if (in_entry) ++count;
+    return count < 1 ? 1 : count;
+}
+
+Result<void> require_direct_mode(ConnectionMode mode) {
+    if (mode != ConnectionMode::Direct) return make_error(ErrorCode::InvalidArgument, "CGYY 真实功能需要直连模式，请使用 --mode direct");
+    return {};
 }
 
 Result<std::string> sign_request(const std::string &path, const std::map<std::string, std::string> &params, std::int64_t timestamp) {
@@ -221,7 +241,13 @@ Model::FeatureRecord to_record(const Model::VenuePurposeType &purpose) {
 }
 
 Model::FeatureRecord to_record(const Model::VenueSpaceInfo &space) {
-    return make_record(space.id, space.name, "available", {{"date", space.date}, {"siteId", space.site_id}, {"token", space.token}});
+    std::map<std::string, std::string> fields{{"date", space.date}, {"siteId", space.site_id}, {"token", space.token}};
+    if (!space.time_id.empty()) fields["timeId"] = space.time_id;
+    if (!space.time_label.empty()) fields["time"] = space.time_label;
+    if (!space.status.empty()) fields["reservationStatus"] = space.status;
+    if (!space.reservable.empty()) fields["reservable"] = space.reservable;
+    auto status = space.reservable.empty() || space.reservable == "true" ? "available" : "unavailable";
+    return make_record(space.id, space.name, status, std::move(fields));
 }
 
 Model::FeatureRecord to_record(const Model::VenueOrder &order) {
@@ -242,6 +268,8 @@ VenueReservationService::VenueReservationService(IHttpClient &http_client, ICach
     : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
 
 Result<void> VenueReservationService::ensure_login(bool force_refresh) {
+    auto direct_mode = require_direct_mode(m_mode);
+    if (!direct_mode) return make_error(direct_mode.error().code, direct_mode.error().message);
     (void)m_cache;
     if (!force_refresh && !m_access_token.empty()) return {};
 
@@ -324,12 +352,16 @@ Result<nlohmann::json> VenueReservationService::request_json(HttpMethod method,
 }
 
 Result<std::vector<Model::VenueSite>> VenueReservationService::venue_sites() {
+    auto direct_mode = require_direct_mode(m_mode);
+    if (!direct_mode) return make_error(direct_mode.error().code, direct_mode.error().message);
     auto data = request_json(HttpMethod::Get, "/api/front/website/venues", {{"page", "-1"}, {"size", "-1"}, {"reservationRoleId", "3"}});
     if (!data) return make_error(data.error().code, data.error().message);
     return Parser::parse_venue_sites(*data);
 }
 
 Result<std::vector<Model::VenuePurposeType>> VenueReservationService::purpose_types() {
+    auto direct_mode = require_direct_mode(m_mode);
+    if (!direct_mode) return make_error(direct_mode.error().code, direct_mode.error().message);
     auto data = request_json(HttpMethod::Get, "/api/codes");
     std::vector<Model::VenuePurposeType> records;
     if (data) records = Parser::parse_venue_purpose_types(*data);
@@ -339,6 +371,8 @@ Result<std::vector<Model::VenuePurposeType>> VenueReservationService::purpose_ty
 
 Result<std::vector<Model::VenueSpaceInfo>> VenueReservationService::day_spaces(const std::string &date, const std::string &site_id) {
     if (date.empty() || site_id.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy day-info 需要 --date 和 --id/--site-id");
+    auto parsed_site_id = parse_numeric_id(site_id, "--site-id <id>");
+    if (!parsed_site_id) return make_error(parsed_site_id.error().code, parsed_site_id.error().message);
     auto data = request_json(HttpMethod::Get, "/api/reservation/day/info", {{"searchDate", date}, {"venueSiteId", site_id}});
     if (!data) return make_error(data.error().code, data.error().message);
     return Parser::parse_venue_day_info(*data, site_id);
@@ -353,6 +387,8 @@ Result<std::vector<Model::VenueOrder>> VenueReservationService::orders(int page,
 
 Result<Model::VenueOrder> VenueReservationService::order_detail(const std::string &order_id) {
     if (order_id.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy order show 需要 --order-id");
+    auto parsed_order_id = parse_numeric_id(order_id, "--order-id <id>");
+    if (!parsed_order_id) return make_error(parsed_order_id.error().code, parsed_order_id.error().message);
     auto data = request_json(HttpMethod::Get, "/api/orders/" + order_id);
     if (!data) return make_error(data.error().code, data.error().message);
     return Parser::parse_venue_order_detail(*data, order_id);
@@ -419,6 +455,10 @@ Result<Model::MutationResult> VenueReservationService::reserve(const std::string
     if (!parsed_space_id) return make_error(parsed_space_id.error().code, parsed_space_id.error().message);
     auto parsed_time_id = parse_numeric_id(time_id, "--id <time-id>");
     if (!parsed_time_id) return make_error(parsed_time_id.error().code, parsed_time_id.error().message);
+    auto parsed_site_id = parse_numeric_id(site_id, "--site-id <id>");
+    if (!parsed_site_id) return make_error(parsed_site_id.error().code, parsed_site_id.error().message);
+    auto parsed_purpose_type = parse_numeric_id(purpose_type, "--purpose-type <id>");
+    if (!parsed_purpose_type) return make_error(parsed_purpose_type.error().code, parsed_purpose_type.error().message);
 
     auto selection = nlohmann::json::array({nlohmann::json{{"spaceId", *parsed_space_id}, {"timeId", *parsed_time_id}}}).dump();
     auto created = request_json(HttpMethod::Post,
@@ -437,7 +477,7 @@ Result<Model::MutationResult> VenueReservationService::reserve(const std::string
                               {"phone", phone},
                               {"theme", theme},
                               {"purposeType", purpose_type},
-                              {"joinerNum", "1"},
+                              {"joinerNum", std::to_string(count_joiners(joiners))},
                               {"activityContent", theme},
                               {"joiners", joiners},
                               {"isPhilosophySocialSciences", "0"},
@@ -455,6 +495,8 @@ Result<Model::MutationResult> VenueReservationService::reserve(const std::string
 
 Result<Model::MutationResult> VenueReservationService::cancel_order(const std::string &order_id) {
     if (order_id.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy order cancel 需要 --order-id");
+    auto parsed_order_id = parse_numeric_id(order_id, "--order-id <id>");
+    if (!parsed_order_id) return make_error(parsed_order_id.error().code, parsed_order_id.error().message);
     auto data = request_json(HttpMethod::Post, "/api/orders/new/cancel/" + order_id);
     if (!data) return make_error(data.error().code, data.error().message);
     Model::MutationResult result;

@@ -24,6 +24,10 @@ struct VenueSpaceInfo {
     std::string date;
     std::string site_id;
     std::string token;
+    std::string time_id;
+    std::string time_label;
+    std::string status;
+    std::string reservable;
 };
 
 struct VenueOrder {

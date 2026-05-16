@@ -1,10 +1,29 @@
 {
   "token": "token-1",
+  "spaceTimeInfo": [
+    {
+      "id": 1001,
+      "beginTime": "08:00",
+      "endTime": "10:00"
+    },
+    {
+      "id": 1002,
+      "beginTime": "10:00",
+      "endTime": "12:00"
+    }
+  ],
   "reservationDateSpaceInfo": {
     "2026-05-15": [
       {
         "id": "space-1",
-        "spaceName": "A101"
+        "spaceName": "A101",
+        "1001": {
+          "reservationStatus": 1
+        },
+        "1002": {
+          "reservationStatus": 2,
+          "orderId": "order-1"
+        }
       }
     ],
     "2026-05-16": [

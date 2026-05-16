@@ -51,12 +51,17 @@ TEST_CASE("parse_venue_purpose_types 解析用途类型", "[VenueReservationPars
 TEST_CASE("parse_venue_day_info 解析可预约空间", "[VenueReservationParser]") {
     auto spaces = um::Parser::parse_venue_day_info(load_json_fixture("venue/day_info.json"), "site-1");
 
-    REQUIRE(spaces.size() == 2);
-    CHECK(spaces[0].id == "space-1");
+    REQUIRE(spaces.size() == 3);
+    CHECK(spaces[0].id == "space-1:1001");
     CHECK(spaces[0].name == "A101");
     CHECK(spaces[0].date == "2026-05-15");
     CHECK(spaces[0].site_id == "site-1");
     CHECK(spaces[0].token == "token-1");
+    CHECK(spaces[0].time_id == "1001");
+    CHECK(spaces[0].time_label == "08:00-10:00");
+    CHECK(spaces[0].reservable == "true");
+    CHECK(spaces[1].reservable == "false");
+    CHECK(spaces[2].id == "space-2");
 }
 
 TEST_CASE("parse_venue_orders 解析订单列表", "[VenueReservationParser]") {

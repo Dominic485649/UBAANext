@@ -29,6 +29,9 @@ class VenueReservationLoginFixtureHttpClient : public UBAANext::IHttpClient {
 public:
     UBAANext::Result<UBAANext::HttpResponse> send(const UBAANext::HttpRequest &request) override {
         ++request_counts[request.url];
+        if (request.url == "https://cgyy.buaa.edu.cn/venue-zhjs-server/api/reservation/order/submit") {
+            submit_body = request.body;
+        }
         UBAANext::HttpResponse response;
         response.status_code = 200;
         if (request.url == "https://cgyy.buaa.edu.cn/venue-zhjs-server/sso/manageLogin") {
@@ -45,6 +48,13 @@ public:
             REQUIRE(token != request.headers.end());
             CHECK(token->second == "sso-token-1");
             response.body = R"JSON({"code":200,"data":{"token":{"access_token":"access-token-1"}}})JSON";
+        } else if (request.url == "https://cgyy.buaa.edu.cn/venue-zhjs-server/api/reservation/order/info") {
+            response.body = R"JSON({"code":200,"data":{"id":"draft-1"}})JSON";
+        } else if (request.url == "https://cgyy.buaa.edu.cn/venue-zhjs-server/api/reservation/order/submit") {
+            auto auth = request.headers.find("cgAuthorization");
+            REQUIRE(auth != request.headers.end());
+            CHECK(auth->second == "access-token-1");
+            response.body = R"JSON({"code":200,"data":{"id":"order-1"}})JSON";
         } else if (request.url.find("https://cgyy.buaa.edu.cn/venue-zhjs-server/api/orders/mine?") == 0) {
             auto auth = request.headers.find("cgAuthorization");
             REQUIRE(auth != request.headers.end());
@@ -60,6 +70,7 @@ public:
     }
 
     std::map<std::string, int> request_counts;
+    std::string submit_body;
 };
 
 } // namespace
@@ -99,4 +110,52 @@ TEST_CASE("VenueReservationService 预约拒绝非数字时段 ID", "[service][c
     REQUIRE_FALSE(result);
     CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
     CHECK(http_client.requests == 0);
+}
+
+TEST_CASE("VenueReservationService 真实模式要求直连", "[service][cgyy]") {
+    VenueReservationFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::VenueReservationService service(http_client, cache, UBAANext::ConnectionMode::WebVPN);
+
+    auto result = service.orders();
+
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
+    CHECK(http_client.requests == 0);
+}
+
+TEST_CASE("VenueReservationService 订单详情拒绝非数字 ID", "[service][cgyy]") {
+    VenueReservationFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    auto service = make_service(http_client, cache);
+
+    auto result = service.order_detail("order-x");
+
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
+    CHECK(http_client.requests == 0);
+}
+
+TEST_CASE("VenueReservationService 取消订单拒绝非数字 ID", "[service][cgyy]") {
+    VenueReservationFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    auto service = make_service(http_client, cache);
+
+    auto result = service.cancel_order("order-x");
+
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
+    CHECK(http_client.requests == 0);
+}
+
+TEST_CASE("VenueReservationService 预约按参与人计算人数", "[service][cgyy]") {
+    VenueReservationLoginFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::VenueReservationService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.reserve("1", "2001", "2026-05-15", "1001", "3", "组会", "13800000000", "张三\n李四", "captcha", "token");
+
+    REQUIRE(result);
+    CHECK(result->accepted);
+    CHECK(http_client.submit_body.find("joinerNum=2") != std::string::npos);
 }
