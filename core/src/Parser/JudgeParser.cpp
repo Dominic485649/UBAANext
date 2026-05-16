@@ -73,6 +73,43 @@ std::string submission_status_text(int submitted, int total, const std::string &
     return "已完成";
 }
 
+std::string lower_ascii(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return text;
+}
+
+bool contains_any(const std::string &text, const std::vector<const char *> &needles) {
+    return std::any_of(needles.begin(), needles.end(), [&](const char *needle) {
+        return text.find(needle) != std::string::npos;
+    });
+}
+
+std::string assignment_status_from_text(const std::string &text) {
+    auto lower = lower_ascii(text);
+    if (contains_any(lower, {"已过期", "过期", "已截止", "已结束", "expired", "closed", "ended"})) return "expired";
+    if (contains_any(lower, {"未提交", "unsubmitted", "not submitted"})) return "unsubmitted";
+    if (contains_any(lower, {"已提交", "已完成", "得分", "submitted", "accepted", "completed"})) return "submitted";
+    return "available";
+}
+
+void collect_judge_assignment_links(const std::string &html,
+                                    const Model::JudgeCourse &course,
+                                    const std::string &status,
+                                    std::vector<Model::JudgeAssignmentSummary> &records) {
+    std::regex link_re(R"JUDGE(<a\b[^>]*href\s*=\s*(?:"([^"]*assignID=(\d+)[^"]*)"|'([^']*assignID=(\d+)[^']*)'|([^\s>]*assignID=(\d+)[^\s>]*))[^>]*>([\s\S]*?)</a>)JUDGE", std::regex::icase);
+    for (std::sregex_iterator it(html.begin(), html.end(), link_re), end; it != end; ++it) {
+        const auto &match = *it;
+        std::string href = match[1].matched ? match[1].str() : match[3].matched ? match[3].str() : match[5].str();
+        if (href.find("problemContent") != std::string::npos || href.find("judgeDetails") != std::string::npos) continue;
+        std::string assignment_id = match[2].matched ? match[2].str() : match[4].matched ? match[4].str() : match[6].str();
+        std::string title = clean_html_text(match[7].str());
+        if (assignment_id.empty() || title.empty()) continue;
+        records.push_back({assignment_id, course.id, course.name, title, status.empty() ? "available" : status});
+    }
+}
+
 } // namespace
 
 std::vector<Model::JudgeCourse> parse_judge_courses_html(const std::string &html) {
@@ -93,15 +130,13 @@ std::vector<Model::JudgeCourse> parse_judge_courses_html(const std::string &html
 std::vector<Model::JudgeAssignmentSummary> parse_judge_assignments_html(const std::string &html,
                                                                         const Model::JudgeCourse &course) {
     std::vector<Model::JudgeAssignmentSummary> records;
-    std::regex link_re(R"JUDGE(<a\b[^>]*href\s*=\s*(?:"([^"]*assignID=(\d+)[^"]*)"|'([^']*assignID=(\d+)[^']*)'|([^\s>]*assignID=(\d+)[^\s>]*))[^>]*>([\s\S]*?)</a>)JUDGE", std::regex::icase);
-    for (std::sregex_iterator it(html.begin(), html.end(), link_re), end; it != end; ++it) {
-        const auto &match = *it;
-        std::string href = match[1].matched ? match[1].str() : match[3].matched ? match[3].str() : match[5].str();
-        if (href.find("problemContent") != std::string::npos || href.find("judgeDetails") != std::string::npos) continue;
-        std::string assignment_id = match[2].matched ? match[2].str() : match[4].matched ? match[4].str() : match[6].str();
-        std::string title = clean_html_text(match[7].str());
-        if (assignment_id.empty() || title.empty()) continue;
-        records.push_back({assignment_id, course.id, course.name, title, "available"});
+    std::regex row_re(R"JUDGE(<tr\b[^>]*>([\s\S]*?)</tr>)JUDGE", std::regex::icase);
+    for (std::sregex_iterator it(html.begin(), html.end(), row_re), end; it != end; ++it) {
+        const auto row_html = (*it)[1].str();
+        collect_judge_assignment_links(row_html, course, assignment_status_from_text(clean_html_text(row_html)), records);
+    }
+    if (records.empty()) {
+        collect_judge_assignment_links(html, course, "available", records);
     }
     std::sort(records.begin(), records.end(), [](const auto &lhs, const auto &rhs) {
         return std::tie(lhs.course_id, lhs.id) < std::tie(rhs.course_id, rhs.id);

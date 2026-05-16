@@ -210,11 +210,11 @@ Result<std::vector<Model::JudgeAssignmentSummary>> JudgeService::list_assignment
     std::sort(records.begin(), records.end(), [](const auto &lhs, const auto &rhs) {
         return std::tie(lhs.course_name, lhs.title, lhs.id) < std::tie(rhs.course_name, rhs.title, rhs.id);
     });
-    if (!query.include_history) {
-        records.erase(std::remove_if(records.begin(), records.end(), [](const auto &record) {
-            return record.status == "submitted";
-        }), records.end());
-    }
+    records.erase(std::remove_if(records.begin(), records.end(), [&](const auto &record) {
+        if (!query.include_expired && record.status == "expired") return true;
+        if (!query.include_history && record.status == "submitted") return true;
+        return false;
+    }), records.end());
     return records;
 }
 

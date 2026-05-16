@@ -34,13 +34,16 @@ TEST_CASE("parse_judge_assignments_html 解析作业并过滤题面链接", "[Ju
     um::Model::JudgeCourse course{"1001", "程序设计基础"};
     auto assignments = um::Parser::parse_judge_assignments_html(load_fixture("judge/assignments.html"), course);
 
-    REQUIRE(assignments.size() == 2);
+    REQUIRE(assignments.size() == 3);
     CHECK(assignments[0].id == "9001");
     CHECK(assignments[0].course_id == "1001");
     CHECK(assignments[0].course_name == "程序设计基础");
     CHECK(assignments[0].title == "第一周练习 A+B");
-    CHECK(assignments[0].status == "available");
+    CHECK(assignments[0].status == "unsubmitted");
     CHECK(assignments[1].id == "9002");
+    CHECK(assignments[1].status == "expired");
+    CHECK(assignments[2].id == "9003");
+    CHECK(assignments[2].status == "submitted");
 }
 
 TEST_CASE("parse_judge_assignment_detail_html 解析详情与提交状态", "[JudgeParser]") {
