@@ -5,6 +5,7 @@
 #include <UBAANext/Parser/VenueReservationParser.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cctype>
 #include <chrono>
 #include <ctime>
@@ -52,6 +53,15 @@ std::int64_t now_millis() {
 
 Result<std::string> md5_hex(const std::string &input) {
     return default_crypto_provider().md5_hex(input);
+}
+
+Result<long long> parse_numeric_id(const std::string &value, const char *name) {
+    long long parsed = 0;
+    auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (result.ec != std::errc{} || result.ptr != value.data() + value.size()) {
+        return make_error(ErrorCode::InvalidArgument, std::string("cgyy reserve 需要数字形式的 ") + name);
+    }
+    return parsed;
 }
 
 Result<std::string> sign_request(const std::string &path, const std::map<std::string, std::string> &params, std::int64_t timestamp) {
@@ -313,7 +323,12 @@ Result<Model::MutationResult> VenueReservationService::reserve(const std::string
     if (captcha.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy reserve 需要用户提供 --captcha，不会自动绕过验证码");
     if (token.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy reserve 需要 --token，请先运行 day-info 获取预约上下文");
 
-    auto selection = nlohmann::json::array({nlohmann::json{{"spaceId", std::stoll(space_id)}, {"timeId", std::stoll(time_id)}}}).dump();
+    auto parsed_space_id = parse_numeric_id(space_id, "--space-id <id>");
+    if (!parsed_space_id) return make_error(parsed_space_id.error().code, parsed_space_id.error().message);
+    auto parsed_time_id = parse_numeric_id(time_id, "--id <time-id>");
+    if (!parsed_time_id) return make_error(parsed_time_id.error().code, parsed_time_id.error().message);
+
+    auto selection = nlohmann::json::array({nlohmann::json{{"spaceId", *parsed_space_id}, {"timeId", *parsed_time_id}}}).dump();
     auto created = request_json(HttpMethod::Post,
                                 "/api/reservation/order/info",
                                 {},
