@@ -100,6 +100,14 @@ Model::FeatureRecord task_to_record(const Model::EvaluationTask &task) {
         {"bpdm", task.teacher_code},
         {"xnxq", task.term_code},
         {"msid", task.pattern_id},
+        {"pjrdm", task.evaluator_code},
+        {"pjrmc", task.evaluator_name},
+        {"rwh", task.assignment_no},
+        {"xn", task.year},
+        {"xq", task.semester},
+        {"pjlxid", task.evaluation_type_id},
+        {"sfksqbpj", task.allow_all},
+        {"yxsfktjst", task.department_submit_status},
         {"ypjcs", std::to_string(task.evaluated_count)},
         {"xypjcs", std::to_string(task.required_count)},
     });
@@ -242,12 +250,20 @@ Result<Model::MutationResult> EvaluationService::submit_evaluations(const std::s
                          "&wjid=" + url_encode(wjid) +
                          "&zdmc=STID&ypjcs=" + course.fields.at("ypjcs") +
                          "&xypjcs=" + course.fields.at("xypjcs") +
-                         "&sxz=&pjrdm=&pjrmc=&bpdm=" + url_encode(course.fields.at("bpdm")) +
+                         "&sxz=&pjrdm=" + url_encode(course.fields.at("pjrdm")) +
+                         "&pjrmc=" + url_encode(course.fields.at("pjrmc")) +
+                         "&bpdm=" + url_encode(course.fields.at("bpdm")) +
                          "&bpmc=" + url_encode(course.fields.at("teacher")) +
                          "&kcdm=" + url_encode(course.fields.at("kcdm")) +
                          "&kcmc=" + url_encode(course.title) +
-                         "&rwh=&xn=&xq=&xnxq=" + url_encode(course.fields.at("xnxq")) +
-                         "&pjlxid=2&sfksqbpj=1&yxsfktjst=&yxdm=";
+                         "&rwh=" + url_encode(course.fields.at("rwh")) +
+                         "&xn=" + url_encode(course.fields.at("xn")) +
+                         "&xq=" + url_encode(course.fields.at("xq")) +
+                         "&xnxq=" + url_encode(course.fields.at("xnxq")) +
+                         "&pjlxid=" + url_encode(course.fields.at("pjlxid")) +
+                         "&sfksqbpj=" + url_encode(course.fields.at("sfksqbpj")) +
+                         "&yxsfktjst=" + url_encode(course.fields.at("yxsfktjst")) +
+                         "&yxdm=";
         auto topic_data = request_json(HttpMethod::Get, topic_url);
         if (!topic_data) {
             results.push_back({{"course", course.title}, {"success", false}, {"message", topic_data.error().message}});

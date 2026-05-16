@@ -47,6 +47,14 @@ std::vector<Model::EvaluationTask> parse_evaluation_required_reviews(const nlohm
         record.teacher_code = teacher_code;
         record.term_code = term_code;
         record.pattern_id = pattern_id;
+        record.evaluator_code = json_string(course, "pjrdm");
+        record.evaluator_name = json_string(course, "pjrmc");
+        record.assignment_no = json_string(course, "rwh");
+        record.year = json_string(course, "xn");
+        record.semester = json_string(course, "xq");
+        record.evaluation_type_id = json_string(course, "pjlxid").empty() ? "2" : json_string(course, "pjlxid");
+        record.allow_all = json_string(course, "sfksqbpj").empty() ? "1" : json_string(course, "sfksqbpj");
+        record.department_submit_status = json_string(course, "yxsfktjst");
         record.evaluated_count = json_int(course, "ypjcs");
         record.required_count = json_int(course, "xypjcs", 1);
         records.push_back(std::move(record));

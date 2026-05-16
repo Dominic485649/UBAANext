@@ -47,12 +47,34 @@ TEST_CASE("parse_evaluation_required_reviews 解析待评教课程", "[Evaluatio
     CHECK(records[0].teacher_code == "teacher-1");
     CHECK(records[0].term_code == "2025-2026-2");
     CHECK(records[0].pattern_id == "pattern-1");
+    CHECK(records[0].evaluation_type_id == "2");
+    CHECK(records[0].allow_all == "1");
     CHECK(records[0].evaluated_count == 0);
     CHECK(records[0].required_count == 1);
 
     CHECK(records[1].id == "task-1_questionnaire-1_ME101_teacher-2");
     CHECK(records[1].evaluated_count == 1);
     CHECK(records[1].required_count == 2);
+}
+
+TEST_CASE("parse_evaluation_required_reviews 保留提交所需字段", "[EvaluationParser]") {
+    auto records = um::Parser::parse_evaluation_required_reviews(
+        nlohmann::json::array({{{"kcdm", "CS201"}, {"kcmc", "算法设计"}, {"bpdm", "teacher-9"}, {"bpmc", "赵老师"}, {"pjrdm", "student-1"}, {"pjrmc", "学生"}, {"rwh", "task-no"}, {"xn", "2025"}, {"xq", "2"}, {"pjlxid", "3"}, {"sfksqbpj", "0"}, {"yxsfktjst", "1"}}}),
+        "task-2",
+        "questionnaire-2",
+        "pattern-2",
+        "20252026",
+        "pending");
+
+    REQUIRE(records.size() == 1);
+    CHECK(records[0].evaluator_code == "student-1");
+    CHECK(records[0].evaluator_name == "学生");
+    CHECK(records[0].assignment_no == "task-no");
+    CHECK(records[0].year == "2025");
+    CHECK(records[0].semester == "2");
+    CHECK(records[0].evaluation_type_id == "3");
+    CHECK(records[0].allow_all == "0");
+    CHECK(records[0].department_submit_status == "1");
 }
 
 TEST_CASE("parse_evaluation_required_reviews 非数组返回空列表", "[EvaluationParser]") {
