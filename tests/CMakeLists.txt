@@ -11,6 +11,7 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/CookieJarTests.cpp
         unit/SecureStoreAdapterTests.cpp
         unit/ExamServiceTests.cpp
+        unit/FeatureServiceTests.cpp
         unit/ClassroomServiceTests.cpp
         unit/CacheStoreTests.cpp
         unit/CryptoProviderTests.cpp

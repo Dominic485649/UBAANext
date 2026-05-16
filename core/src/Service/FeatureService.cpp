@@ -175,6 +175,13 @@ Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string
         return make_error(ErrorCode::InvalidArgument, "未知的 app 查询操作: " + operation);
     }
 
+    if (domain == "announcement") {
+        if (operation == "list") {
+            return make_error(ErrorCode::NotImplemented, "公告真实协议尚未接入");
+        }
+        return make_error(ErrorCode::InvalidArgument, "未知的公告查询操作: " + operation);
+    }
+
     if (domain == "judge") {
         JudgeService service(m_http_client, m_cache, m_mode);
         JudgeAssignmentQuery query;
