@@ -6,10 +6,12 @@
 
 #include <ctime>
 #include <iomanip>
+#include <initializer_list>
 #include <map>
 #include <optional>
 #include <regex>
 #include <sstream>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -131,6 +133,21 @@ std::string json_string(const nlohmann::json &json, const char *key) {
         return std::to_string(json[key].get<long long>());
     }
     return {};
+}
+
+bool contains_any(const std::string &text, std::initializer_list<std::string_view> needles) {
+    for (auto needle : needles) {
+        if (text.find(needle) != std::string::npos) return true;
+    }
+    return false;
+}
+
+bool libbook_business_success(const nlohmann::json &json) {
+    auto code = json_string(json, "code");
+    if (!code.empty() && code != "0" && code != "1") return false;
+    auto message = json_string(json, "message");
+    if (message.empty()) message = json_string(json, "msg");
+    return !contains_any(message, {"失败", "不可", "已被", "不能取消", "无法取消", "已取消", "用户取消", "已结束", "已完成"});
 }
 
 Model::FeatureRecord make_record(std::string id,
@@ -275,8 +292,7 @@ Result<nlohmann::json> LibrarySeatService::request_json(const std::string &path,
             }
             return make_error(ErrorCode::SessionExpired, "图书馆登录状态已失效");
         }
-        int code = json.value("code", 0);
-        if (code != 0 && code != 1) {
+        if (!libbook_business_success(json)) {
             return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆接口请求失败" : message);
         }
         return json;
@@ -405,6 +421,9 @@ Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string
 
     auto message = json_string(*json, "message");
     if (message.empty()) message = json_string(*json, "msg");
+    if (!libbook_business_success(*json)) {
+        return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆座位预约失败" : message);
+    }
     if (message.empty()) message = "预约成功";
 
     Model::MutationResult result;
@@ -427,6 +446,9 @@ Result<Model::MutationResult> LibrarySeatService::cancel_booking(const std::stri
     auto message = json_string(*json, "message");
     if (message.empty()) {
         message = json_string(*json, "msg");
+    }
+    if (!libbook_business_success(*json)) {
+        return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆预约取消失败" : message);
     }
     if (message.empty()) {
         message = "取消成功";

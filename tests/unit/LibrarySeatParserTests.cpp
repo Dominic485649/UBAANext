@@ -51,6 +51,17 @@ TEST_CASE("parse_library_areas 解析区域列表", "[LibrarySeatParser]") {
     CHECK(areas[0].total_num == "20");
 }
 
+TEST_CASE("parse_library_areas 接受 camelCase 字段", "[LibrarySeatParser]") {
+    auto areas = um::Parser::parse_library_areas(nlohmann::json::array({{{"id", "area-2"}, {"name", "四层阅览区"}, {"areaName", "B"}, {"premisesId", "lib-2"}, {"storeyId", "4"}, {"freeNum", 3}, {"totalNum", 18}}}));
+
+    REQUIRE(areas.size() == 1);
+    CHECK(areas[0].area == "B");
+    CHECK(areas[0].premises_id == "lib-2");
+    CHECK(areas[0].storey_id == "4");
+    CHECK(areas[0].free_num == "3");
+    CHECK(areas[0].total_num == "18");
+}
+
 TEST_CASE("parse_library_area_detail 解析区域详情", "[LibrarySeatParser]") {
     auto area = um::Parser::parse_library_area_detail(load_json_fixture("library/area_detail.json"), "fallback-area");
 
@@ -83,4 +94,16 @@ TEST_CASE("parse_library_reservations 解析预约记录", "[LibrarySeatParser]"
     CHECK(reservations[0].begin_time == "08:00");
     CHECK(reservations[0].end_time == "10:00");
     CHECK(reservations[0].status_name == "预约成功");
+}
+
+TEST_CASE("parse_library_reservations 接受 snake_case 字段别名", "[LibrarySeatParser]") {
+    auto reservations = um::Parser::parse_library_reservations(nlohmann::json::array({{{"id", "booking-2"}, {"seat_no", "B012"}, {"status", "6"}, {"area_name", "四层阅览区"}, {"date", "2026-05-16"}, {"begin_time", "10:00"}, {"end_time", "12:00"}, {"statusName", "已结束"}}}));
+
+    REQUIRE(reservations.size() == 1);
+    CHECK(reservations[0].title == "B012");
+    CHECK(reservations[0].area_name == "四层阅览区");
+    CHECK(reservations[0].day == "2026-05-16");
+    CHECK(reservations[0].begin_time == "10:00");
+    CHECK(reservations[0].end_time == "12:00");
+    CHECK(reservations[0].status_name == "已结束");
 }

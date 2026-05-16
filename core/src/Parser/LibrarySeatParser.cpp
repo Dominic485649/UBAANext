@@ -1,5 +1,6 @@
 #include <UBAANext/Parser/LibrarySeatParser.hpp>
 
+#include <initializer_list>
 #include <utility>
 
 namespace UBAANext {
@@ -10,6 +11,14 @@ std::string json_string(const nlohmann::json &json, const char *key) {
     if (!json.contains(key) || json[key].is_null()) return {};
     if (json[key].is_string()) return json[key].get<std::string>();
     if (json[key].is_number_integer()) return std::to_string(json[key].get<long long>());
+    return {};
+}
+
+std::string json_string_any(const nlohmann::json &json, std::initializer_list<const char *> keys) {
+    for (auto *key : keys) {
+        auto value = json_string(json, key);
+        if (!value.empty()) return value;
+    }
     return {};
 }
 
@@ -27,8 +36,8 @@ std::vector<Model::LibraryInfo> parse_library_infos(const nlohmann::json &list) 
         Model::LibraryInfo record;
         record.id = json_string(raw, "id");
         record.name = title_or(json_string(raw, "name"), "图书馆");
-        record.free_num = json_string(raw, "free_num");
-        record.total_num = json_string(raw, "total_num");
+        record.free_num = json_string_any(raw, {"free_num", "freeNum"});
+        record.total_num = json_string_any(raw, {"total_num", "totalNum"});
         if (!record.id.empty()) records.push_back(std::move(record));
     }
     return records;
@@ -42,11 +51,11 @@ std::vector<Model::LibraryArea> parse_library_areas(const nlohmann::json &list) 
         Model::LibraryArea record;
         record.id = json_string(raw, "id");
         record.name = title_or(json_string(raw, "name"), "图书馆区域");
-        record.area = json_string(raw, "area");
-        record.premises_id = json_string(raw, "premises_id");
-        record.storey_id = json_string(raw, "storey_id");
-        record.free_num = json_string(raw, "free_num");
-        record.total_num = json_string(raw, "total_num");
+        record.area = json_string_any(raw, {"area", "areaName"});
+        record.premises_id = json_string_any(raw, {"premises_id", "premisesId"});
+        record.storey_id = json_string_any(raw, {"storey_id", "storeyId"});
+        record.free_num = json_string_any(raw, {"free_num", "freeNum"});
+        record.total_num = json_string_any(raw, {"total_num", "totalNum"});
         if (!record.id.empty()) records.push_back(std::move(record));
     }
     return records;
@@ -72,12 +81,12 @@ std::vector<Model::LibrarySeat> parse_library_seats(const nlohmann::json &list) 
         if (!raw.is_object()) continue;
         Model::LibrarySeat record;
         record.id = json_string(raw, "id");
-        auto no = json_string(raw, "no");
+        auto no = json_string_any(raw, {"no", "seat_no", "seatNo"});
         record.title = no.empty() ? json_string(raw, "name") : no;
         record.name = json_string(raw, "name");
         record.raw_status = json_string(raw, "status");
         record.status = record.raw_status == "1" ? "available" : "unavailable";
-        record.status_name = json_string(raw, "status_name");
+        record.status_name = json_string_any(raw, {"status_name", "statusName"});
         if (!record.id.empty()) records.push_back(std::move(record));
     }
     return records;
@@ -90,14 +99,14 @@ std::vector<Model::LibraryReservation> parse_library_reservations(const nlohmann
         if (!raw.is_object()) continue;
         Model::LibraryReservation record;
         record.id = json_string(raw, "id");
-        auto seat_no = json_string(raw, "no");
+        auto seat_no = json_string_any(raw, {"no", "seat_no", "seatNo"});
         record.title = seat_no.empty() ? "图书馆预约" : seat_no;
         record.status = json_string(raw, "status");
-        record.area_name = json_string(raw, "name");
-        record.day = json_string(raw, "day");
-        record.begin_time = json_string(raw, "beginTime");
-        record.end_time = json_string(raw, "endTime");
-        record.status_name = json_string(raw, "status_name");
+        record.area_name = json_string_any(raw, {"name", "area_name", "areaName"});
+        record.day = json_string_any(raw, {"day", "date"});
+        record.begin_time = json_string_any(raw, {"beginTime", "begin_time"});
+        record.end_time = json_string_any(raw, {"endTime", "end_time"});
+        record.status_name = json_string_any(raw, {"status_name", "statusName"});
         if (!record.id.empty()) records.push_back(std::move(record));
     }
     return records;
