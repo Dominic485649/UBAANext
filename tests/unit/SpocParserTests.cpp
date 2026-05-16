@@ -60,6 +60,27 @@ TEST_CASE("parse_spoc_assignments_page 解析分页作业并补齐课程信息",
     CHECK(records[2].submission_status == "已过期");
 }
 
+TEST_CASE("parse_spoc_assignments_page 规范化时间分数和未知状态", "[SpocParser]") {
+    auto records = um::Parser::parse_spoc_assignments_page(
+        nlohmann::json{{"list", nlohmann::json::array({{{"zyid", "spoc-iso"}, {"sskcid", "course-1"}, {"zymc", "ISO 作业"}, {"tjzt", "9"}, {"zykssj", "2026-03-24T08:00:00.000+00:00"}, {"zyjzsj", "2026-03-31T15:59:59.000+00:00"}, {"mf", "满分:100"}}})}},
+        {}, "2025-2026-2", "2025-2026学年第二学期");
+
+    REQUIRE(records.size() == 1);
+    CHECK(records[0].status == "unknown");
+    CHECK(records[0].start_time == "2026-03-24 16:00:00");
+    CHECK(records[0].due_time == "2026-03-31 23:59:59");
+    CHECK(records[0].score == "100");
+}
+
+TEST_CASE("parse_spoc_assignments_page 规范化 Z 时区时间", "[SpocParser]") {
+    auto records = um::Parser::parse_spoc_assignments_page(
+        nlohmann::json{{"list", nlohmann::json::array({{{"zyid", "spoc-z"}, {"zymc", "Z 作业"}, {"zykssj", "2026-03-24T08:00:00.000Z"}}})}},
+        {}, "2025-2026-2", "2025-2026学年第二学期");
+
+    REQUIRE(records.size() == 1);
+    CHECK(records[0].start_time == "2026-03-24 16:00:00");
+}
+
 TEST_CASE("parse_spoc_assignment_detail 解析详情和提交状态", "[SpocParser]") {
     auto detail_json = load_json_fixture("spoc/detail.json");
     auto submission_json = load_json_fixture("spoc/submission.json");
@@ -84,4 +105,18 @@ TEST_CASE("parse_spoc_assignment_detail 缺少提交记录时状态为 unknown",
     CHECK(detail.status == "unknown");
     CHECK(detail.submission_status.empty());
     CHECK(detail.submitted_at.empty());
+}
+
+TEST_CASE("parse_spoc_assignment_detail 规范化提交时间和未知状态", "[SpocParser]") {
+    auto detail_json = nlohmann::json{{"sskcid", "course-1"}, {"zymc", "实验作业"}, {"zykssj", "2026-03-24T08:00:00.000+00:00"}, {"zyjzsj", "2026-03-31T15:59:59.000+00:00"}, {"zyfs", "满分:98.5"}, {"zynr", "<p>&nbsp;提交报告</p>"}};
+    auto submission_json = nlohmann::json{{"tjzt", "9"}, {"tjsj", "2026-03-25T02:30:00.000+00:00"}};
+
+    auto detail = um::Parser::parse_spoc_assignment_detail(detail_json, &submission_json, "spoc-iso");
+
+    CHECK(detail.status == "unknown");
+    CHECK(detail.start_time == "2026-03-24 16:00:00");
+    CHECK(detail.due_time == "2026-03-31 23:59:59");
+    CHECK(detail.score == "98.5");
+    CHECK(detail.content == "提交报告");
+    CHECK(detail.submitted_at == "2026-03-25 10:30:00");
 }

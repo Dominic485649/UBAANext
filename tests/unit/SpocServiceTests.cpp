@@ -8,7 +8,7 @@ namespace {
 constexpr const char *kSpocLoginResponse = R"JSON({"code":200,"content":{"jsdm":"student"}})JSON";
 constexpr const char *kSpocTermResponse = R"JSON({"code":200,"content":{"mrxq":"2025-2026-2","dqxq":"2025-2026学年第二学期"}})JSON";
 constexpr const char *kSpocCoursesResponse = R"JSON({"code":200,"content":[{"kcid":"course-1","kcmc":"智能制造导论","skjs":"张老师"}]})JSON";
-constexpr const char *kSpocAssignmentsResponse = R"JSON({"code":200,"content":{"list":[{"zyid":"spoc-1","sskcid":"course-1","zymc":"未交作业","tjzt":"未做"},{"zyid":"spoc-2","sskcid":"course-1","zymc":"过期作业","tjzt":"已过期"},{"zyid":"spoc-3","sskcid":"course-1","zymc":"已交作业","tjzt":"已提交"}],"hasNextPage":false,"pages":1}})JSON";
+constexpr const char *kSpocAssignmentsResponse = R"JSON({"code":200,"content":{"list":[{"zyid":"spoc-3","sskcid":"course-1","zymc":"已交作业","tjzt":"已提交","zyjzsj":"2026-03-20 23:59:00"},{"zyid":"spoc-2","sskcid":"course-1","zymc":"过期作业","tjzt":"已过期","zyjzsj":"2026-03-08 23:59:00"},{"zyid":"spoc-1","sskcid":"course-1","zymc":"未交作业","tjzt":"未做","zyjzsj":"2026-03-10 23:59:00"}],"hasNextPage":false,"pages":1}})JSON";
 
 class SpocFixtureHttpClient : public UBAANext::IHttpClient {
 public:
@@ -59,7 +59,7 @@ TEST_CASE("SpocService 按状态过滤待办和过期作业", "[service][spoc]")
     auto pending_with_expired = service.list_assignment_summaries(query);
     REQUIRE(pending_with_expired);
     REQUIRE(pending_with_expired->size() == 2);
-    CHECK((*pending_with_expired)[0].id == "spoc-1");
-    CHECK((*pending_with_expired)[1].id == "spoc-2");
-    CHECK((*pending_with_expired)[1].status == "expired");
+    CHECK((*pending_with_expired)[0].id == "spoc-2");
+    CHECK((*pending_with_expired)[0].status == "expired");
+    CHECK((*pending_with_expired)[1].id == "spoc-1");
 }

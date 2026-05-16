@@ -11,6 +11,7 @@
 #include <map>
 #include <regex>
 #include <sstream>
+#include <tuple>
 #include <utility>
 
 namespace UBAANext {
@@ -417,6 +418,11 @@ Result<std::vector<Model::SpocAssignmentSummary>> SpocService::list_assignment_s
         if (!query.include_expired && record.status == "expired") continue;
         records.push_back(std::move(record));
     }
+    std::sort(records.begin(), records.end(), [](const auto &lhs, const auto &rhs) {
+        auto lhs_due = lhs.due_time.empty() ? "9999-99-99 99:99:99" : lhs.due_time;
+        auto rhs_due = rhs.due_time.empty() ? "9999-99-99 99:99:99" : rhs.due_time;
+        return std::tie(lhs_due, lhs.course_name, lhs.title) < std::tie(rhs_due, rhs.course_name, rhs.title);
+    });
     return records;
 }
 
