@@ -24,6 +24,7 @@ TEST_CASE("伞头暴露 Core SDK 常用入口", "[public-api]") {
     UBAANext::BykcService bykc_service(http_client, cache, UBAANext::ConnectionMode::Direct);
     UBAANext::VenueReservationService venue_service(http_client, cache, UBAANext::ConnectionMode::Direct);
     UBAANext::LibrarySeatService library_service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::TodoService todo_service(http_client, cache, UBAANext::ConnectionMode::Direct);
     UBAANext::FeatureService feature_service(http_client, cache, UBAANext::ConnectionMode::Direct);
 
     UBAANext::Model::FeatureRecord record;

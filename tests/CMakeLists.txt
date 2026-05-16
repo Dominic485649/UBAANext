@@ -33,6 +33,7 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/LibrarySeatServiceTests.cpp
         unit/ResponseUtilsTests.cpp
         unit/TermServiceTests.cpp
+        unit/TodoServiceTests.cpp
         unit/VpnCipherTests.cpp
     )
 

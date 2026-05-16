@@ -67,6 +67,10 @@ UBAANext::LibrarySeatService ServiceFactory::create_library_seat_service() {
     return UBAANext::LibrarySeatService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
 }
 
+UBAANext::TodoService ServiceFactory::create_todo_service() {
+    return UBAANext::TodoService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
+}
+
 UBAANext::FeatureService ServiceFactory::create_feature_service() {
     return UBAANext::FeatureService(*m_ctx.http, *m_ctx.cache, m_ctx.conn_mode);
 }

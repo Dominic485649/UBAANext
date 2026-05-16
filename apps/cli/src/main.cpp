@@ -1629,60 +1629,10 @@ ExitCode cmd_user_info(ServiceFactory &factory, OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
-bool is_pending_todo(const std::string &source, const um::Model::FeatureRecord &record) {
-    if (source == "signin") return record.status == "available";
-    if (source == "evaluation") return record.status == "pending";
-    if (source == "judge") return record.status == "available" || record.status == "unsubmitted" || record.status == "partial";
-    if (source == "spoc") return record.status == "open" || record.status == "available" || record.status == "pending" || record.status == "unsubmitted";
-    return record.status == "pending" || record.status == "available" || record.status == "open";
-}
-
-void normalize_todo_record(const std::string &source, um::Model::FeatureRecord &record) {
-    record.fields["source"] = source;
-    if (record.fields.find("type") == record.fields.end()) record.fields["type"] = source;
-    if (record.fields.find("dueTime") == record.fields.end()) {
-        auto deadline = record.fields.find("deadline");
-        if (deadline != record.fields.end()) record.fields["dueTime"] = deadline->second;
-    }
-    if (record.fields.find("submissionStatus") == record.fields.end()) record.fields["submissionStatus"] = record.status;
-}
-
-void append_todo_records(std::vector<um::Model::FeatureRecord> &todos,
-                         const std::string &source,
-                         const std::vector<um::Model::FeatureRecord> &records,
-                         bool pending_only) {
-    for (auto record : records) {
-        if (pending_only && !is_pending_todo(source, record)) continue;
-        normalize_todo_record(source, record);
-        todos.push_back(std::move(record));
-    }
-}
-
 ExitCode cmd_todo_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    std::vector<um::Model::FeatureRecord> todos;
-    const bool pending_only = true;
     (void)args;
-
-    {
-        auto service = factory.create_spoc_service();
-        if (auto spoc = service.list_assignments()) append_todo_records(todos, "spoc", *spoc, pending_only);
-    }
-    {
-        auto service = factory.create_judge_service();
-        if (auto judge = service.list_assignments(um::JudgeAssignmentQuery{})) append_todo_records(todos, "judge", *judge, pending_only);
-    }
-    {
-        auto service = factory.create_signin_service();
-        if (auto signin = service.list_today()) append_todo_records(todos, "signin", *signin, pending_only);
-    }
-    {
-        auto service = factory.create_evaluation_service();
-        if (auto evaluation = service.list_evaluations()) append_todo_records(todos, "evaluation", *evaluation, pending_only);
-    }
-
-    save_real_cookies(factory);
-    out.print_records("todos", todos);
-    return ExitCode::Ok;
+    auto service = factory.create_todo_service();
+    return print_records_result(factory, out, "todos", service.list_todos());
 }
 
 ExitCode cmd_signin_today(ServiceFactory &factory, OutputFormatter &out) {

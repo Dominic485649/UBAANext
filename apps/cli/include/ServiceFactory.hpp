@@ -22,6 +22,7 @@
 #include <UBAANext/Service/SigninService.hpp>
 #include <UBAANext/Service/SpocService.hpp>
 #include <UBAANext/Service/TermService.hpp>
+#include <UBAANext/Service/TodoService.hpp>
 #include <UBAANext/Service/VenueReservationService.hpp>
 #include <UBAANext/Service/YgdkService.hpp>
 
@@ -51,6 +52,7 @@ public:
     [[nodiscard]] UBAANext::BykcService create_bykc_service();
     [[nodiscard]] UBAANext::VenueReservationService create_venue_reservation_service();
     [[nodiscard]] UBAANext::LibrarySeatService create_library_seat_service();
+    [[nodiscard]] UBAANext::TodoService create_todo_service();
     [[nodiscard]] UBAANext::FeatureService create_feature_service();
 
     [[nodiscard]] UBAANext::IHttpClient &http_client() { return *m_ctx.http; }

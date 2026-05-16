@@ -13,6 +13,7 @@ add_library(UBAANextCore STATIC
     src/Service/LibrarySeatService.cpp
     src/Service/SpocService.cpp
     src/Service/EvaluationService.cpp
+    src/Service/TodoService.cpp
     src/Service/VenueReservationService.cpp
     src/Service/YgdkService.cpp
     src/Service/BykcService.cpp
