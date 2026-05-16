@@ -14,9 +14,11 @@
 #include <iomanip>
 #include <limits>
 #include <map>
+#include <random>
 #include <regex>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace UBAANext {
 
@@ -258,7 +260,19 @@ std::string format_clockin_time_range(std::time_t start, std::time_t end) {
 Result<std::time_t> parse_clockin_time(const std::string &value) {
     std::tm parsed{};
     parsed.tm_isdst = -1;
-    std::istringstream input(value);
+    std::string normalized = value;
+    auto t_pos = normalized.find('T');
+    if (t_pos != std::string::npos) normalized[t_pos] = ' ';
+    bool minute_precision = normalized.size() == 16;
+    bool iso_second_precision = value.size() == 19 && t_pos == 10 && value[13] == ':' && value[16] == ':';
+    if (!minute_precision && !iso_second_precision) return make_error(ErrorCode::InvalidArgument, "时间格式错误，请使用 yyyy-MM-dd HH:mm");
+    if (iso_second_precision) {
+        for (auto index : {0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18}) {
+            if (!std::isdigit(static_cast<unsigned char>(value[index]))) return make_error(ErrorCode::InvalidArgument, "时间格式错误，请使用 yyyy-MM-dd HH:mm");
+        }
+    }
+    normalized = normalized.substr(0, 16);
+    std::istringstream input(normalized);
     input >> std::get_time(&parsed, "%Y-%m-%d %H:%M");
     if (input.fail() || !input.eof()) return make_error(ErrorCode::InvalidArgument, "时间格式错误，请使用 yyyy-MM-dd HH:mm");
     return shanghai_epoch_from_tm(parsed);
@@ -268,17 +282,31 @@ ClockinTimeRange default_clockin_time_range() {
     auto now = std::chrono::system_clock::now();
     std::time_t now_time = std::chrono::system_clock::to_time_t(now);
     auto local = shanghai_tm(now_time);
-    bool use_previous_day = local.tm_hour < 9;
-    int start_hour = std::clamp(local.tm_hour - 1, 8, 21);
-    if (use_previous_day) {
-        now_time -= 24 * 60 * 60;
-        local = shanghai_tm(now_time);
-        start_hour = 20;
+    std::vector<std::time_t> candidates;
+    for (int offset = 0; offset < 3; ++offset) {
+        auto day = shanghai_tm(now_time - offset * 24 * 60 * 60);
+        auto latest_end = offset == 0 ? local : day;
+        latest_end.tm_hour = offset == 0 ? std::min(local.tm_hour, 22) : 22;
+        latest_end.tm_min = 0;
+        latest_end.tm_sec = 0;
+        auto latest_start = shanghai_epoch_from_tm(latest_end) - 60 * 60;
+        day.tm_hour = 8;
+        day.tm_min = 0;
+        day.tm_sec = 0;
+        auto day_start = shanghai_epoch_from_tm(day);
+        for (auto start = day_start; start <= latest_start; start += 60 * 60) candidates.push_back(start);
     }
-    local.tm_hour = start_hour;
-    local.tm_min = 0;
-    local.tm_sec = 0;
-    auto start = shanghai_epoch_from_tm(local);
+    std::time_t start = 0;
+    if (candidates.empty()) {
+        local.tm_hour = 8;
+        local.tm_min = 0;
+        local.tm_sec = 0;
+        start = shanghai_epoch_from_tm(local);
+    } else {
+        std::mt19937 generator(static_cast<unsigned>(now_time));
+        std::uniform_int_distribution<size_t> distribution(0, candidates.size() - 1);
+        start = candidates[distribution(generator)];
+    }
     auto end = start + 60 * 60;
     return {std::to_string(start), std::to_string(end), format_clockin_time_range(start, end)};
 }
@@ -444,7 +472,7 @@ Result<std::vector<Model::YgdkRecord>> YgdkService::record_list(int page, int si
     if (!classifies) return make_error(classifies.error().code, classifies.error().message);
     auto classify_list = Parser::parse_ygdk_classifies(*classifies);
     if (classify_list.empty()) return make_error(ErrorCode::ParseError, "未获取到阳光打卡分类");
-    auto classify_id = classify_list.front().id;
+    auto classify_id = Parser::select_ygdk_sports_classify(classify_list).id;
     auto page_text = std::to_string(page < 1 ? 1 : page);
     auto size_text = std::to_string(size < 1 ? 20 : size);
     auto data = post_form("https://ygdk.buaa.edu.cn/api/Front/Clockin/Clockin/getList", {{"page", page_text}, {"limit", size_text}, {"classify_id", classify_id}, {"user_id", m_uid}}, {{"page", page_text}, {"limit", size_text}, {"classify_id", classify_id}, {"user_id", m_uid}});

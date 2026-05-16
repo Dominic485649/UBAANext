@@ -16,6 +16,7 @@ constexpr const char *kUploadUrl = "https://ygdk.buaa.edu.cn/api/Front/Upload/Fi
 constexpr const char *kClassifyUrl = "https://ygdk.buaa.edu.cn/api/Front/Clockin/Classify/getList";
 constexpr const char *kItemsUrl = "https://ygdk.buaa.edu.cn/api/Front/Clockin/Item/getList?classify_id=c2&limit=1000&page=1";
 constexpr const char *kSubmitUrl = "https://ygdk.buaa.edu.cn/api/Front/Clockin/Clockin/clockin";
+constexpr const char *kRecordsUrl = "https://ygdk.buaa.edu.cn/api/Front/Clockin/Clockin/getList?classify_id=c2&limit=20&page=1&user_id=u-1";
 
 class YgdkFixtureHttpClient : public UBAANext::IHttpClient {
 public:
@@ -41,6 +42,8 @@ public:
             ++submit_requests;
             last_submit_body = request.body;
             response.body = R"JSON({"code":1,"result":{"record_id":"record-1"}})JSON";
+        } else if (request.url == kRecordsUrl) {
+            response.body = R"JSON({"code":1,"result":{"list":[{"record_id":"record-1","item_name":"跑步","state":"approved","place":"操场","start_time":"2026-05-16 20:00","end_time":"2026-05-16 21:00","create_time_fmt":"2026-05-16 21:05"}]}})JSON";
         } else {
             response.status_code = 404;
             response.body = R"JSON({"code":0,"msg":"unexpected url"})JSON";
@@ -119,6 +122,32 @@ TEST_CASE("YgdkService 默认提交参数对齐 UBAA", "[service][ygdk]") {
     CHECK(result->summary.fields.at("image") == "uploaded.png");
 }
 
+TEST_CASE("YgdkService 接受 ISO 时间输入", "[service][ygdk]") {
+    YgdkFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.submit_clockin("", "2026-05-16T20:00:00", "2026-05-16T21:00:00", "", false, "");
+
+    REQUIRE(result);
+    auto form = parse_form(http_client.last_submit_body);
+    CHECK(form["start_time"] == "1778932800");
+    CHECK(form["end_time"] == "1778936400");
+    CHECK(form["form_time_fmt"] == "2026-05-16 20:00-21:00");
+}
+
+TEST_CASE("YgdkService 拒绝带时区 ISO 时间", "[service][ygdk]") {
+    YgdkFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.submit_clockin("", "2026-05-16T20:00:00Z", "2026-05-16T21:00:00Z", "", false, "");
+
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
+    CHECK(http_client.requested_urls.empty());
+}
+
 TEST_CASE("YgdkService 拒绝只提供单侧时间且不发起网络请求", "[service][ygdk]") {
     YgdkFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
@@ -144,6 +173,19 @@ TEST_CASE("YgdkService 空时间默认生成一小时时段", "[service][ygdk]")
     auto end = std::stoll(form["end_time"]);
     CHECK(end - start == 3600);
     CHECK(form["form_time_fmt"].find("-") != std::string::npos);
+}
+
+TEST_CASE("YgdkService 历史记录使用体育分类", "[service][ygdk]") {
+    YgdkFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto records = service.record_list();
+
+    REQUIRE(records);
+    REQUIRE(records->size() == 1);
+    CHECK((*records)[0].id == "record-1");
+    CHECK((*records)[0].item_name == "跑步");
 }
 
 TEST_CASE("YgdkService 无效项目不会上传默认图片", "[service][ygdk]") {
