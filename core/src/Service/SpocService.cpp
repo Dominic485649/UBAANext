@@ -414,7 +414,7 @@ Result<std::vector<Model::SpocAssignmentSummary>> SpocService::list_assignment_s
     std::vector<Model::SpocAssignmentSummary> records;
     for (auto record : *result) {
         if (query.pending_only && record.status == "submitted") continue;
-        if (!query.include_expired && record.submission_status == "已过期") continue;
+        if (!query.include_expired && record.status == "expired") continue;
         records.push_back(std::move(record));
     }
     return records;

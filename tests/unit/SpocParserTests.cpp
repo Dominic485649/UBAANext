@@ -37,7 +37,7 @@ TEST_CASE("parse_spoc_assignments_page 解析分页作业并补齐课程信息",
     auto records = um::Parser::parse_spoc_assignments_page(
         load_json_fixture("spoc/assignments_page.json"), courses, "2025-2026-2", "2025-2026学年第二学期");
 
-    REQUIRE(records.size() == 2);
+    REQUIRE(records.size() == 3);
     CHECK(records[0].id == "spoc-1");
     CHECK(records[0].course_id == "course-1");
     CHECK(records[0].course_name == "智能制造导论");
@@ -55,6 +55,9 @@ TEST_CASE("parse_spoc_assignments_page 解析分页作业并补齐课程信息",
     CHECK(records[1].teacher == "李老师");
     CHECK(records[1].status == "unsubmitted");
     CHECK(records[1].score == "50");
+    CHECK(records[2].id == "spoc-3");
+    CHECK(records[2].status == "expired");
+    CHECK(records[2].submission_status == "已过期");
 }
 
 TEST_CASE("parse_spoc_assignment_detail 解析详情和提交状态", "[SpocParser]") {

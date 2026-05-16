@@ -1633,7 +1633,7 @@ bool is_pending_todo(const std::string &source, const um::Model::FeatureRecord &
     if (source == "signin") return record.status == "available";
     if (source == "evaluation") return record.status == "pending";
     if (source == "judge") return record.status == "available" || record.status == "unsubmitted" || record.status == "partial";
-    if (source == "spoc") return record.status == "open" || record.status == "available" || record.status == "pending";
+    if (source == "spoc") return record.status == "open" || record.status == "available" || record.status == "pending" || record.status == "unsubmitted";
     return record.status == "pending" || record.status == "available" || record.status == "open";
 }
 

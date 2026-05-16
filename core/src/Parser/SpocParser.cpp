@@ -1,5 +1,6 @@
 #include <UBAANext/Parser/SpocParser.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <regex>
 #include <utility>
@@ -51,8 +52,18 @@ std::string clean_html_text(const std::string &html) {
     return out.substr(start, end - start + 1);
 }
 
+std::string lower_ascii(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return text;
+}
+
 std::string normalize_status(const std::string &raw_status) {
-    return raw_status == "1" || raw_status == "已做" || raw_status == "已提交" ? "submitted" : "unsubmitted";
+    auto lower = lower_ascii(raw_status);
+    if (raw_status == "1" || raw_status == "已做" || raw_status == "已提交" || lower == "submitted" || lower == "completed") return "submitted";
+    if (raw_status == "已过期" || raw_status == "过期" || lower == "expired" || lower == "closed") return "expired";
+    return "unsubmitted";
 }
 
 } // namespace
