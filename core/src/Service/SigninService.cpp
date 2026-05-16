@@ -84,6 +84,11 @@ std::string json_string(const nlohmann::json &json, const char *key) {
     return {};
 }
 
+bool json_status_success(const nlohmann::json &json) {
+    auto status = json_string(json, "STATUS");
+    return status == "0";
+}
+
 std::string sanitize_signin_message(bool success, const std::string &raw_message) {
     if (success) {
         return raw_message.empty() ? "签到成功" : raw_message;
@@ -169,7 +174,7 @@ Result<std::pair<std::string, std::string>> SigninService::login_iclass(const st
 
     try {
         auto json = nlohmann::json::parse(response->body);
-        if (json.value("STATUS", -1) != 0) {
+        if (!json_status_success(json)) {
             return make_error(ErrorCode::SessionExpired, "签到系统登录失败");
         }
         auto result = json.contains("result") && json["result"].is_object() ? json["result"] : nlohmann::json::object();
@@ -291,7 +296,7 @@ Result<Model::MutationResult> SigninService::perform_signin(const std::string &c
     try {
         auto json = nlohmann::json::parse(response->body);
         auto result = json.contains("result") && json["result"].is_object() ? json["result"] : nlohmann::json::object();
-        bool success = json.value("STATUS", -1) == 0 && json_string(result, "stuSignStatus") == "1";
+        bool success = json_status_success(json) && json_string(result, "stuSignStatus") == "1";
         auto raw_message = json_string(json, "ERRMSG");
         auto message = sanitize_signin_message(success, raw_message);
         if (!success) {
