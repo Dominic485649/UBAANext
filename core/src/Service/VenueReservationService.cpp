@@ -3,6 +3,10 @@
 #include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/VenueReservationParser.hpp>
+#include <UBAANext/Protocol/AppBuaaSession.hpp>
+#if defined(_WIN32)
+#include <UBAANext/Net/WinHttpClient.hpp>
+#endif
 
 #include <algorithm>
 #include <charconv>
@@ -11,6 +15,7 @@
 #include <ctime>
 #include <iomanip>
 #include <map>
+#include <regex>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -81,7 +86,8 @@ Result<std::string> sign_request(const std::string &path, const std::map<std::st
 bool response_is_login(const HttpResponse &response) {
     return response.status_code == 401 || response.status_code == 403 ||
            response.body.find("name=\"execution\"") != std::string::npos ||
-           response.body.find("统一身份认证") != std::string::npos;
+           response.body.find("统一身份认证") != std::string::npos ||
+           response.body.find("username_password") != std::string::npos;
 }
 
 std::string header_value(const HttpResponse &response, const std::string &name) {
@@ -97,6 +103,97 @@ std::string header_value(const HttpResponse &response, const std::string &name) 
         if (same) return value;
     }
     return {};
+}
+
+std::string resolve_redirect_url(const std::string &base, const std::string &location) {
+    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) return location;
+    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
+    std::smatch match;
+    if (!std::regex_search(base, match, url_re)) return location;
+    std::string authority = match[1].str();
+    std::string path = match.size() > 2 ? match[2].str() : "/";
+    auto query = path.find_first_of("?#");
+    std::string path_without_query = query == std::string::npos ? path : path.substr(0, query);
+    if (location.rfind("//", 0) == 0) {
+        auto colon = authority.find(':');
+        return authority.substr(0, colon) + ":" + location;
+    }
+    if (!location.empty() && location.front() == '/') return authority + location;
+    if (!location.empty() && (location.front() == '?' || location.front() == '#')) return authority + path_without_query + location;
+    auto slash = path_without_query.find_last_of('/');
+    auto base_path = slash == std::string::npos ? std::string("/") : path_without_query.substr(0, slash + 1);
+    return authority + base_path + location;
+}
+
+bool is_cgyy_sso_cookie_name(std::string name) {
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (name == "sso_buaa_zhjs_token") return true;
+    return name.find("sso") != std::string::npos &&
+           name.find("token") != std::string::npos &&
+           (name.find("zhjs") != std::string::npos || name.find("cgyy") != std::string::npos || name.find("venue") != std::string::npos);
+}
+
+std::string extract_sso_token_from_set_cookie(const std::string &set_cookie) {
+    size_t pos = 0;
+    while (pos <= set_cookie.size()) {
+        auto newline = set_cookie.find('\n', pos);
+        auto line = set_cookie.substr(pos, newline == std::string::npos ? std::string::npos : newline - pos);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        auto semi = line.find(';');
+        auto pair = line.substr(0, semi);
+        auto eq = pair.find('=');
+        if (eq != std::string::npos && is_cgyy_sso_cookie_name(pair.substr(0, eq))) {
+            auto value = pair.substr(eq + 1);
+            if (!value.empty()) return value;
+        }
+        if (newline == std::string::npos) break;
+        pos = newline + 1;
+    }
+    return {};
+}
+
+std::string sso_token_from_cookie_jar(IHttpClient &http_client, ConnectionMode mode) {
+    (void)mode;
+#if defined(_WIN32)
+    if (auto *win_http = dynamic_cast<WinHttpClient *>(&http_client)) {
+        for (const auto *host : {"cgyy.buaa.edu.cn", "venue.buaa.edu.cn", "buaa.edu.cn", "d.buaa.edu.cn"}) {
+            if (auto token = win_http->cookies().get_cookie(host, "sso_buaa_zhjs_token")) return *token;
+        }
+        if (auto token = win_http->cookies().get_cookie("sso_buaa_zhjs_token")) return *token;
+        for (const auto &line : win_http->cookies().serialize()) {
+            std::vector<std::string> parts;
+            std::istringstream input(line);
+            std::string part;
+            while (std::getline(input, part, '\t')) parts.push_back(std::move(part));
+            if (parts.size() >= 4 && is_cgyy_sso_cookie_name(parts[2]) && !parts[3].empty()) return parts[3];
+        }
+    }
+#endif
+    return {};
+}
+
+Result<std::string> acquire_sso_token(IHttpClient &http_client, ConnectionMode mode) {
+    std::string current_url = "https://cgyy.buaa.edu.cn/venue-zhjs-server/sso/manageLogin";
+    for (int redirects = 0; redirects < 8; ++redirects) {
+        HttpRequest request;
+        request.method = HttpMethod::Get;
+        request.url = resolve_for_mode(current_url, mode);
+        request.headers["Accept"] = "application/json, text/plain, */*";
+        request.headers["Referer"] = resolve_for_mode(referer_url, mode);
+
+        auto response = http_client.send(request);
+        if (!response) return make_error(ErrorCode::NetworkError, "激活研讨室 SSO 失败: " + response.error().message);
+        if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "研讨室会话已过期，请重新登录");
+
+        auto token = extract_sso_token_from_set_cookie(header_value(*response, "Set-Cookie"));
+        if (token.empty()) token = sso_token_from_cookie_jar(http_client, mode);
+        if (!token.empty()) return token;
+        if (response->status_code < 300 || response->status_code >= 400) return std::string{};
+        auto location = header_value(*response, "Location");
+        if (location.empty()) return make_error(ErrorCode::NetworkError, "研讨室跳转缺少 Location");
+        current_url = resolve_redirect_url(current_url, location);
+    }
+    return make_error(ErrorCode::NetworkError, "研讨室跳转次数过多");
 }
 
 std::string json_string(const nlohmann::json &json, const char *key) {
@@ -148,26 +245,20 @@ Result<void> VenueReservationService::ensure_login(bool force_refresh) {
     (void)m_cache;
     if (!force_refresh && !m_access_token.empty()) return {};
 
-    HttpRequest manage;
-    manage.method = HttpMethod::Get;
-    manage.url = resolve_for_mode("https://cgyy.buaa.edu.cn/venue-zhjs-server/sso/manageLogin", m_mode);
-    manage.headers["Accept"] = "application/json, text/plain, */*";
-    manage.headers["Referer"] = referer_url;
-    auto manage_response = m_http_client.send(manage);
-    if (!manage_response) return make_error(ErrorCode::NetworkError, "激活研讨室 SSO 失败: " + manage_response.error().message);
-    if (response_is_login(*manage_response)) return make_error(ErrorCode::SessionExpired, "研讨室会话已过期，请重新登录");
-
-    auto sso_token = header_value(*manage_response, "Set-Cookie");
-    auto marker = sso_token.find("sso_buaa_zhjs_token=");
-    if (marker != std::string::npos) {
-        sso_token = sso_token.substr(marker + std::string("sso_buaa_zhjs_token=").size());
-        sso_token = sso_token.substr(0, sso_token.find(';'));
-    } else {
-        sso_token.clear();
+    auto sso_token = acquire_sso_token(m_http_client, m_mode);
+    if (!sso_token) return make_error(sso_token.error().code, sso_token.error().message);
+    if (sso_token->empty()) {
+        auto sync = Protocol::AppBuaa::ensure_session(m_http_client,
+                                                      m_mode,
+                                                      "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fcgyy.buaa.edu.cn%2Fvenue-zhjs-server%2Fsso%2FmanageLogin",
+                                                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4");
+        if (!sync) return make_error(sync.error().code, sync.error().message);
+        sso_token = acquire_sso_token(m_http_client, m_mode);
+        if (!sso_token) return make_error(sso_token.error().code, sso_token.error().message);
     }
-    if (sso_token.empty()) return make_error(ErrorCode::SessionExpired, "未获取到研讨室 SSO Token");
+    if (sso_token->empty()) return make_error(ErrorCode::SessionExpired, "未获取到研讨室 SSO Token");
 
-    auto login = request_json(HttpMethod::Post, "/api/login", {}, {}, {{"Sso-Token", sso_token}}, false, false);
+    auto login = request_json(HttpMethod::Post, "/api/login", {}, {}, {{"Sso-Token", *sso_token}}, false, false);
     if (!login) return make_error(login.error().code, login.error().message);
     if (login->contains("token") && (*login)["token"].is_object()) {
         m_access_token = json_string((*login)["token"], "access_token");
