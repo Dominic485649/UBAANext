@@ -19,6 +19,10 @@ TEST_CASE("CryptoProvider MD5 平台行为", "[crypto]") {
 }
 
 TEST_CASE("CryptoProvider AES CBC 平台行为", "[crypto]") {
+    auto invalid = UBAANext::default_crypto_provider().aes_cbc_encrypt({0x01}, "short", "iv");
+    REQUIRE_FALSE(invalid);
+    REQUIRE(invalid.error().code == UBAANext::ErrorCode::InvalidArgument);
+
     std::vector<unsigned char> plain(16, 0x10);
     auto encrypted = UBAANext::default_crypto_provider().aes_cbc_encrypt(plain, "1234567890abcdef", "abcdef1234567890");
 #ifdef _WIN32

@@ -2,7 +2,6 @@
 
 #include <UBAANext/Base/Error.hpp>
 
-#include <array>
 #include <iomanip>
 #include <sstream>
 
@@ -49,6 +48,9 @@ public:
     }
 
     Result<std::vector<unsigned char>> aes_cbc_encrypt(const std::vector<unsigned char> &data, const std::string &key, const std::string &iv) override {
+        if (key.size() != 16 && key.size() != 24 && key.size() != 32) return make_error(ErrorCode::InvalidArgument, "AES key 长度必须为 16、24 或 32 字节");
+        if (iv.size() != 16) return make_error(ErrorCode::InvalidArgument, "AES CBC IV 长度必须为 16 字节");
+        if (data.empty() || data.size() % 16 != 0) return make_error(ErrorCode::InvalidArgument, "AES CBC 明文长度必须为 16 字节倍数");
         AlgHandle alg;
         if (BCryptOpenAlgorithmProvider(&alg.handle, BCRYPT_AES_ALGORITHM, nullptr, 0) != 0) return make_error(ErrorCode::NetworkError, "打开 AES 算法失败");
         if (BCryptSetProperty(alg.handle, BCRYPT_CHAINING_MODE, reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_CBC)), static_cast<ULONG>((wcslen(BCRYPT_CHAIN_MODE_CBC) + 1) * sizeof(wchar_t)), 0) != 0) return make_error(ErrorCode::NetworkError, "设置 AES CBC 模式失败");
@@ -73,7 +75,10 @@ public:
         return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 MD5 实现");
     }
 
-    Result<std::vector<unsigned char>> aes_cbc_encrypt(const std::vector<unsigned char> &, const std::string &, const std::string &) override {
+    Result<std::vector<unsigned char>> aes_cbc_encrypt(const std::vector<unsigned char> &data, const std::string &key, const std::string &iv) override {
+        if (key.size() != 16 && key.size() != 24 && key.size() != 32) return make_error(ErrorCode::InvalidArgument, "AES key 长度必须为 16、24 或 32 字节");
+        if (iv.size() != 16) return make_error(ErrorCode::InvalidArgument, "AES CBC IV 长度必须为 16 字节");
+        if (data.empty() || data.size() % 16 != 0) return make_error(ErrorCode::InvalidArgument, "AES CBC 明文长度必须为 16 字节倍数");
         return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 AES CBC 加密实现");
     }
 };

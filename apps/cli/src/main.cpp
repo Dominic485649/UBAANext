@@ -606,10 +606,15 @@ nlohmann::json get_help_json() {
     json config_set_opts = {
         {{"name", "--key"}, {"description", "配置键"}, {"required", true}},
         {{"name", "--value"}, {"description", "配置值"}, {"required", true}},
+        {{"name", "--confirm"}, {"description", "确认修改本地配置"}, {"required", true}},
     };
     add_cmd("config set", "设置配置项", config_set_opts);
 
-    add_cmd("cache clear", "清除缓存");
+    json confirm_opts = {
+        {{"name", "--confirm"}, {"description", "确认执行有副作用操作"}, {"required", true}},
+    };
+    add_cmd("cache clear", "清除缓存", confirm_opts);
+    add_cmd("logout", "登出并清除本地会话", confirm_opts);
     add_cmd("user info", "显示用户信息");
     add_cmd("app version", "显示应用版本信息");
     add_cmd("app announcement", "显示公告");
@@ -622,18 +627,27 @@ nlohmann::json get_help_json() {
     add_cmd("judge assignment details", "显示希冀作业详情");
     add_cmd("judge assignment details-batch", "批量显示希冀作业详情");
     add_cmd("signin today", "显示今日签到");
-    add_cmd("signin do", "执行签到");
+    add_cmd("signin do", "执行签到", confirm_opts);
     add_cmd("bykc profile", "显示博雅资料");
     add_cmd("bykc courses", "显示博雅课程");
     add_cmd("bykc chosen", "显示已选博雅课程");
     add_cmd("bykc stats", "显示博雅统计");
+    add_cmd("bykc select", "选择博雅课程", confirm_opts);
+    add_cmd("bykc unselect", "退选博雅课程", confirm_opts);
+    add_cmd("bykc sign", "博雅签到/签退", confirm_opts);
     add_cmd("cgyy sites", "显示场馆列表");
     add_cmd("cgyy day-info", "显示场馆日期可预约信息");
+    add_cmd("cgyy reserve", "预约场馆", confirm_opts);
+    add_cmd("cgyy order cancel", "取消场馆预约", confirm_opts);
     add_cmd("libbook libraries", "显示图书馆列表");
     add_cmd("libbook seats", "显示座位列表");
+    add_cmd("libbook book", "预约图书馆座位", confirm_opts);
+    add_cmd("libbook cancel", "取消图书馆座位预约", confirm_opts);
     add_cmd("ygdk overview", "显示阳光打卡概览");
     add_cmd("ygdk records", "显示阳光打卡记录");
+    add_cmd("ygdk submit", "提交阳光打卡", confirm_opts);
     add_cmd("evaluation list", "显示评教任务");
+    add_cmd("evaluation submit", "提交评教", confirm_opts);
     add_cmd("todo list", "显示待办聚合");
 
     return {{"ok", true}, {"data", {{"commands", commands}, {"version", UBAANEXT_VERSION_STRING}}}, {"error", nullptr}};
@@ -651,7 +665,7 @@ void print_usage() {
     UBAANextCli::Console::println("                                   模拟登录");
 #endif
     UBAANextCli::Console::println("  whoami                           显示当前用户");
-    UBAANextCli::Console::println("  logout                           登出");
+    UBAANextCli::Console::println("  logout --confirm                 登出并清除本地会话");
 #if UBAANEXT_ENABLE_MOCKS
     UBAANextCli::Console::println("  course today [--mock]            显示今天的课程");
 #else
