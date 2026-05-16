@@ -64,4 +64,7 @@ target_compile_definitions(UBAANextCore
 
 if(WIN32)
     target_link_libraries(UBAANextCore PRIVATE winhttp crypt32 bcrypt)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "OHOS")
+    target_compile_definitions(UBAANextCore PRIVATE UBAANEXT_USE_OH_CRYPTO=1)
+    target_link_libraries(UBAANextCore PRIVATE libohcrypto.so)
 endif()

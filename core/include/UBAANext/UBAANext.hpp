@@ -36,7 +36,9 @@
 #include <UBAANext/Net/HttpRequest.hpp>
 #include <UBAANext/Net/HttpResponse.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
+#ifdef _WIN32
 #include <UBAANext/Net/WinHttpClient.hpp>
+#endif
 
 // ── 存储层 ──────────────────────────────────────────────────────────
 #include <UBAANext/Storage/CacheStore.hpp>

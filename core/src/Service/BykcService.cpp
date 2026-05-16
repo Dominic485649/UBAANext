@@ -1,15 +1,13 @@
 #include <UBAANext/Service/BykcService.hpp>
 
+#include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/BykcParser.hpp>
 
-#include <algorithm>
-#include <array>
 #include <chrono>
 #include <cctype>
 #include <iomanip>
 #include <map>
-#include <memory>
 #include <random>
 #include <regex>
 #include <sstream>
@@ -17,22 +15,11 @@
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <bcrypt.h>
-#include <wincrypt.h>
-#endif
-
 namespace UBAANext {
 
 namespace {
 
-#ifdef _WIN32
 constexpr const char *rsa_public_key_base64 = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDlHMQ3B5GsWnCe7Nlo1YiG/YmHdlOiKOST5aRm4iaqYSvhvWmwcigoyWTM+8bv2+sf6nQBRDWTY4KmNV7DBk1eDnTIQo6ENA31k5/tYCLEXgjPbEjCK9spiyB62fCT6cqOhbamJB0lcDJRO6Vo1m3dy+fD0jbxfDVBBNtyltIsDQIDAQAB";
-#endif
 constexpr const char *key_chars = "ABCDEFGHJKMNPQRSTWXYZabcdefhijkmnprstwxyz2345678";
 
 std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
@@ -63,44 +50,6 @@ bool response_is_login(const HttpResponse &response) {
            response.body.find("统一身份认证") != std::string::npos;
 }
 
-std::string base64_encode(const std::vector<unsigned char> &data) {
-    static constexpr char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string out;
-    int val = 0;
-    int valb = -6;
-    for (unsigned char c : data) {
-        val = (val << 8) + c;
-        valb += 8;
-        while (valb >= 0) {
-            out.push_back(chars[(val >> valb) & 0x3F]);
-            valb -= 6;
-        }
-    }
-    if (valb > -6) out.push_back(chars[((val << 8) >> (valb + 8)) & 0x3F]);
-    while (out.size() % 4) out.push_back('=');
-    return out;
-}
-
-std::vector<unsigned char> base64_decode(const std::string &input) {
-    std::array<int, 256> table{};
-    table.fill(-1);
-    for (int i = 0; i < 64; ++i) table[static_cast<unsigned char>("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[i])] = i;
-    std::vector<unsigned char> out;
-    int val = 0;
-    int valb = -8;
-    for (unsigned char c : input) {
-        if (std::isspace(c) || c == '=') continue;
-        if (table[c] == -1) break;
-        val = (val << 6) + table[c];
-        valb += 6;
-        if (valb >= 0) {
-            out.push_back(static_cast<unsigned char>((val >> valb) & 0xFF));
-            valb -= 8;
-        }
-    }
-    return out;
-}
-
 std::string bytes_to_hex(const std::vector<unsigned char> &bytes) {
     std::ostringstream out;
     out << std::hex << std::setfill('0');
@@ -111,102 +60,6 @@ std::string bytes_to_hex(const std::vector<unsigned char> &bytes) {
 std::vector<unsigned char> string_bytes(const std::string &text) {
     return {text.begin(), text.end()};
 }
-
-#ifdef _WIN32
-
-struct AlgHandle {
-    BCRYPT_ALG_HANDLE handle = nullptr;
-    ~AlgHandle() { if (handle) BCryptCloseAlgorithmProvider(handle, 0); }
-};
-
-struct KeyHandle {
-    BCRYPT_KEY_HANDLE handle = nullptr;
-    ~KeyHandle() { if (handle) BCryptDestroyKey(handle); }
-};
-
-struct CryptoKeyHandle {
-    HCRYPTKEY handle = 0;
-    ~CryptoKeyHandle() { if (handle) CryptDestroyKey(handle); }
-};
-
-struct CryptoProviderHandle {
-    HCRYPTPROV handle = 0;
-    ~CryptoProviderHandle() { if (handle) CryptReleaseContext(handle, 0); }
-};
-
-Result<std::vector<unsigned char>> sha1_digest(const std::vector<unsigned char> &data) {
-    AlgHandle alg;
-    if (BCryptOpenAlgorithmProvider(&alg.handle, BCRYPT_SHA1_ALGORITHM, nullptr, 0) != 0) return make_error(ErrorCode::NetworkError, "打开 SHA-1 算法失败");
-    DWORD hash_len = 0;
-    DWORD cb = 0;
-    if (BCryptGetProperty(alg.handle, BCRYPT_HASH_LENGTH, reinterpret_cast<PUCHAR>(&hash_len), sizeof(hash_len), &cb, 0) != 0) return make_error(ErrorCode::NetworkError, "获取 SHA-1 长度失败");
-    std::vector<unsigned char> hash(hash_len);
-    if (BCryptHash(alg.handle, nullptr, 0, const_cast<PUCHAR>(data.data()), static_cast<ULONG>(data.size()), hash.data(), static_cast<ULONG>(hash.size())) != 0) return make_error(ErrorCode::NetworkError, "计算 SHA-1 失败");
-    return hash;
-}
-
-Result<std::vector<unsigned char>> aes_ecb_pkcs5_encrypt(const std::vector<unsigned char> &data, const std::string &key) {
-    AlgHandle alg;
-    if (BCryptOpenAlgorithmProvider(&alg.handle, BCRYPT_AES_ALGORITHM, nullptr, 0) != 0) return make_error(ErrorCode::NetworkError, "打开 AES 算法失败");
-    if (BCryptSetProperty(alg.handle, BCRYPT_CHAINING_MODE, reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_ECB)), static_cast<ULONG>((wcslen(BCRYPT_CHAIN_MODE_ECB) + 1) * sizeof(wchar_t)), 0) != 0) return make_error(ErrorCode::NetworkError, "设置 AES ECB 模式失败");
-    KeyHandle key_handle;
-    auto key_bytes = string_bytes(key);
-    if (BCryptGenerateSymmetricKey(alg.handle, &key_handle.handle, nullptr, 0, key_bytes.data(), static_cast<ULONG>(key_bytes.size()), 0) != 0) return make_error(ErrorCode::NetworkError, "生成 AES 密钥失败");
-    ULONG out_len = 0;
-    if (BCryptEncrypt(key_handle.handle, const_cast<PUCHAR>(data.data()), static_cast<ULONG>(data.size()), nullptr, nullptr, 0, nullptr, 0, &out_len, BCRYPT_BLOCK_PADDING) != 0) return make_error(ErrorCode::NetworkError, "计算 AES 输出长度失败");
-    std::vector<unsigned char> out(out_len);
-    if (BCryptEncrypt(key_handle.handle, const_cast<PUCHAR>(data.data()), static_cast<ULONG>(data.size()), nullptr, nullptr, 0, out.data(), static_cast<ULONG>(out.size()), &out_len, BCRYPT_BLOCK_PADDING) != 0) return make_error(ErrorCode::NetworkError, "AES 加密失败");
-    out.resize(out_len);
-    return out;
-}
-
-Result<std::vector<unsigned char>> aes_ecb_pkcs5_decrypt(const std::vector<unsigned char> &data, const std::string &key) {
-    AlgHandle alg;
-    if (BCryptOpenAlgorithmProvider(&alg.handle, BCRYPT_AES_ALGORITHM, nullptr, 0) != 0) return make_error(ErrorCode::NetworkError, "打开 AES 算法失败");
-    if (BCryptSetProperty(alg.handle, BCRYPT_CHAINING_MODE, reinterpret_cast<PUCHAR>(const_cast<wchar_t *>(BCRYPT_CHAIN_MODE_ECB)), static_cast<ULONG>((wcslen(BCRYPT_CHAIN_MODE_ECB) + 1) * sizeof(wchar_t)), 0) != 0) return make_error(ErrorCode::NetworkError, "设置 AES ECB 模式失败");
-    KeyHandle key_handle;
-    auto key_bytes = string_bytes(key);
-    if (BCryptGenerateSymmetricKey(alg.handle, &key_handle.handle, nullptr, 0, key_bytes.data(), static_cast<ULONG>(key_bytes.size()), 0) != 0) return make_error(ErrorCode::NetworkError, "生成 AES 密钥失败");
-    ULONG out_len = 0;
-    if (BCryptDecrypt(key_handle.handle, const_cast<PUCHAR>(data.data()), static_cast<ULONG>(data.size()), nullptr, nullptr, 0, nullptr, 0, &out_len, BCRYPT_BLOCK_PADDING) != 0) return make_error(ErrorCode::NetworkError, "计算 AES 解密输出长度失败");
-    std::vector<unsigned char> out(out_len);
-    if (BCryptDecrypt(key_handle.handle, const_cast<PUCHAR>(data.data()), static_cast<ULONG>(data.size()), nullptr, nullptr, 0, out.data(), static_cast<ULONG>(out.size()), &out_len, BCRYPT_BLOCK_PADDING) != 0) return make_error(ErrorCode::NetworkError, "AES 解密失败");
-    out.resize(out_len);
-    return out;
-}
-
-Result<std::string> rsa_pkcs1_encrypt_base64(const std::vector<unsigned char> &data) {
-    auto der = base64_decode(rsa_public_key_base64);
-    CERT_PUBLIC_KEY_INFO *info = nullptr;
-    DWORD info_len = 0;
-    if (!CryptDecodeObjectEx(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, X509_PUBLIC_KEY_INFO, der.data(), static_cast<DWORD>(der.size()), CRYPT_DECODE_ALLOC_FLAG, nullptr, &info, &info_len)) return make_error(ErrorCode::NetworkError, "解析 BYKC RSA 公钥失败");
-    std::unique_ptr<CERT_PUBLIC_KEY_INFO, decltype(&LocalFree)> info_guard(info, LocalFree);
-
-    CryptoProviderHandle provider;
-    if (!CryptAcquireContextW(&provider.handle, nullptr, nullptr, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) return make_error(ErrorCode::NetworkError, "初始化 CryptoAPI 失败");
-    CryptoKeyHandle key;
-    if (!CryptImportPublicKeyInfo(provider.handle, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, info, &key.handle)) return make_error(ErrorCode::NetworkError, "导入 BYKC RSA 公钥失败");
-
-    DWORD key_len_bits = 0;
-    DWORD key_len_size = sizeof(key_len_bits);
-    if (!CryptGetKeyParam(key.handle, KP_KEYLEN, reinterpret_cast<BYTE *>(&key_len_bits), &key_len_size, 0)) return make_error(ErrorCode::NetworkError, "获取 BYKC RSA 密钥长度失败");
-    DWORD block_len = key_len_bits / 8;
-    std::vector<unsigned char> buffer(block_len);
-    if (data.size() > block_len - 11) return make_error(ErrorCode::InvalidArgument, "BYKC RSA 明文过长");
-    std::copy(data.begin(), data.end(), buffer.begin());
-    DWORD data_len = static_cast<DWORD>(data.size());
-    if (!CryptEncrypt(key.handle, 0, TRUE, 0, buffer.data(), &data_len, static_cast<DWORD>(buffer.size()))) return make_error(ErrorCode::NetworkError, "BYKC RSA 加密失败");
-    buffer.resize(data_len);
-    std::reverse(buffer.begin(), buffer.end());
-    return base64_encode(buffer);
-}
-
-#else
-Result<std::vector<unsigned char>> sha1_digest(const std::vector<unsigned char> &) { return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 BYKC SHA-1 加密实现"); }
-Result<std::vector<unsigned char>> aes_ecb_pkcs5_encrypt(const std::vector<unsigned char> &, const std::string &) { return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 BYKC AES 加密实现"); }
-Result<std::vector<unsigned char>> aes_ecb_pkcs5_decrypt(const std::vector<unsigned char> &, const std::string &) { return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 BYKC AES 解密实现"); }
-Result<std::string> rsa_pkcs1_encrypt_base64(const std::vector<unsigned char> &) { return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 BYKC RSA 加密实现"); }
-#endif
 
 std::string generate_aes_key() {
     std::random_device rd;
@@ -220,14 +73,15 @@ std::string generate_aes_key() {
 
 Result<std::tuple<std::string, std::string, std::string, std::string>> encrypt_request(const std::string &json) {
     auto key = generate_aes_key();
-    auto encrypted = aes_ecb_pkcs5_encrypt(string_bytes(json), key);
+    auto &crypto = default_crypto_provider();
+    auto encrypted = crypto.aes_ecb_pkcs7_encrypt(string_bytes(json), key);
     if (!encrypted) return make_error(encrypted.error().code, encrypted.error().message);
-    auto digest = sha1_digest(string_bytes(json));
+    auto digest = crypto.sha1_digest(string_bytes(json));
     if (!digest) return make_error(digest.error().code, digest.error().message);
-    auto ak = rsa_pkcs1_encrypt_base64(string_bytes(key));
+    auto ak = crypto.rsa_pkcs1_encrypt_base64(string_bytes(key), rsa_public_key_base64);
     if (!ak) return make_error(ak.error().code, ak.error().message);
     auto sign_hex = bytes_to_hex(*digest);
-    auto sk = rsa_pkcs1_encrypt_base64(string_bytes(sign_hex));
+    auto sk = crypto.rsa_pkcs1_encrypt_base64(string_bytes(sign_hex), rsa_public_key_base64);
     if (!sk) return make_error(sk.error().code, sk.error().message);
     return std::make_tuple(base64_encode(*encrypted), *ak, *sk, key);
 }
@@ -391,7 +245,7 @@ Result<std::string> BykcService::call_api_raw(const std::string &api_name, const
     auto encoded_json = nlohmann::json::parse(response->body, nullptr, false);
     std::string encoded_payload = encoded_json.is_string() ? encoded_json.get<std::string>() : response->body;
     auto encrypted_response = base64_decode(encoded_payload);
-    auto decrypted = aes_ecb_pkcs5_decrypt(encrypted_response, aes_key);
+    auto decrypted = default_crypto_provider().aes_ecb_pkcs7_decrypt(encrypted_response, aes_key);
     std::string decoded = decrypted ? std::string(decrypted->begin(), decrypted->end()) : encoded_payload;
     if (decoded.find("会话已失效") != std::string::npos || decoded.find("未登录") != std::string::npos) {
         m_token.clear();
