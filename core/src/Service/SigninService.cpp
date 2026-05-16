@@ -86,7 +86,8 @@ std::string json_string(const nlohmann::json &json, const char *key) {
 
 bool json_status_success(const nlohmann::json &json) {
     auto status = json_string(json, "STATUS");
-    return status == "0";
+    if (status.empty()) status = json_string(json, "code");
+    return status == "0" || status == "200" || status == "success";
 }
 
 std::string sanitize_signin_message(bool success, const std::string &raw_message) {
@@ -223,6 +224,9 @@ Result<std::vector<Model::SigninCourse>> SigninService::list_today_courses() {
     if (json.is_discarded()) {
         return make_error(ErrorCode::ParseError, "解析今日签到 JSON 失败");
     }
+    if (json.contains("STATUS") && !json_status_success(json)) {
+        return make_error(ErrorCode::SessionExpired, "今日签到会话已过期");
+    }
     return Parser::parse_signin_today_courses(json);
 }
 
@@ -296,11 +300,12 @@ Result<Model::MutationResult> SigninService::perform_signin(const std::string &c
     try {
         auto json = nlohmann::json::parse(response->body);
         auto result = json.contains("result") && json["result"].is_object() ? json["result"] : nlohmann::json::object();
-        bool success = json_status_success(json) && json_string(result, "stuSignStatus") == "1";
+        auto sign_status = json_string(result, "stuSignStatus");
+        bool success = json_status_success(json) && (sign_status == "1" || sign_status == "success");
         auto raw_message = json_string(json, "ERRMSG");
         auto message = sanitize_signin_message(success, raw_message);
         if (!success) {
-            return make_error(ErrorCode::NetworkError, message);
+            return make_error(ErrorCode::InvalidArgument, message);
         }
 
         Model::MutationResult mutation;
