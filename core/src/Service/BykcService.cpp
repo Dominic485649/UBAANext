@@ -44,10 +44,75 @@ std::string header_value(const HttpResponse &response, const std::string &name) 
     return {};
 }
 
+std::string resolve_redirect_url(const std::string &base_url, const std::string &location) {
+    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) {
+        return location;
+    }
+    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
+    std::smatch match;
+    if (!std::regex_search(base_url, match, url_re)) {
+        return location;
+    }
+    std::string authority = match[1].str();
+    std::string path = match.size() > 2 ? match[2].str() : "/";
+    auto query = path.find_first_of("?#");
+    std::string path_without_query = query == std::string::npos ? path : path.substr(0, query);
+    if (location.rfind("//", 0) == 0) {
+        auto colon = authority.find(':');
+        return authority.substr(0, colon) + ":" + location;
+    }
+    if (!location.empty() && location.front() == '/') {
+        return authority + location;
+    }
+    if (!location.empty() && (location.front() == '?' || location.front() == '#')) {
+        return authority + path_without_query + location;
+    }
+    auto slash = path_without_query.find_last_of('/');
+    std::string base_path = slash == std::string::npos ? "/" : path_without_query.substr(0, slash + 1);
+    return authority + base_path + location;
+}
+
+std::string extract_bykc_token(const std::string &url) {
+    std::regex token_re(R"([?&]token=([^&#]+))");
+    std::smatch match;
+    if (std::regex_search(url, match, token_re) && match.size() > 1) return match[1].str();
+    return {};
+}
+
+void apply_bykc_login_headers(HttpRequest &request) {
+    request.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+    request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
+}
+
 bool response_is_login(const HttpResponse &response) {
     return response.status_code == 401 || response.status_code == 403 ||
            response.body.find("name=\"execution\"") != std::string::npos ||
            response.body.find("统一身份认证") != std::string::npos;
+}
+
+Result<std::string> acquire_bykc_token(IHttpClient &http_client, ConnectionMode mode, const std::string &url, const char *failure_message) {
+    std::string current_url = url;
+    for (int redirects = 0; redirects < 8; ++redirects) {
+        auto current_token = extract_bykc_token(current_url);
+        if (!current_token.empty()) return current_token;
+
+        HttpRequest request;
+        request.method = HttpMethod::Get;
+        request.url = resolve_for_mode(current_url, mode);
+        apply_bykc_login_headers(request);
+
+        auto response = http_client.send(request);
+        if (!response) return make_error(ErrorCode::NetworkError, std::string(failure_message) + ": " + response.error().message);
+        if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "博雅会话已过期，请重新登录");
+
+        auto location = header_value(*response, "Location");
+        auto location_token = extract_bykc_token(location);
+        if (!location_token.empty()) return location_token;
+        if (response->status_code < 300 || response->status_code >= 400) return std::string{};
+        if (location.empty()) return make_error(ErrorCode::NetworkError, "博雅跳转缺少 Location");
+        current_url = resolve_redirect_url(current_url, location);
+    }
+    return make_error(ErrorCode::NetworkError, "博雅跳转次数过多");
 }
 
 std::string bytes_to_hex(const std::vector<unsigned char> &bytes) {
@@ -182,32 +247,14 @@ Result<void> BykcService::ensure_login(bool force_refresh) {
     (void)m_cache;
     if (!force_refresh && !m_token.empty()) return {};
 
-    HttpRequest request;
-    request.method = HttpMethod::Get;
-    request.url = resolve_for_mode("https://bykc.buaa.edu.cn/sscv/cas/login", m_mode);
-    request.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
-    request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
-    auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "博雅登录失败: " + response.error().message);
-    if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "博雅会话已过期，请重新登录");
-
-    std::regex token_re(R"([?&]token=([^&#]+))");
-    std::smatch match;
-    auto location = header_value(*response, "Location");
-    if (std::regex_search(location, match, token_re) && match.size() > 1) m_token = match[1].str();
-    if (m_token.empty() && std::regex_search(request.url, match, token_re) && match.size() > 1) m_token = match[1].str();
-    if (m_token.empty()) {
-        HttpRequest fallback;
-        fallback.method = HttpMethod::Get;
-        fallback.url = resolve_for_mode("https://bykc.buaa.edu.cn/cas-login?token=", m_mode);
-        fallback.headers["User-Agent"] = request.headers["User-Agent"];
-        auto fallback_response = m_http_client.send(fallback);
-        if (!fallback_response) return make_error(ErrorCode::NetworkError, "博雅 CAS 登录失败: " + fallback_response.error().message);
-        if (response_is_login(*fallback_response)) return make_error(ErrorCode::SessionExpired, "博雅会话已过期，请重新登录");
-        auto fallback_location = header_value(*fallback_response, "Location");
-        if (std::regex_search(fallback_location, match, token_re) && match.size() > 1) m_token = match[1].str();
+    auto token = acquire_bykc_token(m_http_client, m_mode, "https://bykc.buaa.edu.cn/sscv/cas/login", "博雅登录失败");
+    if (!token) return make_error(token.error().code, token.error().message);
+    if (token->empty()) {
+        token = acquire_bykc_token(m_http_client, m_mode, "https://bykc.buaa.edu.cn/cas-login?token=", "博雅 CAS 登录失败");
+        if (!token) return make_error(token.error().code, token.error().message);
     }
-    if (m_token.empty()) return make_error(ErrorCode::SessionExpired, "未获取到博雅 auth token");
+    if (token->empty()) return make_error(ErrorCode::SessionExpired, "未获取到博雅 auth token");
+    m_token = *token;
     return {};
 }
 
@@ -260,8 +307,21 @@ Result<nlohmann::json> BykcService::call_api_data(const std::string &api_name, c
     if (!raw) return make_error(raw.error().code, raw.error().message);
     auto json = nlohmann::json::parse(*raw, nullptr, false);
     if (json.is_discarded()) return make_error(ErrorCode::ParseError, "解析博雅 JSON 失败");
-    bool success = json.value("success", json.value("isSuccess", false));
-    if (!success || !json.contains("data") || json["data"].is_null()) return make_error(ErrorCode::NetworkError, json.value("errmsg", fallback_message));
+    bool success = false;
+    if (json.contains("success") && json["success"].is_boolean()) {
+        success = json["success"].get<bool>();
+    } else if (json.contains("isSuccess") && json["isSuccess"].is_boolean()) {
+        success = json["isSuccess"].get<bool>();
+    } else {
+        auto status = json_string(json, "status");
+        success = status == "0";
+    }
+    if (!success || !json.contains("data") || json["data"].is_null()) {
+        auto message = json_string(json, "errmsg");
+        if (message.empty()) message = json_string(json, "msg");
+        if (message.empty()) message = fallback_message;
+        return make_error(ErrorCode::NetworkError, message);
+    }
     return json["data"];
 }
 
