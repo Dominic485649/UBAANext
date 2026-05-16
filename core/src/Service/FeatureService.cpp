@@ -462,16 +462,12 @@ Result<Model::MutationResult> FeatureService::mutate(const std::string &domain,
     }
     if (domain == "bykc" && operation.rfind("sign:", 0) == 0) {
         auto first = operation.find(':');
-        auto second = first == std::string::npos ? std::string::npos : operation.find(':', first + 1);
-        auto third = second == std::string::npos ? std::string::npos : operation.find(':', second + 1);
-        if (first == std::string::npos || second == std::string::npos || third == std::string::npos) {
-            return make_error(ErrorCode::InvalidArgument, "bykc sign 需要 --sign-type、--lat 和 --lng");
+        if (first == std::string::npos) {
+            return make_error(ErrorCode::InvalidArgument, "bykc sign 需要 --sign-type");
         }
-        int sign_type = std::stoi(operation.substr(first + 1, second - first - 1));
-        double lat = std::stod(operation.substr(second + 1, third - second - 1));
-        double lng = std::stod(operation.substr(third + 1));
+        int sign_type = std::stoi(operation.substr(first + 1));
         BykcService service(m_http_client, m_cache, m_mode);
-        return service.sign_course(id, lat, lng, sign_type);
+        return service.sign_course(id, sign_type);
     }
     if (domain == "evaluation" && operation == "submit") {
         EvaluationService service(m_http_client, m_cache, m_mode);

@@ -72,6 +72,22 @@ TEST_CASE("parse_bykc_course_detail 解析课程详情", "[BykcParser]") {
     CHECK(detail.sign_config == "gps");
 }
 
+TEST_CASE("parse_bykc_course_detail 保留对象形态签到配置", "[BykcParser]") {
+    nlohmann::json course = {
+        {"id", "course-1"},
+        {"courseName", "创新创业实践"},
+        {"selected", true},
+        {"courseSignConfig", nlohmann::json{{"signPointList", nlohmann::json::array({nlohmann::json{{"lat", 40.1001}, {"lng", 116.3001}, {"radius", 8.0}}})}}},
+    };
+
+    auto detail = um::Parser::parse_bykc_course_detail(course, "course-1");
+
+    auto sign_config = nlohmann::json::parse(detail.sign_config, nullptr, false);
+    REQUIRE_FALSE(sign_config.is_discarded());
+    REQUIRE(sign_config["signPointList"].is_array());
+    CHECK(sign_config["signPointList"].size() == 1);
+}
+
 TEST_CASE("parse_bykc_chosen_courses 解析已选课程", "[BykcParser]") {
     auto courses = um::Parser::parse_bykc_chosen_courses(load_json_fixture("bykc/chosen.json"));
 

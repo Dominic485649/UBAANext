@@ -15,6 +15,12 @@ std::string json_string(const nlohmann::json &json, const char *key) {
     return {};
 }
 
+std::string json_string_or_dump(const nlohmann::json &json, const char *key) {
+    if (!json.contains(key) || json[key].is_null()) return {};
+    if (json[key].is_object() || json[key].is_array()) return json[key].dump();
+    return json_string(json, key);
+}
+
 std::string nested_string(const nlohmann::json &json, const char *object_key, const char *key) {
     if (!json.contains(object_key) || !json[object_key].is_object()) return {};
     return json_string(json[object_key], key);
@@ -85,7 +91,7 @@ Model::BykcCourseDetail parse_bykc_course_detail(const nlohmann::json &data, con
     detail.start_date = json_string(data, "courseStartDate");
     detail.end_date = json_string(data, "courseEndDate");
     detail.selected = json_string(data, "selected");
-    detail.sign_config = json_string(data, "courseSignConfig");
+    detail.sign_config = json_string_or_dump(data, "courseSignConfig");
     return detail;
 }
 

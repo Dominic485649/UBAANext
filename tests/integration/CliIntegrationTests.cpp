@@ -370,7 +370,7 @@ TEST_CASE("CLI 有副作用命令需要 confirm", "[cli][integration]") {
         {"evaluation", "submit", "--mock", "--json"},
         {"bykc", "select", "--mock", "--course-id", "bykc-1", "--json"},
         {"bykc", "unselect", "--mock", "--course-id", "bykc-1", "--json"},
-        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--lat", "39.981", "--lng", "116.347", "--json"},
+        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--json"},
         {"cgyy", "reserve", "--mock", "--json"},
         {"cgyy", "order", "cancel", "--mock", "--order-id", "cgyy-1", "--json"},
         {"libbook", "book", "--mock", "--seat-id", "libbook-1", "--json"},
@@ -403,7 +403,7 @@ TEST_CASE("CLI 直接服务写操作保留分隔符参数", "[cli][integration]"
     auto evaluation_json = parse_json_output(evaluation.stdout_output);
     REQUIRE(evaluation_json["ok"] == true);
 
-    auto bykc = run_cli({"bykc", "sign", "--mock", "--course-id", "bykc:1", "--sign-type", "1", "--lat", "39.981", "--lng", "116.347", "--confirm", "--json"});
+    auto bykc = run_cli({"bykc", "sign", "--mock", "--course-id", "bykc:1", "--sign-type", "1", "--confirm", "--json"});
     REQUIRE(bykc.exit_code == 0);
     auto bykc_json = parse_json_output(bykc.stdout_output);
     REQUIRE(bykc_json["ok"] == true);
@@ -426,7 +426,7 @@ TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integratio
         {"evaluation", "submit", "--mock", "--confirm", "--json"},
         {"bykc", "select", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
         {"bykc", "unselect", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
-        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--lat", "39.981", "--lng", "116.347", "--confirm", "--json"},
+        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--confirm", "--json"},
         {"cgyy", "reserve", "--mock", "--confirm", "--json"},
         {"cgyy", "order", "cancel", "--mock", "--order-id", "cgyy-1", "--confirm", "--json"},
         {"libbook", "book", "--mock", "--area-id", "libbook-1", "--confirm", "--json"},
@@ -491,7 +491,7 @@ TEST_CASE("CLI 签到真实写操作要求课程 ID", "[cli][integration]") {
     REQUIRE(json["error"]["code"] == "InvalidArgument");
 }
 
-TEST_CASE("CLI 博雅签到要求显式定位和签到类型", "[cli][integration]") {
+TEST_CASE("CLI 博雅签到要求显式课程和签到类型", "[cli][integration]") {
     auto result = run_cli({"bykc", "sign", "--course-id", "1", "--confirm", "--json"});
     REQUIRE(result.exit_code == 2);
 

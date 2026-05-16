@@ -45,7 +45,7 @@ public:
     Result<Model::FeatureRecord> show_course(const std::string &course_id);
     Result<Model::MutationResult> select_course(const std::string &course_id);
     Result<Model::MutationResult> unselect_course(const std::string &course_id);
-    Result<Model::MutationResult> sign_course(const std::string &course_id, double lat, double lng, int sign_type);
+    Result<Model::MutationResult> sign_course(const std::string &course_id, int sign_type);
 
 private:
     IHttpClient &m_http_client;

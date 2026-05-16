@@ -56,7 +56,7 @@
 - `bykc course show --course-id <id>`
 - `bykc select --course-id <id> --confirm`
 - `bykc unselect --course-id <id> --confirm`
-- `bykc sign --course-id <id> --sign-type <1|2> --lat <lat> --lng <lng> --confirm`
+- `bykc sign --course-id <id> --sign-type <1|2> --confirm`
 - `cgyy sites`
 - `cgyy purpose-types`
 - `cgyy day-info --date <date> --site-id <id>`

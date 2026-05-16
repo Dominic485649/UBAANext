@@ -1477,15 +1477,15 @@ ExitCode cmd_bykc_sign(const CliArgs &args, ServiceFactory &factory, OutputForma
         out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 是有副作用操作，必须显式传入 --confirm 或 --yes"});
         return ExitCode::InvalidArgument;
     }
-    if (!args.has_lat || !args.has_lng || args.sign_type == 0) {
-        out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 需要 --course-id、--sign-type、--lat 和 --lng"});
+    if ((args.course_id.empty() && args.id.empty()) || args.sign_type == 0) {
+        out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 需要 --course-id 和 --sign-type"});
         return ExitCode::InvalidArgument;
     }
 #if UBAANEXT_ENABLE_MOCKS
-    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "bykc", "sign", args.course_id.empty() ? args.id : args.course_id, args.confirmed);
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "bykc", "sign:" + std::to_string(args.sign_type), args.course_id.empty() ? args.id : args.course_id, args.confirmed);
 #endif
     auto service = factory.create_bykc_service();
-    return print_mutation_result(factory, out, service.sign_course(args.course_id.empty() ? args.id : args.course_id, args.lat, args.lng, args.sign_type));
+    return print_mutation_result(factory, out, service.sign_course(args.course_id.empty() ? args.id : args.course_id, args.sign_type));
 }
 
 ExitCode cmd_cgyy_sites(ServiceFactory &factory, OutputFormatter &out) {
