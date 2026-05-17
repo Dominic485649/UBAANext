@@ -340,7 +340,7 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
         {"bykc", "stats", "--mock", "--json"},
         {"cgyy", "sites", "--mock", "--json"},
         {"cgyy", "purpose-types", "--mock", "--json"},
-        {"cgyy", "day-info", "--mock", "--json"},
+        {"cgyy", "day-info", "--mock", "--site-id", "1", "--date", "2026-05-15", "--json"},
         {"cgyy", "order", "show", "--mock", "--order-id", "cgyy-1", "--json"},
         {"cgyy", "order", "lock-code", "--mock", "--order-id", "cgyy-1", "--json"},
         {"libbook", "libraries", "--mock", "--json"},
@@ -419,17 +419,79 @@ TEST_CASE("CLI 直接服务写操作保留分隔符参数", "[cli][integration]"
     REQUIRE(libbook_json["ok"] == true);
 }
 
+TEST_CASE("CLI 图书馆预约 confirm 后仍校验必要参数", "[cli][integration]") {
+    auto result = run_cli({"libbook", "book", "--mock", "--seat-id", "libbook-1", "--confirm", "--json"});
+
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
+}
+
+TEST_CASE("CLI 有副作用命令 confirm 后仍校验业务 ID", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"bykc", "select", "--mock", "--confirm", "--json"},
+        {"bykc", "unselect", "--mock", "--confirm", "--json"},
+        {"cgyy", "order", "cancel", "--mock", "--confirm", "--json"},
+        {"libbook", "cancel", "--mock", "--confirm", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
+TEST_CASE("CLI CGYY mock 模式仍校验必要参数", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"cgyy", "day-info", "--mock", "--json"},
+        {"cgyy", "order", "show", "--mock", "--json"},
+        {"cgyy", "reserve", "--mock", "--confirm", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
+TEST_CASE("CLI 只读 mock 模式仍校验必要业务 ID", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"spoc", "assignment", "show", "--mock", "--json"},
+        {"judge", "assignment", "show", "--mock", "--json"},
+        {"judge", "assignment", "details", "--mock", "--json"},
+        {"bykc", "course", "show", "--mock", "--json"},
+        {"libbook", "areas", "--mock", "--json"},
+        {"libbook", "seats", "--mock", "--json"},
+        {"libbook", "area", "show", "--mock", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
 TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
-        {"signin", "do", "--mock", "--confirm", "--json"},
+        {"signin", "do", "--mock", "--id", "signin-1", "--confirm", "--json"},
         {"ygdk", "submit", "--mock", "--confirm", "--json"},
         {"evaluation", "submit", "--mock", "--confirm", "--json"},
         {"bykc", "select", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
         {"bykc", "unselect", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
         {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--confirm", "--json"},
-        {"cgyy", "reserve", "--mock", "--confirm", "--json"},
+        {"cgyy", "reserve", "--mock", "--id", "1", "--site-id", "1", "--space-id", "1", "--date", "2026-05-15", "--purpose-type", "1", "--theme", "组会", "--phone", "13800000000", "--joiners", "张三", "--captcha", "captcha", "--token", "token", "--confirm", "--json"},
         {"cgyy", "order", "cancel", "--mock", "--order-id", "cgyy-1", "--confirm", "--json"},
-        {"libbook", "book", "--mock", "--area-id", "libbook-1", "--confirm", "--json"},
+        {"libbook", "book", "--mock", "--seat-id", "libbook-1", "--date", "2026-05-15", "--segment", "08:00-10:00", "--confirm", "--json"},
         {"libbook", "cancel", "--mock", "--booking-id", "libbook-1", "--confirm", "--json"},
     };
 
@@ -525,7 +587,87 @@ TEST_CASE("CLI 图书馆座位真实模式要求查询 ID", "[cli][integration]"
 
 TEST_CASE("CLI 未知命令返回 InvalidArgument", "[cli][integration]") {
     auto result = run_cli({"unknown", "--json"});
-    REQUIRE(result.exit_code == 2);  // InvalidArgument
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
+}
+
+TEST_CASE("CLI 数字选项无效值返回 JSON InvalidArgument", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"course", "week", "--mock", "--week", "0", "--json"},
+        {"course", "week", "--mock", "--week", "abc", "--json"},
+        {"classroom", "query", "--mock", "--campus", "11", "--date", "2026-05-13", "--json"},
+        {"classroom", "query", "--mock", "--campus", "abc", "--date", "2026-05-13", "--json"},
+        {"ygdk", "records", "--mock", "--page", "0", "--json"},
+        {"bykc", "courses", "--mock", "--size", "201", "--json"},
+        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "3", "--confirm", "--json"},
+        {"classroom", "query", "--mock", "--campus", "1", "--date", "2026-05-13", "--sections", "0", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
+TEST_CASE("CLI 选项缺值时保留 JSON 错误合同", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"course", "week", "--week", "--json"},
+        {"classroom", "free", "--campus", "--json"},
+        {"course", "week", "--date", "--json"},
+        {"config", "set", "--key", "--json"},
+        {"config", "set", "--value", "--json"},
+        {"course", "today", "--mode", "--json"},
+        {"course", "week", "--term", "--json"},
+        {"spoc", "assignment", "show", "--id", "--json"},
+        {"bykc", "select", "--mock", "--confirm", "--course-id", "--json"},
+        {"spoc", "assignment", "show", "--assignment-id", "--json"},
+        {"libbook", "seats", "--area-id", "--json"},
+        {"libbook", "areas", "--library-id", "--json"},
+        {"libbook", "cancel", "--booking-id", "--json"},
+        {"cgyy", "order", "show", "--order-id", "--json"},
+        {"cgyy", "day-info", "--site-id", "--json"},
+        {"ygdk", "records", "--page", "--json"},
+        {"ygdk", "records", "--limit", "--json"},
+        {"spoc", "assignments", "--status", "--json"},
+        {"spoc", "assignments", "--category", "--json"},
+        {"spoc", "assignments", "--sub-category", "--json"},
+        {"course", "search", "--keyword", "--json"},
+        {"libbook", "book", "--start-time", "--json"},
+        {"libbook", "book", "--end-time", "--json"},
+        {"cgyy", "reserve", "--storey-id", "--json"},
+        {"cgyy", "reserve", "--space-id", "--json"},
+        {"cgyy", "reserve", "--purpose-type", "--json"},
+        {"cgyy", "reserve", "--theme", "--json"},
+        {"cgyy", "reserve", "--phone", "--json"},
+        {"cgyy", "reserve", "--joiners", "--json"},
+        {"cgyy", "reserve", "--captcha", "--json"},
+        {"cgyy", "reserve", "--token", "--json"},
+        {"todo", "done", "--item-id", "--json"},
+        {"ygdk", "submit", "--place", "--json"},
+        {"ygdk", "submit", "--photo", "--json"},
+        {"libbook", "book", "--seat-id", "--json"},
+        {"libbook", "book", "--segment", "--json"},
+        {"course", "week", "--sections", "--json"},
+        {"judge", "submit", "--input", "--json"},
+        {"signin", "do", "--lat", "--json"},
+        {"signin", "do", "--lng", "--json"},
+        {"signin", "do", "--sign-type", "--json"},
+        {"config", "set", "--base-url", "--json"},
+        {"config", "set", "--proxy", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
 }
 
 TEST_CASE("CLI 缺少必要参数返回 InvalidArgument", "[cli][integration]") {
@@ -534,7 +676,10 @@ TEST_CASE("CLI 缺少必要参数返回 InvalidArgument", "[cli][integration]") 
 #else
     auto result = run_cli({"login", "--json"});
 #endif
-    REQUIRE(result.exit_code == 2);  // InvalidArgument
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
 }
 
 #if !UBAANEXT_ENABLE_MOCKS
@@ -542,6 +687,7 @@ TEST_CASE("CLI Release 构建拒绝 mock 选项", "[cli][integration]") {
     auto result = run_cli({"course", "today", "--mock", "--json"});
     REQUIRE(result.exit_code == 2);
     auto json = parse_json_output(result.stdout_output);
-    REQUIRE(json["ok"] == false);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
 }
 #endif
