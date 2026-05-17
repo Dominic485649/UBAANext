@@ -428,6 +428,23 @@ TEST_CASE("CLI 图书馆预约 confirm 后仍校验必要参数", "[cli][integra
     CHECK(json["error"]["code"] == "InvalidArgument");
 }
 
+TEST_CASE("CLI 有副作用命令 confirm 后仍校验业务 ID", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"bykc", "select", "--mock", "--confirm", "--json"},
+        {"bykc", "unselect", "--mock", "--confirm", "--json"},
+        {"cgyy", "order", "cancel", "--mock", "--confirm", "--json"},
+        {"libbook", "cancel", "--mock", "--confirm", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
 TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
         {"signin", "do", "--mock", "--confirm", "--json"},

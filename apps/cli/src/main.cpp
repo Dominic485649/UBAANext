@@ -1464,11 +1464,15 @@ ExitCode cmd_bykc_select(const CliArgs &args, ServiceFactory &factory, OutputFor
         out.print_error({um::ErrorCode::InvalidArgument, std::string("bykc ") + (select ? "select" : "unselect") + " 是有副作用操作，必须显式传入 --confirm 或 --yes"});
         return ExitCode::InvalidArgument;
     }
+    const auto id = args.course_id.empty() ? args.id : args.course_id;
+    if (id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, std::string("bykc ") + (select ? "select" : "unselect") + " 需要 --course-id"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
-    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "bykc", select ? "select" : "unselect", args.course_id.empty() ? args.id : args.course_id, args.confirmed);
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "bykc", select ? "select" : "unselect", id, args.confirmed);
 #endif
     auto service = factory.create_bykc_service();
-    const auto id = args.course_id.empty() ? args.id : args.course_id;
     return print_mutation_result(factory, out, select ? service.select_course(id) : service.unselect_course(id));
 }
 
@@ -1554,11 +1558,16 @@ ExitCode cmd_cgyy_cancel(const CliArgs &args, ServiceFactory &factory, OutputFor
         out.print_error({um::ErrorCode::InvalidArgument, "cgyy order cancel 是有副作用操作，必须显式传入 --confirm 或 --yes"});
         return ExitCode::InvalidArgument;
     }
+    auto order_id = args.order_id.empty() ? args.id : args.order_id;
+    if (order_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy order cancel 需要 --order-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
-    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "cgyy", "cancel", args.order_id, args.confirmed);
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "cgyy", "cancel", order_id, args.confirmed);
 #endif
     auto service = factory.create_venue_reservation_service();
-    return print_mutation_result(factory, out, service.cancel_order(args.order_id));
+    return print_mutation_result(factory, out, service.cancel_order(order_id));
 }
 
 ExitCode cmd_libbook_libraries(ServiceFactory &factory, OutputFormatter &out) {
@@ -1631,11 +1640,16 @@ ExitCode cmd_libbook_cancel(const CliArgs &args, ServiceFactory &factory, Output
         out.print_error({um::ErrorCode::InvalidArgument, "libbook cancel 是有副作用操作，必须显式传入 --confirm 或 --yes"});
         return ExitCode::InvalidArgument;
     }
+    auto booking_id = args.booking_id.empty() ? args.id : args.booking_id;
+    if (booking_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "libbook cancel 需要 --booking-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
-    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "libbook", "cancel", args.booking_id.empty() ? args.id : args.booking_id, args.confirmed);
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "libbook", "cancel", booking_id, args.confirmed);
 #endif
     auto service = factory.create_library_seat_service();
-    return print_mutation_result(factory, out, service.cancel_booking(args.booking_id.empty() ? args.id : args.booking_id));
+    return print_mutation_result(factory, out, service.cancel_booking(booking_id));
 }
 
 ExitCode cmd_user_info(ServiceFactory &factory, OutputFormatter &out) {
