@@ -461,6 +461,25 @@ TEST_CASE("CLI CGYY mock 模式仍校验必要参数", "[cli][integration]") {
     }
 }
 
+TEST_CASE("CLI 只读 mock 模式仍校验必要业务 ID", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"spoc", "assignment", "show", "--mock", "--json"},
+        {"judge", "assignment", "show", "--mock", "--json"},
+        {"judge", "assignment", "details", "--mock", "--json"},
+        {"libbook", "areas", "--mock", "--json"},
+        {"libbook", "seats", "--mock", "--json"},
+        {"libbook", "area", "show", "--mock", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
 TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
         {"signin", "do", "--mock", "--confirm", "--json"},

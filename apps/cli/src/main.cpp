@@ -1243,6 +1243,10 @@ ExitCode cmd_spoc_assignments(const CliArgs &args, ServiceFactory &factory, Outp
 }
 
 ExitCode cmd_spoc_assignment_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "spoc assignment show 需要 --id <assignment-id>"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) {
         return cmd_feature_show(factory, out, "spoc", "assignment", args.id, "assignment");
@@ -1284,6 +1288,10 @@ ExitCode cmd_judge_assignments(const CliArgs &args, ServiceFactory &factory, Out
 
 ExitCode cmd_judge_assignment_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     const auto id = args.assignment_id.empty() ? args.id : args.assignment_id;
+    if (id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "judge assignment show/details 需要 --assignment-id 或 --id"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) {
         return cmd_feature_show(factory, out, "judge", args.action, id, args.action == "details" ? "details" : "assignment");
@@ -1629,6 +1637,10 @@ ExitCode cmd_libbook_libraries(ServiceFactory &factory, OutputFormatter &out) {
 }
 
 ExitCode cmd_libbook_areas(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.library_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "libbook areas 需要 --library-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "libbook", "areas", "areas");
 #endif
@@ -1637,6 +1649,10 @@ ExitCode cmd_libbook_areas(const CliArgs &args, ServiceFactory &factory, OutputF
 }
 
 ExitCode cmd_libbook_seats(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.area_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "libbook seats 需要 --area-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "libbook", "seats", "seats");
 #endif
@@ -1653,11 +1669,16 @@ ExitCode cmd_libbook_reservations(const CliArgs &args, ServiceFactory &factory, 
 }
 
 ExitCode cmd_libbook_area_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    auto area_id = args.area_id.empty() ? args.id : args.area_id;
+    if (area_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "libbook area show 需要 --area-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
-    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "libbook", "area", args.area_id.empty() ? args.id : args.area_id, "area");
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "libbook", "area", area_id, "area");
 #endif
     auto service = factory.create_library_seat_service();
-    return print_record_result(factory, out, "area", service.show_area(args.area_id.empty() ? args.id : args.area_id));
+    return print_record_result(factory, out, "area", service.show_area(area_id));
 }
 
 ExitCode cmd_libbook_book(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
