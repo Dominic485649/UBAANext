@@ -340,7 +340,7 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
         {"bykc", "stats", "--mock", "--json"},
         {"cgyy", "sites", "--mock", "--json"},
         {"cgyy", "purpose-types", "--mock", "--json"},
-        {"cgyy", "day-info", "--mock", "--json"},
+        {"cgyy", "day-info", "--mock", "--site-id", "1", "--date", "2026-05-15", "--json"},
         {"cgyy", "order", "show", "--mock", "--order-id", "cgyy-1", "--json"},
         {"cgyy", "order", "lock-code", "--mock", "--order-id", "cgyy-1", "--json"},
         {"libbook", "libraries", "--mock", "--json"},
@@ -445,6 +445,22 @@ TEST_CASE("CLI 有副作用命令 confirm 后仍校验业务 ID", "[cli][integra
     }
 }
 
+TEST_CASE("CLI CGYY mock 模式仍校验必要参数", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"cgyy", "day-info", "--mock", "--json"},
+        {"cgyy", "order", "show", "--mock", "--json"},
+        {"cgyy", "reserve", "--mock", "--confirm", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
 TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
         {"signin", "do", "--mock", "--confirm", "--json"},
@@ -453,7 +469,7 @@ TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integratio
         {"bykc", "select", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
         {"bykc", "unselect", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
         {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--confirm", "--json"},
-        {"cgyy", "reserve", "--mock", "--confirm", "--json"},
+        {"cgyy", "reserve", "--mock", "--id", "1", "--site-id", "1", "--space-id", "1", "--date", "2026-05-15", "--purpose-type", "1", "--theme", "组会", "--phone", "13800000000", "--joiners", "张三", "--captcha", "captcha", "--token", "token", "--confirm", "--json"},
         {"cgyy", "order", "cancel", "--mock", "--order-id", "cgyy-1", "--confirm", "--json"},
         {"libbook", "book", "--mock", "--seat-id", "libbook-1", "--date", "2026-05-15", "--segment", "08:00-10:00", "--confirm", "--json"},
         {"libbook", "cancel", "--mock", "--booking-id", "libbook-1", "--confirm", "--json"},

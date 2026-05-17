@@ -1509,11 +1509,16 @@ ExitCode cmd_cgyy_purpose_types(ServiceFactory &factory, OutputFormatter &out) {
 }
 
 ExitCode cmd_cgyy_day_info(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    auto site_id = args.site_id.empty() ? args.id : args.site_id;
+    if (args.date.empty() || site_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy day-info 需要 --date 和 --id/--site-id"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "cgyy", "day-info", "dayInfo");
 #endif
     auto service = factory.create_venue_reservation_service();
-    return print_records_result(factory, out, "dayInfo", service.day_info(args.date, args.site_id.empty() ? args.id : args.site_id));
+    return print_records_result(factory, out, "dayInfo", service.day_info(args.date, site_id));
 }
 
 ExitCode cmd_cgyy_orders(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
@@ -1525,11 +1530,16 @@ ExitCode cmd_cgyy_orders(const CliArgs &args, ServiceFactory &factory, OutputFor
 }
 
 ExitCode cmd_cgyy_order_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    auto order_id = args.order_id.empty() ? args.id : args.order_id;
+    if (order_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy order show 需要 --order-id"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
-    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "cgyy", "show", args.order_id, "order");
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "cgyy", "show", order_id, "order");
 #endif
     auto service = factory.create_venue_reservation_service();
-    return print_record_result(factory, out, "order", service.show_order(args.order_id));
+    return print_record_result(factory, out, "order", service.show_order(order_id));
 }
 
 ExitCode cmd_cgyy_lock_code(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
@@ -1544,6 +1554,46 @@ ExitCode cmd_cgyy_lock_code(const CliArgs &args, ServiceFactory &factory, Output
 ExitCode cmd_cgyy_reserve(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.site_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --site-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.space_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --space-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.date.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --date <yyyy-MM-dd>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --id <time-id>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.purpose_type.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --purpose-type <id>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.theme.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --theme"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.phone.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --phone"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.joiners.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --joiners"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.captcha.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要用户提供 --captcha，不会自动绕过验证码"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.token.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --token，请先运行 day-info 获取预约上下文"});
         return ExitCode::InvalidArgument;
     }
 #if UBAANEXT_ENABLE_MOCKS
