@@ -95,3 +95,24 @@ TEST_CASE("BykcService 无签到范围时不提交签到", "[service][bykc]") {
     CHECK(http_client.request_counts[kCourseDetailUrl] == 1);
     CHECK(http_client.request_counts[kSignUrl] == 0);
 }
+
+TEST_CASE("BykcService 拒绝非数字业务 ID", "[service][bykc]") {
+    BykcRedirectFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::BykcService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto detail = service.show_course("course-x");
+    auto select = service.select_course("course-x");
+    auto unselect = service.unselect_course("chosen-x");
+    auto sign = service.sign_course("course-x", 1);
+
+    REQUIRE_FALSE(detail);
+    CHECK(detail.error().code == UBAANext::ErrorCode::InvalidArgument);
+    REQUIRE_FALSE(select);
+    CHECK(select.error().code == UBAANext::ErrorCode::InvalidArgument);
+    REQUIRE_FALSE(unselect);
+    CHECK(unselect.error().code == UBAANext::ErrorCode::InvalidArgument);
+    REQUIRE_FALSE(sign);
+    CHECK(sign.error().code == UBAANext::ErrorCode::InvalidArgument);
+    CHECK(http_client.request_counts.empty());
+}
