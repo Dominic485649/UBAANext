@@ -171,6 +171,20 @@ struct CliArgs {
     return mode == "vpn" || mode == "direct";
 }
 
+[[nodiscard]] bool looks_like_option(std::string_view value) {
+    return value.rfind("--", 0) == 0;
+}
+
+[[nodiscard]] bool read_option_value(int argc, char *argv[], int &i, const char *option, std::string_view &value, CliArgs &args) {
+    if (i + 1 >= argc || looks_like_option(argv[i + 1])) {
+        args.error_message = UBAANextCli::Console::format("{} 需要值", option);
+        args.parse_error = true;
+        return false;
+    }
+    value = argv[++i];
+    return true;
+}
+
 [[nodiscard]] std::optional<std::vector<int>> parse_sections_arg(const std::string &text) {
     std::vector<int> sections;
     std::string current;
@@ -195,6 +209,13 @@ struct CliArgs {
 
 CliArgs parse_args(int argc, char *argv[]) {
     CliArgs args;
+
+    for (int json_index = 1; json_index < argc; ++json_index) {
+        if (std::string_view(argv[json_index]) == "--json") {
+            args.json_output = true;
+            break;
+        }
+    }
 
     if (argc < 2) {
         return args;
@@ -235,12 +256,18 @@ CliArgs parse_args(int argc, char *argv[]) {
 #endif
         } else if (arg == "--json") {
             args.json_output = true;
-        } else if (arg == "--username" && i + 1 < argc) {
-            args.username = argv[++i];
-        } else if (arg == "--password" && i + 1 < argc) {
-            args.password = argv[++i];
-        } else if (arg == "--week" && i + 1 < argc) {
-            if (auto v = parse_int(argv[++i])) {
+        } else if (arg == "--username") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--username", value, args)) continue;
+            args.username = value;
+        } else if (arg == "--password") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--password", value, args)) continue;
+            args.password = value;
+        } else if (arg == "--week") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--week", value, args)) continue;
+            if (auto v = parse_int(value)) {
                 if (*v < 1 || *v > 30) {
                     args.error_message = "--week 值必须在 1-30 之间";
                     args.parse_error = true;
@@ -248,7 +275,7 @@ CliArgs parse_args(int argc, char *argv[]) {
                     args.week = *v;
                 }
             } else {
-                args.error_message = UBAANextCli::Console::format("--week 值无效 '{}'", argv[i]);
+                args.error_message = UBAANextCli::Console::format("--week 值无效 '{}'", value);
                 args.parse_error = true;
             }
         } else if (arg == "--campus" && i + 1 < argc) {
@@ -283,8 +310,10 @@ CliArgs parse_args(int argc, char *argv[]) {
             args.term = argv[++i];
         } else if (arg == "--id" && i + 1 < argc) {
             args.id = argv[++i];
-        } else if (arg == "--course-id" && i + 1 < argc) {
-            args.course_id = argv[++i];
+        } else if (arg == "--course-id") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--course-id", value, args)) continue;
+            args.course_id = value;
         } else if (arg == "--assignment-id" && i + 1 < argc) {
             args.assignment_id = argv[++i];
         } else if (arg == "--area-id" && i + 1 < argc) {
@@ -1460,6 +1489,10 @@ ExitCode cmd_bykc_stats(ServiceFactory &factory, OutputFormatter &out) {
 
 ExitCode cmd_bykc_course_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     const auto id = args.course_id.empty() ? args.id : args.course_id;
+    if (id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "bykc course show 需要 --course-id"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "bykc", "course", id, "course");
 #endif
@@ -1754,11 +1787,16 @@ ExitCode cmd_signin_do(const CliArgs &args, ServiceFactory &factory, OutputForma
         out.print_error({um::ErrorCode::InvalidArgument, "signin do 是有副作用操作，必须显式传入 --confirm 或 --yes"});
         return ExitCode::InvalidArgument;
     }
+    const auto id = args.course_id.empty() ? args.id : args.course_id;
+    if (id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "signin do 需要 --id 或 --course-id"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
-    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "signin", "do", args.course_id.empty() ? args.id : args.course_id, args.confirmed);
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "signin", "do", id, args.confirmed);
 #endif
     auto service = factory.create_signin_service();
-    return print_mutation_result(factory, out, service.perform_signin(args.course_id.empty() ? args.id : args.course_id));
+    return print_mutation_result(factory, out, service.perform_signin(id));
 }
 
 ExitCode cmd_ygdk_overview(ServiceFactory &factory, OutputFormatter &out) {

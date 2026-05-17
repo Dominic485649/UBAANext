@@ -466,6 +466,7 @@ TEST_CASE("CLI 只读 mock 模式仍校验必要业务 ID", "[cli][integration]"
         {"spoc", "assignment", "show", "--mock", "--json"},
         {"judge", "assignment", "show", "--mock", "--json"},
         {"judge", "assignment", "details", "--mock", "--json"},
+        {"bykc", "course", "show", "--mock", "--json"},
         {"libbook", "areas", "--mock", "--json"},
         {"libbook", "seats", "--mock", "--json"},
         {"libbook", "area", "show", "--mock", "--json"},
@@ -482,7 +483,7 @@ TEST_CASE("CLI 只读 mock 模式仍校验必要业务 ID", "[cli][integration]"
 
 TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
-        {"signin", "do", "--mock", "--confirm", "--json"},
+        {"signin", "do", "--mock", "--id", "signin-1", "--confirm", "--json"},
         {"ygdk", "submit", "--mock", "--confirm", "--json"},
         {"evaluation", "submit", "--mock", "--confirm", "--json"},
         {"bykc", "select", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
@@ -602,6 +603,22 @@ TEST_CASE("CLI 数字选项无效值返回 JSON InvalidArgument", "[cli][integra
         {"bykc", "courses", "--mock", "--size", "201", "--json"},
         {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "3", "--confirm", "--json"},
         {"classroom", "query", "--mock", "--campus", "1", "--date", "2026-05-13", "--sections", "0", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
+TEST_CASE("CLI 选项缺值时保留 JSON 错误合同", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"course", "week", "--week", "--json"},
+        {"login", "--username", "--json"},
+        {"bykc", "select", "--mock", "--confirm", "--course-id", "--json"},
     };
 
     for (const auto &command : commands) {
