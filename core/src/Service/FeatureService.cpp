@@ -14,6 +14,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <charconv>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -69,6 +70,34 @@ std::vector<std::string> split_colon_fields(const std::string &text) {
         parts.push_back(item);
     }
     return parts;
+}
+
+Result<int> parse_positive_int(const std::string &value, const std::string &name) {
+    int parsed = 0;
+    auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (value.empty() || result.ec != std::errc{} || result.ptr != value.data() + value.size() || parsed < 1) {
+        return make_error(ErrorCode::InvalidArgument, name + " 必须是正整数");
+    }
+    return parsed;
+}
+
+Result<int> parse_non_negative_int(const std::string &value, const std::string &name) {
+    int parsed = 0;
+    auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (value.empty() || result.ec != std::errc{} || result.ptr != value.data() + value.size() || parsed < 0) {
+        return make_error(ErrorCode::InvalidArgument, name + " 必须是非负整数");
+    }
+    return parsed;
+}
+
+Result<std::pair<int, int>> parse_page_size_operation(const std::string &text, const std::string &name, bool zero_based_page = false) {
+    auto sep = text.find(':');
+    auto page_text = sep == std::string::npos ? text : text.substr(0, sep);
+    auto page = zero_based_page ? parse_non_negative_int(page_text, name + " page") : parse_positive_int(page_text, name + " page");
+    if (!page) return make_error(page.error().code, page.error().message);
+    auto size = sep == std::string::npos ? Result<int>(20) : parse_positive_int(text.substr(sep + 1), name + " size");
+    if (!size) return make_error(size.error().code, size.error().message);
+    return std::make_pair(*page, *size);
 }
 
 #if UBAANEXT_ENABLE_MOCKS
@@ -228,11 +257,9 @@ Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string
             return service.records();
         }
         if (operation.rfind("records:", 0) == 0) {
-            auto rest = operation.substr(8);
-            auto sep = rest.find(':');
-            int page = sep == std::string::npos ? 1 : std::stoi(rest.substr(0, sep));
-            int size = sep == std::string::npos ? 20 : std::stoi(rest.substr(sep + 1));
-            return service.records(page, size);
+            auto pagination = parse_page_size_operation(operation.substr(8), "ygdk records");
+            if (!pagination) return make_error(pagination.error().code, pagination.error().message);
+            return service.records(pagination->first, pagination->second);
         }
         return make_error(ErrorCode::InvalidArgument, "未知的 ygdk 查询操作: " + operation);
     }
@@ -244,8 +271,16 @@ Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string
         if (operation.rfind("courses:", 0) == 0) {
             auto parts = split_colon_fields(operation.substr(8));
             BykcCourseQuery query;
-            if (!parts.empty() && !parts[0].empty()) query.page = std::stoi(parts[0]);
-            if (parts.size() > 1 && !parts[1].empty()) query.size = std::stoi(parts[1]);
+            if (!parts.empty() && !parts[0].empty()) {
+                auto page = parse_positive_int(parts[0], "bykc courses page");
+                if (!page) return make_error(page.error().code, page.error().message);
+                query.page = *page;
+            }
+            if (parts.size() > 1 && !parts[1].empty()) {
+                auto size = parse_positive_int(parts[1], "bykc courses size");
+                if (!size) return make_error(size.error().code, size.error().message);
+                query.size = *size;
+            }
             if (parts.size() > 2) query.all = parts[2] == "all";
             if (parts.size() > 3) query.status = parts[3];
             if (parts.size() > 4) query.category = parts[4];
@@ -279,11 +314,9 @@ Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string
             return service.list_orders();
         }
         if (operation.rfind("orders:", 0) == 0) {
-            auto rest = operation.substr(7);
-            auto sep = rest.find(':');
-            int page = sep == std::string::npos ? 1 : std::stoi(rest.substr(0, sep));
-            int size = sep == std::string::npos ? 20 : std::stoi(rest.substr(sep + 1));
-            return service.list_orders(page, size);
+            auto pagination = parse_page_size_operation(operation.substr(7), "cgyy orders", true);
+            if (!pagination) return make_error(pagination.error().code, pagination.error().message);
+            return service.list_orders(pagination->first, pagination->second);
         }
         return make_error(ErrorCode::InvalidArgument, "未知的 cgyy 查询操作: " + operation);
     }
@@ -297,11 +330,9 @@ Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string
             return service.list_reservations();
         }
         if (operation.rfind("reservations:", 0) == 0) {
-            auto rest = operation.substr(13);
-            auto sep = rest.find(':');
-            int page = sep == std::string::npos ? 1 : std::stoi(rest.substr(0, sep));
-            int size = sep == std::string::npos ? 20 : std::stoi(rest.substr(sep + 1));
-            return service.list_reservations(page, size);
+            auto pagination = parse_page_size_operation(operation.substr(13), "libbook reservations");
+            if (!pagination) return make_error(pagination.error().code, pagination.error().message);
+            return service.list_reservations(pagination->first, pagination->second);
         }
         if (operation == "areas") {
             return service.list_areas("", "");
@@ -466,9 +497,10 @@ Result<Model::MutationResult> FeatureService::mutate(const std::string &domain,
         if (first == std::string::npos) {
             return make_error(ErrorCode::InvalidArgument, "bykc sign 需要 --sign-type");
         }
-        int sign_type = std::stoi(operation.substr(first + 1));
+        auto sign_type = parse_positive_int(operation.substr(first + 1), "bykc sign type");
+        if (!sign_type) return make_error(sign_type.error().code, sign_type.error().message);
         BykcService service(m_http_client, m_cache, m_mode);
-        return service.sign_course(id, sign_type);
+        return service.sign_course(id, *sign_type);
     }
     if (domain == "evaluation" && operation == "submit") {
         EvaluationService service(m_http_client, m_cache, m_mode);
