@@ -534,7 +534,10 @@ TEST_CASE("CLI 图书馆座位真实模式要求查询 ID", "[cli][integration]"
 
 TEST_CASE("CLI 未知命令返回 InvalidArgument", "[cli][integration]") {
     auto result = run_cli({"unknown", "--json"});
-    REQUIRE(result.exit_code == 2);  // InvalidArgument
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
 }
 
 TEST_CASE("CLI 数字选项无效值返回 JSON InvalidArgument", "[cli][integration]") {
@@ -564,7 +567,10 @@ TEST_CASE("CLI 缺少必要参数返回 InvalidArgument", "[cli][integration]") 
 #else
     auto result = run_cli({"login", "--json"});
 #endif
-    REQUIRE(result.exit_code == 2);  // InvalidArgument
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
 }
 
 #if !UBAANEXT_ENABLE_MOCKS
@@ -572,6 +578,7 @@ TEST_CASE("CLI Release 构建拒绝 mock 选项", "[cli][integration]") {
     auto result = run_cli({"course", "today", "--mock", "--json"});
     REQUIRE(result.exit_code == 2);
     auto json = parse_json_output(result.stdout_output);
-    REQUIRE(json["ok"] == false);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
 }
 #endif
