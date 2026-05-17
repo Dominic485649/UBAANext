@@ -81,6 +81,15 @@ TEST_CASE("parse_spoc_assignments_page 规范化 Z 时区时间", "[SpocParser]"
     CHECK(records[0].start_time == "2026-03-24 16:00:00");
 }
 
+TEST_CASE("parse_spoc_assignments_page 异常 ISO 时间保持原值", "[SpocParser]") {
+    auto records = um::Parser::parse_spoc_assignments_page(
+        nlohmann::json{{"list", nlohmann::json::array({{{"zyid", "spoc-bad-time"}, {"zymc", "异常时间"}, {"zykssj", "999999999999999999999999999999-03-24T08:00:00.000Z"}}})}},
+        {}, "2025-2026-2", "2025-2026学年第二学期");
+
+    REQUIRE(records.size() == 1);
+    CHECK(records[0].start_time == "999999999999999999999999999999-03-24 08:00:00");
+}
+
 TEST_CASE("parse_spoc_assignment_detail 解析详情和提交状态", "[SpocParser]") {
     auto detail_json = load_json_fixture("spoc/detail.json");
     auto submission_json = load_json_fixture("spoc/submission.json");

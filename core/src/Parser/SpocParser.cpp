@@ -1,6 +1,7 @@
 #include <UBAANext/Parser/SpocParser.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cctype>
 #include <ctime>
 #include <regex>
@@ -74,19 +75,34 @@ std::string normalize_score(const std::string &raw_score) {
     return normalized;
 }
 
+bool parse_int(const std::string &value, int &out) {
+    auto result = std::from_chars(value.data(), value.data() + value.size(), out);
+    return !value.empty() && result.ec == std::errc{} && result.ptr == value.data() + value.size();
+}
+
 std::string normalize_datetime(std::string raw_value) {
     auto normalized = trim_ascii(std::move(raw_value));
     if (normalized.empty()) return {};
     std::smatch match;
     std::regex iso_re(R"(^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:([+-])(\d{2}):(\d{2})|Z)$)");
     if (std::regex_match(normalized, match, iso_re)) {
+        int year = 0;
+        int month = 0;
+        int day = 0;
+        int hour = 0;
+        int minute = 0;
+        int second = 0;
+        if (!parse_int(match[1].str(), year) || !parse_int(match[2].str(), month) || !parse_int(match[3].str(), day) ||
+            !parse_int(match[4].str(), hour) || !parse_int(match[5].str(), minute) || !parse_int(match[6].str(), second)) {
+            return normalized;
+        }
         std::tm tm{};
-        tm.tm_year = std::stoi(match[1].str()) - 1900;
-        tm.tm_mon = std::stoi(match[2].str()) - 1;
-        tm.tm_mday = std::stoi(match[3].str());
-        tm.tm_hour = std::stoi(match[4].str());
-        tm.tm_min = std::stoi(match[5].str());
-        tm.tm_sec = std::stoi(match[6].str());
+        tm.tm_year = year - 1900;
+        tm.tm_mon = month - 1;
+        tm.tm_mday = day;
+        tm.tm_hour = hour;
+        tm.tm_min = minute;
+        tm.tm_sec = second;
 #ifdef _WIN32
         auto seconds = _mkgmtime(&tm);
 #else
@@ -94,7 +110,10 @@ std::string normalize_datetime(std::string raw_value) {
 #endif
         if (seconds != static_cast<std::time_t>(-1)) {
             if (match[7].matched) {
-                auto offset = std::stoi(match[8].str()) * 3600 + std::stoi(match[9].str()) * 60;
+                int offset_hour = 0;
+                int offset_minute = 0;
+                if (!parse_int(match[8].str(), offset_hour) || !parse_int(match[9].str(), offset_minute)) return normalized;
+                auto offset = offset_hour * 3600 + offset_minute * 60;
                 seconds += match[7].str() == "+" ? -offset : offset;
             }
             seconds += 8 * 3600;

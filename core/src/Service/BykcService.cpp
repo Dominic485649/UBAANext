@@ -4,6 +4,7 @@
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/BykcParser.hpp>
 
+#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cctype>
@@ -78,6 +79,15 @@ std::string extract_bykc_token(const std::string &url) {
     std::smatch match;
     if (std::regex_search(url, match, token_re) && match.size() > 1) return match[1].str();
     return {};
+}
+
+Result<long long> parse_positive_id(const std::string &value, const std::string &name) {
+    long long parsed = 0;
+    auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (value.empty() || result.ec != std::errc{} || result.ptr != value.data() + value.size() || parsed <= 0) {
+        return make_error(ErrorCode::InvalidArgument, name + " 必须是正整数");
+    }
+    return parsed;
 }
 
 void apply_bykc_login_headers(HttpRequest &request) {
@@ -470,8 +480,9 @@ Result<std::vector<Model::FeatureRecord>> BykcService::courses(const BykcCourseQ
 }
 
 Result<Model::BykcCourseDetail> BykcService::course_detail(const std::string &course_id) {
-    if (course_id.empty()) return make_error(ErrorCode::InvalidArgument, "bykc course show 需要 --course-id");
-    auto data = call_api_data("queryCourseById", nlohmann::json{{"id", std::stoll(course_id)}}, "博雅课程详情加载失败");
+    auto id = parse_positive_id(course_id, "bykc course id");
+    if (!id) return make_error(id.error().code, id.error().message);
+    auto data = call_api_data("queryCourseById", nlohmann::json{{"id", *id}}, "博雅课程详情加载失败");
     if (!data) return make_error(data.error().code, data.error().message);
     return Parser::parse_bykc_course_detail(*data, course_id);
 }
@@ -519,8 +530,9 @@ Result<std::vector<Model::FeatureRecord>> BykcService::stats() {
 }
 
 Result<Model::MutationResult> BykcService::select_course(const std::string &course_id) {
-    if (course_id.empty()) return make_error(ErrorCode::InvalidArgument, "bykc select 需要 --course-id");
-    auto data = call_api_data("choseCourse", nlohmann::json{{"courseId", std::stoll(course_id)}}, "选课失败");
+    auto id = parse_positive_id(course_id, "bykc course id");
+    if (!id) return make_error(id.error().code, id.error().message);
+    auto data = call_api_data("choseCourse", nlohmann::json{{"courseId", *id}}, "选课失败");
     if (!data) return make_error(data.error().code, data.error().message);
     Model::MutationResult result;
     result.accepted = true;
@@ -530,8 +542,9 @@ Result<Model::MutationResult> BykcService::select_course(const std::string &cour
 }
 
 Result<Model::MutationResult> BykcService::unselect_course(const std::string &course_id) {
-    if (course_id.empty()) return make_error(ErrorCode::InvalidArgument, "bykc unselect 需要 --course-id 或已选记录 id");
-    auto data = call_api_data("delChosenCourse", nlohmann::json{{"id", std::stoll(course_id)}}, "退选失败");
+    auto id = parse_positive_id(course_id, "bykc chosen id");
+    if (!id) return make_error(id.error().code, id.error().message);
+    auto data = call_api_data("delChosenCourse", nlohmann::json{{"id", *id}}, "退选失败");
     if (!data) return make_error(data.error().code, data.error().message);
     Model::MutationResult result;
     result.accepted = true;
@@ -541,13 +554,14 @@ Result<Model::MutationResult> BykcService::unselect_course(const std::string &co
 }
 
 Result<Model::MutationResult> BykcService::sign_course(const std::string &course_id, int sign_type) {
-    if (course_id.empty()) return make_error(ErrorCode::InvalidArgument, "bykc sign 需要 --course-id");
+    auto id = parse_positive_id(course_id, "bykc course id");
+    if (!id) return make_error(id.error().code, id.error().message);
     if (sign_type != 1 && sign_type != 2) return make_error(ErrorCode::InvalidArgument, "bykc sign 需要 --sign-type 1 或 2");
     auto detail = course_detail(course_id);
     if (!detail) return make_error(detail.error().code, detail.error().message);
     auto location = random_sign_location_from_config(detail->sign_config);
     if (!location) return make_error(location.error().code, location.error().message);
-    auto data = call_api_data("signCourseByUser", nlohmann::json{{"courseId", std::stoll(course_id)}, {"signLat", location->lat}, {"signLng", location->lng}, {"signType", sign_type}}, sign_type == 1 ? "签到失败" : "签退失败");
+    auto data = call_api_data("signCourseByUser", nlohmann::json{{"courseId", *id}, {"signLat", location->lat}, {"signLng", location->lng}, {"signType", sign_type}}, sign_type == 1 ? "签到失败" : "签退失败");
     if (!data) return make_error(data.error().code, data.error().message);
     Model::MutationResult result;
     result.accepted = true;

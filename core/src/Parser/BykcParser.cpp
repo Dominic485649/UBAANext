@@ -1,5 +1,6 @@
 #include <UBAANext/Parser/BykcParser.hpp>
 
+#include <charconv>
 #include <utility>
 
 namespace UBAANext {
@@ -26,6 +27,11 @@ std::string nested_string(const nlohmann::json &json, const char *object_key, co
     return json_string(json[object_key], key);
 }
 
+bool parse_int(const std::string &value, int &out) {
+    auto result = std::from_chars(value.data(), value.data() + value.size(), out);
+    return !value.empty() && result.ec == std::errc{} && result.ptr == value.data() + value.size();
+}
+
 } // namespace
 
 std::string bykc_course_status(const nlohmann::json &course) {
@@ -33,9 +39,9 @@ std::string bykc_course_status(const nlohmann::json &course) {
     auto max_count = json_string(course, "courseMaxCount");
     auto current = json_string(course, "courseCurrentCount");
     if (!max_count.empty() && !current.empty()) {
-        try {
-            if (std::stoi(current) >= std::stoi(max_count)) return "full";
-        } catch (...) {}
+        int parsed_current = 0;
+        int parsed_max_count = 0;
+        if (parse_int(current, parsed_current) && parse_int(max_count, parsed_max_count) && parsed_current >= parsed_max_count) return "full";
     }
     return "available";
 }

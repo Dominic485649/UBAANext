@@ -1,5 +1,6 @@
 #include <UBAANext/Parser/JudgeParser.hpp>
 
+#include <charconv>
 #include <algorithm>
 #include <cctype>
 #include <regex>
@@ -63,6 +64,11 @@ int count_occurrences(const std::string &text, const std::string &needle) {
         pos += needle.size();
     }
     return count;
+}
+
+bool parse_int(const std::string &value, int &out) {
+    auto result = std::from_chars(value.data(), value.data() + value.size(), out);
+    return !value.empty() && result.ec == std::errc{} && result.ptr == value.data() + value.size();
 }
 
 std::string submission_status_text(int submitted, int total, const std::string &my_score, const std::string &max_score) {
@@ -189,7 +195,10 @@ Result<Model::JudgeAssignmentDetail> parse_judge_assignment_detail_html(const st
     if (std::regex_search(text, my_score_match, my_score_re)) detail.my_score = normalize_score(my_score_match[1].str());
     std::regex total_re(R"JUDGE(共\s*(\d+)\s*道)JUDGE");
     std::smatch total_match;
-    if (std::regex_search(text, total_match, total_re)) detail.total_problems = std::stoi(total_match[1].str());
+    if (std::regex_search(text, total_match, total_re)) {
+        int parsed_total = 0;
+        if (parse_int(total_match[1].str(), parsed_total)) detail.total_problems = parsed_total;
+    }
     detail.submitted_count = count_occurrences(text, "得分：") + count_occurrences(text, "得分:");
     if (detail.submitted_count == 0) {
         detail.submitted_count = count_occurrences(text, "最后一次提交时间") + count_occurrences(text, "初次提交时间");
