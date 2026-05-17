@@ -185,6 +185,13 @@ struct CliArgs {
     return true;
 }
 
+bool read_string_option(int argc, char *argv[], int &i, const char *option, std::string &target, CliArgs &args) {
+    std::string_view value;
+    if (!read_option_value(argc, argv, i, option, value, args)) return false;
+    target.assign(value);
+    return true;
+}
+
 [[nodiscard]] std::optional<std::vector<int>> parse_sections_arg(const std::string &text) {
     std::vector<int> sections;
     std::string current;
@@ -257,13 +264,9 @@ CliArgs parse_args(int argc, char *argv[]) {
         } else if (arg == "--json") {
             args.json_output = true;
         } else if (arg == "--username") {
-            std::string_view value;
-            if (!read_option_value(argc, argv, i, "--username", value, args)) continue;
-            args.username = value;
+            read_string_option(argc, argv, i, "--username", args.username, args);
         } else if (arg == "--password") {
-            std::string_view value;
-            if (!read_option_value(argc, argv, i, "--password", value, args)) continue;
-            args.password = value;
+            read_string_option(argc, argv, i, "--password", args.password, args);
         } else if (arg == "--week") {
             std::string_view value;
             if (!read_option_value(argc, argv, i, "--week", value, args)) continue;
@@ -278,8 +281,10 @@ CliArgs parse_args(int argc, char *argv[]) {
                 args.error_message = UBAANextCli::Console::format("--week 值无效 '{}'", value);
                 args.parse_error = true;
             }
-        } else if (arg == "--campus" && i + 1 < argc) {
-            if (auto v = parse_int(argv[++i])) {
+        } else if (arg == "--campus") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--campus", value, args)) continue;
+            if (auto v = parse_int(value)) {
                 if (*v < 1 || *v > 10) {
                     args.error_message = "--campus 值必须在 1-10 之间";
                     args.parse_error = true;
@@ -287,47 +292,47 @@ CliArgs parse_args(int argc, char *argv[]) {
                     args.campus = *v;
                 }
             } else {
-                args.error_message = UBAANextCli::Console::format("--campus 值无效 '{}'", argv[i]);
+                args.error_message = UBAANextCli::Console::format("--campus 值无效 '{}'", value);
                 args.parse_error = true;
             }
-        } else if (arg == "--date" && i + 1 < argc) {
-            args.date = argv[++i];
+        } else if (arg == "--date") {
+            if (!read_string_option(argc, argv, i, "--date", args.date, args)) continue;
             if (!is_valid_date(args.date)) {
                 args.error_message = UBAANextCli::Console::format("--date 格式无效 '{}'，应为 yyyy-MM-dd", args.date);
                 args.parse_error = true;
             }
-        } else if (arg == "--key" && i + 1 < argc) {
-            args.config_key = argv[++i];
-        } else if (arg == "--value" && i + 1 < argc) {
-            args.config_value = argv[++i];
-        } else if (arg == "--mode" && i + 1 < argc) {
-            args.mode = argv[++i];
+        } else if (arg == "--key") {
+            read_string_option(argc, argv, i, "--key", args.config_key, args);
+        } else if (arg == "--value") {
+            read_string_option(argc, argv, i, "--value", args.config_value, args);
+        } else if (arg == "--mode") {
+            if (!read_string_option(argc, argv, i, "--mode", args.mode, args)) continue;
             if (!is_valid_mode(args.mode)) {
                 args.error_message = UBAANextCli::Console::format("--mode 值无效 '{}'，应为 vpn 或 direct", args.mode);
                 args.parse_error = true;
             }
-        } else if (arg == "--term" && i + 1 < argc) {
-            args.term = argv[++i];
-        } else if (arg == "--id" && i + 1 < argc) {
-            args.id = argv[++i];
+        } else if (arg == "--term") {
+            read_string_option(argc, argv, i, "--term", args.term, args);
+        } else if (arg == "--id") {
+            read_string_option(argc, argv, i, "--id", args.id, args);
         } else if (arg == "--course-id") {
+            read_string_option(argc, argv, i, "--course-id", args.course_id, args);
+        } else if (arg == "--assignment-id") {
+            read_string_option(argc, argv, i, "--assignment-id", args.assignment_id, args);
+        } else if (arg == "--area-id") {
+            read_string_option(argc, argv, i, "--area-id", args.area_id, args);
+        } else if (arg == "--library-id") {
+            read_string_option(argc, argv, i, "--library-id", args.library_id, args);
+        } else if (arg == "--booking-id") {
+            read_string_option(argc, argv, i, "--booking-id", args.booking_id, args);
+        } else if (arg == "--order-id") {
+            read_string_option(argc, argv, i, "--order-id", args.order_id, args);
+        } else if (arg == "--site-id") {
+            read_string_option(argc, argv, i, "--site-id", args.site_id, args);
+        } else if (arg == "--page") {
             std::string_view value;
-            if (!read_option_value(argc, argv, i, "--course-id", value, args)) continue;
-            args.course_id = value;
-        } else if (arg == "--assignment-id" && i + 1 < argc) {
-            args.assignment_id = argv[++i];
-        } else if (arg == "--area-id" && i + 1 < argc) {
-            args.area_id = argv[++i];
-        } else if (arg == "--library-id" && i + 1 < argc) {
-            args.library_id = argv[++i];
-        } else if (arg == "--booking-id" && i + 1 < argc) {
-            args.booking_id = argv[++i];
-        } else if (arg == "--order-id" && i + 1 < argc) {
-            args.order_id = argv[++i];
-        } else if (arg == "--site-id" && i + 1 < argc) {
-            args.site_id = argv[++i];
-        } else if (arg == "--page" && i + 1 < argc) {
-            if (auto v = parse_int(argv[++i])) {
+            if (!read_option_value(argc, argv, i, "--page", value, args)) continue;
+            if (auto v = parse_int(value)) {
                 if (*v < 1) {
                     args.error_message = "--page 值必须大于等于 1";
                     args.parse_error = true;
@@ -335,11 +340,14 @@ CliArgs parse_args(int argc, char *argv[]) {
                     args.page = *v;
                 }
             } else {
-                args.error_message = UBAANextCli::Console::format("--page 值无效 '{}'", argv[i]);
+                args.error_message = UBAANextCli::Console::format("--page 值无效 '{}'", value);
                 args.parse_error = true;
             }
-        } else if ((arg == "--size" || arg == "--limit") && i + 1 < argc) {
-            if (auto v = parse_int(argv[++i])) {
+        } else if (arg == "--size" || arg == "--limit") {
+            std::string_view value;
+            const auto option = std::string(arg);
+            if (!read_option_value(argc, argv, i, option.c_str(), value, args)) continue;
+            if (auto v = parse_int(value)) {
                 if (*v < 1 || *v > 200) {
                     args.error_message = "--size 值必须在 1-200 之间";
                     args.parse_error = true;
@@ -347,53 +355,54 @@ CliArgs parse_args(int argc, char *argv[]) {
                     args.size = *v;
                 }
             } else {
-                args.error_message = UBAANextCli::Console::format("--size 值无效 '{}'", argv[i]);
+                args.error_message = UBAANextCli::Console::format("--size 值无效 '{}'", value);
                 args.parse_error = true;
             }
         } else if (arg == "--all") {
             args.all = true;
-        } else if (arg == "--status" && i + 1 < argc) {
-            args.status = argv[++i];
-        } else if (arg == "--category" && i + 1 < argc) {
-            args.category = argv[++i];
-        } else if ((arg == "--sub-category" || arg == "--subcategory") && i + 1 < argc) {
-            args.sub_category = argv[++i];
-        } else if (arg == "--keyword" && i + 1 < argc) {
-            args.keyword = argv[++i];
-        } else if (arg == "--start-time" && i + 1 < argc) {
-            args.start_time = argv[++i];
-        } else if (arg == "--end-time" && i + 1 < argc) {
-            args.end_time = argv[++i];
-        } else if (arg == "--storey-id" && i + 1 < argc) {
-            args.storey_id = argv[++i];
-        } else if (arg == "--space-id" && i + 1 < argc) {
-            args.space_id = argv[++i];
-        } else if (arg == "--purpose-type" && i + 1 < argc) {
-            args.purpose_type = argv[++i];
-        } else if (arg == "--theme" && i + 1 < argc) {
-            args.theme = argv[++i];
-        } else if (arg == "--phone" && i + 1 < argc) {
-            args.phone = argv[++i];
-        } else if (arg == "--joiners" && i + 1 < argc) {
-            args.joiners = argv[++i];
-        } else if (arg == "--captcha" && i + 1 < argc) {
-            args.captcha = argv[++i];
-        } else if (arg == "--token" && i + 1 < argc) {
-            args.token = argv[++i];
-        } else if (arg == "--item-id" && i + 1 < argc) {
-            args.item_id = argv[++i];
-        } else if (arg == "--place" && i + 1 < argc) {
-            args.place = argv[++i];
-        } else if (arg == "--photo" && i + 1 < argc) {
-            args.photo_path = argv[++i];
-        } else if (arg == "--seat-id" && i + 1 < argc) {
-            args.seat_id = argv[++i];
-        } else if (arg == "--segment" && i + 1 < argc) {
-            args.segment = argv[++i];
-        } else if (arg == "--sections" && i + 1 < argc) {
-            args.sections = argv[++i];
-        } else if (arg == "--input" && i + 1 < argc) {
-            args.input = argv[++i];
+        } else if (arg == "--status") {
+            read_string_option(argc, argv, i, "--status", args.status, args);
+        } else if (arg == "--category") {
+            read_string_option(argc, argv, i, "--category", args.category, args);
+        } else if (arg == "--sub-category" || arg == "--subcategory") {
+            const auto option = std::string(arg);
+            read_string_option(argc, argv, i, option.c_str(), args.sub_category, args);
+        } else if (arg == "--keyword") {
+            read_string_option(argc, argv, i, "--keyword", args.keyword, args);
+        } else if (arg == "--start-time") {
+            read_string_option(argc, argv, i, "--start-time", args.start_time, args);
+        } else if (arg == "--end-time") {
+            read_string_option(argc, argv, i, "--end-time", args.end_time, args);
+        } else if (arg == "--storey-id") {
+            read_string_option(argc, argv, i, "--storey-id", args.storey_id, args);
+        } else if (arg == "--space-id") {
+            read_string_option(argc, argv, i, "--space-id", args.space_id, args);
+        } else if (arg == "--purpose-type") {
+            read_string_option(argc, argv, i, "--purpose-type", args.purpose_type, args);
+        } else if (arg == "--theme") {
+            read_string_option(argc, argv, i, "--theme", args.theme, args);
+        } else if (arg == "--phone") {
+            read_string_option(argc, argv, i, "--phone", args.phone, args);
+        } else if (arg == "--joiners") {
+            read_string_option(argc, argv, i, "--joiners", args.joiners, args);
+        } else if (arg == "--captcha") {
+            read_string_option(argc, argv, i, "--captcha", args.captcha, args);
+        } else if (arg == "--token") {
+            read_string_option(argc, argv, i, "--token", args.token, args);
+        } else if (arg == "--item-id") {
+            read_string_option(argc, argv, i, "--item-id", args.item_id, args);
+        } else if (arg == "--place") {
+            read_string_option(argc, argv, i, "--place", args.place, args);
+        } else if (arg == "--photo") {
+            read_string_option(argc, argv, i, "--photo", args.photo_path, args);
+        } else if (arg == "--seat-id") {
+            read_string_option(argc, argv, i, "--seat-id", args.seat_id, args);
+        } else if (arg == "--segment") {
+            read_string_option(argc, argv, i, "--segment", args.segment, args);
+        } else if (arg == "--sections") {
+            read_string_option(argc, argv, i, "--sections", args.sections, args);
+        } else if (arg == "--input") {
+            read_string_option(argc, argv, i, "--input", args.input, args);
         } else if (arg == "--include-expired") {
             args.include_expired = true;
         } else if (arg == "--include-history") {
@@ -402,24 +411,30 @@ CliArgs parse_args(int argc, char *argv[]) {
             args.pending_only = true;
         } else if (arg == "--share") {
             args.share = true;
-        } else if (arg == "--lat" && i + 1 < argc) {
-            if (auto v = parse_double(argv[++i])) {
+        } else if (arg == "--lat") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--lat", value, args)) continue;
+            if (auto v = parse_double(value)) {
                 args.lat = *v;
                 args.has_lat = true;
             } else {
-                args.error_message = UBAANextCli::Console::format("--lat 值无效 '{}'", argv[i]);
+                args.error_message = UBAANextCli::Console::format("--lat 值无效 '{}'", value);
                 args.parse_error = true;
             }
-        } else if (arg == "--lng" && i + 1 < argc) {
-            if (auto v = parse_double(argv[++i])) {
+        } else if (arg == "--lng") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--lng", value, args)) continue;
+            if (auto v = parse_double(value)) {
                 args.lng = *v;
                 args.has_lng = true;
             } else {
-                args.error_message = UBAANextCli::Console::format("--lng 值无效 '{}'", argv[i]);
+                args.error_message = UBAANextCli::Console::format("--lng 值无效 '{}'", value);
                 args.parse_error = true;
             }
-        } else if (arg == "--sign-type" && i + 1 < argc) {
-            if (auto v = parse_int(argv[++i])) {
+        } else if (arg == "--sign-type") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--sign-type", value, args)) continue;
+            if (auto v = parse_int(value)) {
                 if (*v != 1 && *v != 2) {
                     args.error_message = "--sign-type 只能为 1(签到) 或 2(签退)";
                     args.parse_error = true;
@@ -427,19 +442,17 @@ CliArgs parse_args(int argc, char *argv[]) {
                     args.sign_type = *v;
                 }
             } else {
-                args.error_message = UBAANextCli::Console::format("--sign-type 值无效 '{}'", argv[i]);
+                args.error_message = UBAANextCli::Console::format("--sign-type 值无效 '{}'", value);
                 args.parse_error = true;
             }
         } else if (arg == "--confirm" || arg == "--yes") {
             args.confirmed = true;
-        } else if (arg == "--base-url" && i + 1 < argc) {
-            // 兼容旧参数
+        } else if (arg == "--base-url") {
             args.config_key = "base-url";
-            args.config_value = argv[++i];
-        } else if (arg == "--proxy" && i + 1 < argc) {
-            // 兼容旧参数
+            read_string_option(argc, argv, i, "--base-url", args.config_value, args);
+        } else if (arg == "--proxy") {
             args.config_key = "proxy";
-            args.config_value = argv[++i];
+            read_string_option(argc, argv, i, "--proxy", args.config_value, args);
         } else if (arg.rfind("--", 0) == 0) {
             args.error_message = UBAANextCli::Console::format("未知选项: '{}'", arg);
             args.parse_error = true;
