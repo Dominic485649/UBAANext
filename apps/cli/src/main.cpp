@@ -1606,11 +1606,24 @@ ExitCode cmd_libbook_book(const CliArgs &args, ServiceFactory &factory, OutputFo
         out.print_error({um::ErrorCode::InvalidArgument, "libbook book 是有副作用操作，必须显式传入 --confirm 或 --yes"});
         return ExitCode::InvalidArgument;
     }
+    auto seat_id = args.seat_id.empty() ? args.id : args.seat_id;
+    if (seat_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "libbook book 需要 --seat-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.date.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "libbook book 需要 --date <yyyy-MM-dd>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.segment.empty() && (args.start_time.empty() || args.end_time.empty())) {
+        out.print_error({um::ErrorCode::InvalidArgument, "libbook book 需要 --segment <segment> 或 --start-time/--end-time"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
-    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "libbook", "book", args.seat_id.empty() ? args.id : args.seat_id, args.confirmed);
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "libbook", "book", seat_id, args.confirmed);
 #endif
     auto service = factory.create_library_seat_service();
-    return print_mutation_result(factory, out, service.reserve_seat(args.seat_id.empty() ? args.id : args.seat_id, args.date, args.segment, args.start_time, args.end_time));
+    return print_mutation_result(factory, out, service.reserve_seat(seat_id, args.date, args.segment, args.start_time, args.end_time));
 }
 
 ExitCode cmd_libbook_cancel(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {

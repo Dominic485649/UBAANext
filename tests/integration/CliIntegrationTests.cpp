@@ -419,6 +419,15 @@ TEST_CASE("CLI 直接服务写操作保留分隔符参数", "[cli][integration]"
     REQUIRE(libbook_json["ok"] == true);
 }
 
+TEST_CASE("CLI 图书馆预约 confirm 后仍校验必要参数", "[cli][integration]") {
+    auto result = run_cli({"libbook", "book", "--mock", "--seat-id", "libbook-1", "--confirm", "--json"});
+
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
+}
+
 TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
         {"signin", "do", "--mock", "--confirm", "--json"},
@@ -429,7 +438,7 @@ TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integratio
         {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--confirm", "--json"},
         {"cgyy", "reserve", "--mock", "--confirm", "--json"},
         {"cgyy", "order", "cancel", "--mock", "--order-id", "cgyy-1", "--confirm", "--json"},
-        {"libbook", "book", "--mock", "--area-id", "libbook-1", "--confirm", "--json"},
+        {"libbook", "book", "--mock", "--seat-id", "libbook-1", "--date", "2026-05-15", "--segment", "08:00-10:00", "--confirm", "--json"},
         {"libbook", "cancel", "--mock", "--booking-id", "libbook-1", "--confirm", "--json"},
     };
 
