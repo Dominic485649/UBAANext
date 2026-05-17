@@ -69,3 +69,15 @@ TEST_CASE("parse_judge_assignment_detail_html 解析详情与提交状态", "[Ju
     CHECK(detail->status == "partial");
     CHECK(detail->status_text == "进行中(2/3)");
 }
+
+TEST_CASE("parse_judge_assignment_detail_html 忽略异常题目总数", "[JudgeParser]") {
+    um::Model::JudgeAssignmentSummary summary;
+    summary.id = "9001";
+    summary.course_id = "1001";
+    summary.title = "异常题目数";
+    auto detail = um::Parser::parse_judge_assignment_detail_html("<html><body>共 999999999999999999999999999999 道 已提交</body></html>", summary);
+
+    REQUIRE(detail.has_value());
+    CHECK(detail->total_problems == 0);
+    CHECK(detail->status == "unknown");
+}

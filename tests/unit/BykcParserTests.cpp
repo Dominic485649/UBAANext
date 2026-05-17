@@ -59,6 +59,13 @@ TEST_CASE("parse_bykc_courses 解析课程状态和分类", "[BykcParser]") {
     CHECK(courses[2].status == "selected");
 }
 
+TEST_CASE("parse_bykc_courses 忽略异常容量数字", "[BykcParser]") {
+    auto courses = um::Parser::parse_bykc_courses(nlohmann::json::array({{{"id", "course-x"}, {"courseName", "异常容量"}, {"courseCurrentCount", "many"}, {"courseMaxCount", "30"}}}));
+
+    REQUIRE(courses.size() == 1);
+    CHECK(courses[0].status == "available");
+}
+
 TEST_CASE("parse_bykc_course_detail 解析课程详情", "[BykcParser]") {
     auto detail = um::Parser::parse_bykc_course_detail(load_json_fixture("bykc/course_detail.json"), "course-1");
 
