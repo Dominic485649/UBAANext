@@ -537,6 +537,27 @@ TEST_CASE("CLI 未知命令返回 InvalidArgument", "[cli][integration]") {
     REQUIRE(result.exit_code == 2);  // InvalidArgument
 }
 
+TEST_CASE("CLI 数字选项无效值返回 JSON InvalidArgument", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"course", "week", "--mock", "--week", "0", "--json"},
+        {"course", "week", "--mock", "--week", "abc", "--json"},
+        {"classroom", "query", "--mock", "--campus", "11", "--date", "2026-05-13", "--json"},
+        {"classroom", "query", "--mock", "--campus", "abc", "--date", "2026-05-13", "--json"},
+        {"ygdk", "records", "--mock", "--page", "0", "--json"},
+        {"bykc", "courses", "--mock", "--size", "201", "--json"},
+        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "3", "--confirm", "--json"},
+        {"classroom", "query", "--mock", "--campus", "1", "--date", "2026-05-13", "--sections", "0", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
 TEST_CASE("CLI 缺少必要参数返回 InvalidArgument", "[cli][integration]") {
 #if UBAANEXT_ENABLE_MOCKS
     auto result = run_cli({"login", "--mock", "--json"});
