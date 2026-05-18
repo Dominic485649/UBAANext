@@ -6,6 +6,7 @@
 #include <UBAANext/Model/Ygdk.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
+#include <UBAANext/Upload/UploadPart.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -29,7 +30,7 @@ public:
                                                  const std::string &end_time,
                                                  const std::string &place,
                                                  bool share_to_square,
-                                                 const std::string &photo_path);
+                                                 const UploadPart &photo);
 
 private:
     IHttpClient &m_http_client;

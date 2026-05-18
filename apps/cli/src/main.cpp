@@ -47,12 +47,13 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cstdlib>
 #include <filesystem>
-#include <optional>
 #include <fstream>
-#include <system_error>
+#include <iterator>
 #include <set>
 #include <string>
 #include <string_view>
@@ -517,6 +518,30 @@ CliArgs parse_args(int argc, char *argv[]) {
 
 [[nodiscard]] std::filesystem::path get_config_file_path() {
     return get_app_data_dir() / "config.json";
+}
+
+[[nodiscard]] std::string mime_for_upload_path(const std::filesystem::path &path) {
+    auto ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
+    if (ext == ".png") return "image/png";
+    if (ext == ".webp") return "image/webp";
+    return "application/octet-stream";
+}
+
+[[nodiscard]] um::Result<um::UploadPart> read_upload_part(const std::string &path_text, std::string field_name) {
+    auto path = std::filesystem::path(path_text);
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return um::make_error(um::ErrorCode::InvalidArgument, "无法读取上传文件");
+    std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    if (bytes.empty()) return um::make_error(um::ErrorCode::InvalidArgument, "上传文件为空");
+
+    um::UploadPart part;
+    part.field_name = std::move(field_name);
+    part.filename = path.filename().string();
+    part.content_type = mime_for_upload_path(path);
+    part.bytes = std::move(bytes);
+    return part;
 }
 
 // ── 上下文构建 ──────────────────────────────────────────────────
@@ -1839,7 +1864,12 @@ ExitCode cmd_ygdk_submit(const CliArgs &args, ServiceFactory &factory, OutputFor
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "ygdk", "submit", args.item_id.empty() ? args.id : args.item_id, args.confirmed);
 #endif
     auto service = factory.create_ygdk_service();
-    return print_mutation_result(factory, out, service.submit_clockin(args.item_id.empty() ? args.id : args.item_id, args.start_time, args.end_time, args.place, args.share, args.photo_path));
+    auto photo = read_upload_part(args.photo_path, "file");
+    if (!photo) {
+        out.print_error({photo.error().code, photo.error().message});
+        return static_cast<ExitCode>(exit_code_from_error(photo.error().code));
+    }
+    return print_mutation_result(factory, out, service.submit_clockin(args.item_id.empty() ? args.id : args.item_id, args.start_time, args.end_time, args.place, args.share, *photo));
 }
 
 ExitCode cmd_evaluation_list(ServiceFactory &factory, OutputFormatter &out) {

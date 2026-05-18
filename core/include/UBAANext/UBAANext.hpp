@@ -49,6 +49,8 @@
 #include <UBAANext/Storage/SecureStore.hpp>
 #include <UBAANext/Storage/SecureStoreAdapter.hpp>
 
+#include <UBAANext/Upload/UploadPart.hpp>
+
 // ── 加密 ───────────────────────────────────────────────────────────
 #include <UBAANext/Crypto/CryptoProvider.hpp>
 

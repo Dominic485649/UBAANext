@@ -9,8 +9,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <ctime>
-#include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <map>
@@ -25,7 +23,6 @@ namespace UBAANext {
 namespace {
 
 constexpr const char *default_place = "操场";
-constexpr const char *transparent_png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lmCcAAAAASUVORK5CYII=";
 
 std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
     return mode == ConnectionMode::WebVPN ? VpnCipher::to_vpn_url(url) : url;
@@ -167,28 +164,6 @@ Model::FeatureRecord record_to_record(const Model::YgdkRecord &record) {
         {"endTime", record.end_time},
         {"createdAt", record.created_at},
     });
-}
-
-std::string mime_for_file(const std::filesystem::path &path) {
-    auto ext = path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-    if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
-    if (ext == ".png") return "image/png";
-    if (ext == ".webp") return "image/webp";
-    return "application/octet-stream";
-}
-
-Result<std::string> read_binary_file(const std::string &path_text) {
-    std::ifstream input(path_text, std::ios::binary);
-    if (!input) return make_error(ErrorCode::InvalidArgument, "无法读取图片文件: " + path_text);
-    std::ostringstream buffer;
-    buffer << input.rdbuf();
-    return buffer.str();
-}
-
-std::string default_transparent_photo() {
-    auto bytes = base64_decode(transparent_png_base64);
-    return std::string(bytes.begin(), bytes.end());
 }
 
 std::string trim_copy(const std::string &value) {
@@ -361,11 +336,11 @@ void append_multipart_field(std::string &body, const std::string &boundary, cons
     body += value + "\r\n";
 }
 
-void append_multipart_file(std::string &body, const std::string &boundary, const std::string &name, const std::filesystem::path &path, const std::string &content) {
+void append_multipart_file(std::string &body, const std::string &boundary, const UploadPart &part) {
     body += "--" + boundary + "\r\n";
-    body += "Content-Disposition: form-data; name=\"" + name + "\"; filename=\"" + path.filename().string() + "\"\r\n";
-    body += "Content-Type: " + mime_for_file(path) + "\r\n\r\n";
-    body += content;
+    body += "Content-Disposition: form-data; name=\"" + part.field_name + "\"; filename=\"" + part.filename + "\"\r\n";
+    body += "Content-Type: " + part.content_type + "\r\n\r\n";
+    body.append(reinterpret_cast<const char *>(part.bytes.data()), part.bytes.size());
     body += "\r\n";
 }
 
@@ -493,7 +468,11 @@ Result<Model::MutationResult> YgdkService::submit_clockin(const std::string &ite
                                                           const std::string &end_time,
                                                           const std::string &place,
                                                           bool share_to_square,
-                                                          const std::string &photo_path) {
+                                                          const UploadPart &photo) {
+    if (photo.field_name.empty() || photo.filename.empty() || photo.content_type.empty() || photo.bytes.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "ygdk submit 真实提交需要提供有效图片 bytes");
+    }
+
     auto resolved_time = resolve_clockin_time_range(start_time, end_time);
     if (!resolved_time) return make_error(resolved_time.error().code, resolved_time.error().message);
     auto normalized_place = trim_copy(place);
@@ -512,14 +491,11 @@ Result<Model::MutationResult> YgdkService::submit_clockin(const std::string &ite
     auto selected_item = select_clockin_item(Parser::parse_ygdk_items(*items, classify.id), item_id);
     if (!selected_item) return make_error(selected_item.error().code, selected_item.error().message);
 
-    auto file_content = photo_path.empty() ? Result<std::string>(default_transparent_photo()) : read_binary_file(photo_path);
-    if (!file_content) return make_error(file_content.error().code, file_content.error().message);
-    auto path = photo_path.empty() ? std::filesystem::path("ygdk_auto.png") : std::filesystem::path(photo_path);
     std::string boundary = "----UBAANextYgdkBoundary7MA4YWxkTrZu0gW";
     std::string upload_body;
     append_multipart_field(upload_body, boundary, "uid", m_uid);
     append_multipart_field(upload_body, boundary, "token", m_token);
-    append_multipart_file(upload_body, boundary, "file", path, *file_content);
+    append_multipart_file(upload_body, boundary, photo);
     upload_body += "--" + boundary + "--\r\n";
 
     HttpRequest upload;
