@@ -33,6 +33,7 @@ if(UBAANEXT_BUILD_TESTS)
 endif()
 
 add_subdirectory(core)
+add_subdirectory(platform)
 if(UBAANEXT_ENABLE_MOCKS)
     add_subdirectory(mocks)
 endif()

@@ -14,6 +14,7 @@ target_include_directories(ubaa
 
 target_link_libraries(ubaa
     PRIVATE UBAANextCore
+    PRIVATE UBAANextPlatformCurrent
 )
 
 if(UBAANEXT_ENABLE_MOCKS)
