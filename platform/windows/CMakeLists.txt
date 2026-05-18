@@ -1,6 +1,9 @@
 if(WIN32)
     add_library(UBAANextPlatformWindows STATIC
+        src/DpapiSecureStore.cpp
         src/WinHttpClient.cpp
+        src/WindowsAppDataPathProvider.cpp
+        src/WindowsPlatformCapabilities.cpp
     )
 
     target_include_directories(UBAANextPlatformWindows

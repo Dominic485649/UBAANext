@@ -4,11 +4,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
-
-#if defined(_WIN32)
-#include <windows.h>
-#include <dpapi.h>
-#endif
+#include <utility>
 
 namespace UBAANextCli {
 
@@ -28,55 +24,18 @@ std::unordered_map<std::string, std::string> parse_data(const std::string &text)
     std::string line;
     while (std::getline(lines, line)) {
         auto tab_pos = line.find('\t');
-        if (tab_pos == std::string::npos) {
-            continue;
-        }
+        if (tab_pos == std::string::npos) continue;
         std::string key = line.substr(0, tab_pos);
         std::string value = line.substr(tab_pos + 1);
-        if (!value.empty() && value.back() == '\r') {
-            value.pop_back();
-        }
+        if (!value.empty() && value.back() == '\r') value.pop_back();
         data[std::move(key)] = std::move(value);
     }
     return data;
 }
 
-#if defined(_WIN32)
-std::string protect_bytes(const std::string &plain) {
-    DATA_BLOB in{};
-    in.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(plain.data()));
-    in.cbData = static_cast<DWORD>(plain.size());
-
-    DATA_BLOB out{};
-    if (!CryptProtectData(&in, L"UBAANext session", nullptr, nullptr, nullptr, 0, &out)) {
-        return {};
-    }
-
-    std::string encrypted(reinterpret_cast<char *>(out.pbData), out.cbData);
-    LocalFree(out.pbData);
-    return encrypted;
-}
-
-std::string unprotect_bytes(const std::string &encrypted) {
-    DATA_BLOB in{};
-    in.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(encrypted.data()));
-    in.cbData = static_cast<DWORD>(encrypted.size());
-
-    DATA_BLOB out{};
-    if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr, 0, &out)) {
-        return {};
-    }
-
-    std::string plain(reinterpret_cast<char *>(out.pbData), out.cbData);
-    LocalFree(out.pbData);
-    return plain;
-}
-#endif
-
 } // namespace
 
-PlainFileStore::PlainFileStore(std::filesystem::path file_path, bool encrypted)
-    : m_file_path(std::move(file_path)), m_encrypted(encrypted) {
+PlainFileStore::PlainFileStore(std::filesystem::path file_path) : m_file_path(std::move(file_path)) {
     load_from_file();
 }
 
@@ -105,27 +64,12 @@ void PlainFileStore::clear() {
 }
 
 void PlainFileStore::load_from_file() {
-    if (!std::filesystem::exists(m_file_path)) {
-        return;
-    }
-
+    if (!std::filesystem::exists(m_file_path)) return;
     std::ifstream file(m_file_path, std::ios::binary);
-    if (!file.is_open()) {
-        return;
-    }
+    if (!file.is_open()) return;
 
     std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (m_encrypted) {
-#if defined(_WIN32)
-        raw = unprotect_bytes(raw);
-#else
-        raw.clear();
-#endif
-    }
-
-    if (raw.empty()) {
-        return;
-    }
+    if (raw.empty()) return;
     m_data = parse_data(raw);
 }
 
@@ -135,22 +79,9 @@ void PlainFileStore::save_to_file() const {
         std::filesystem::create_directories(parent);
     }
 
-    std::string raw = serialize_data(m_data);
-    if (m_encrypted) {
-#if defined(_WIN32)
-        raw = protect_bytes(raw);
-        if (raw.empty() && !m_data.empty()) {
-            return;
-        }
-#else
-        return;
-#endif
-    }
-
+    auto raw = serialize_data(m_data);
     std::ofstream file(m_file_path, std::ios::binary | std::ios::trunc);
-    if (!file.is_open()) {
-        return;
-    }
+    if (!file.is_open()) return;
     file.write(raw.data(), static_cast<std::streamsize>(raw.size()));
 }
 

@@ -36,6 +36,7 @@
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
 #include <UBAANext/Platform/OpenSSL/OpenSslCryptoInstaller.hpp>
 #if defined(_WIN32)
+#include <UBAANext/Platform/Windows/DpapiSecureStore.hpp>
 #include <UBAANext/Platform/Windows/WinHttpClient.hpp>
 #endif
 
@@ -555,9 +556,9 @@ AppContext build_context(bool mock, const std::string &mode, const CliConfig &co
         ctx.cache = std::make_unique<um::MemoryCacheStore>();
     }
 #if defined(_WIN32)
-    ctx.store = std::make_unique<UBAANextCli::PlainFileStore>(get_session_file_path(), true);
+    ctx.store = std::make_unique<UBAANext::Platform::Windows::DpapiSecureStore>(get_session_file_path());
 #else
-    ctx.store = std::make_unique<UBAANextCli::PlainFileStore>(get_session_file_path(), false);
+    ctx.store = std::make_unique<UBAANextCli::PlainFileStore>(get_session_file_path());
 #endif
     return ctx;
 }

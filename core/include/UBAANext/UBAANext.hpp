@@ -40,6 +40,9 @@
 #include <UBAANext/Net/RedirectController.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 
+#include <UBAANext/Platform/AppDataPathProvider.hpp>
+#include <UBAANext/Platform/PlatformCapabilities.hpp>
+
 // ── 存储层 ──────────────────────────────────────────────────────────
 #include <UBAANext/Storage/CacheStore.hpp>
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
