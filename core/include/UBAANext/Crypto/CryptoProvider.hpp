@@ -25,6 +25,7 @@ public:
 };
 
 [[nodiscard]] ICryptoProvider &default_crypto_provider();
+void set_default_crypto_provider(ICryptoProvider *provider);
 [[nodiscard]] std::string base64_encode(const std::vector<unsigned char> &data);
 [[nodiscard]] std::vector<unsigned char> base64_decode(const std::string &input);
 

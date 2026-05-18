@@ -34,6 +34,7 @@
 #include <UBAANext/Version.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
+#include <UBAANext/Platform/OpenSSL/OpenSslCryptoInstaller.hpp>
 #if defined(_WIN32)
 #include <UBAANext/Platform/Windows/WinHttpClient.hpp>
 #endif
@@ -1863,6 +1864,8 @@ ExitCode cmd_evaluation_submit(const CliArgs &args, ServiceFactory &factory, Out
 // ── 主入口 ──────────────────────────────────────────────────
 
 int main(int argc, char *argv[]) {
+    UBAANext::Platform::OpenSSL::install_open_ssl_crypto_provider();
+
     CliArgs args = parse_args(argc, argv);
 
     OutputFormatter out(args.json_output);
