@@ -11,7 +11,6 @@
  *
  * 实现此接口的类包括但不限于：
  *   - CurlHttpClient  : 基于 libcurl 的跨平台实现（生产环境使用）
- *   - WinHttpClient   : 基于 WinHTTP 的 Windows 专用实现
  *   - MockHttpClient  : 用于单元测试的 Mock 实现
  *
  * @author UBAANext Team

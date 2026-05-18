@@ -17,6 +17,8 @@
  */
 #pragma once
 
+#include <UBAANext/Net/RedirectController.hpp>
+
 #include <string>
 #include <unordered_map>
 
@@ -92,16 +94,9 @@ struct HttpRequest {
      */
     std::unordered_map<std::string, std::string> headers;
 
-    /**
-     * @brief 请求体内容
-     *
-     * 用于 POST 和 PUT 请求携带的数据。通常为 JSON 字符串，
-     * 但也可以是表单编码数据（application/x-www-form-urlencoded）
-     * 或其他文本格式。
-     *
-     * GET 和 DELETE 请求一般不需要设置此字段。
-     */
     std::string body;
+
+    RedirectOptions redirect;
 };
 
 } // namespace UBAANext

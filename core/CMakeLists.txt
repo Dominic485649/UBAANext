@@ -51,10 +51,6 @@ set_target_properties(UBAANextCore PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
-if(WIN32)
-    target_sources(UBAANextCore PRIVATE src/Net/WinHttpClient.cpp)
-endif()
-
 target_link_libraries(UBAANextCore
     PUBLIC nlohmann_json::nlohmann_json
 )
@@ -62,10 +58,3 @@ target_link_libraries(UBAANextCore
 target_compile_definitions(UBAANextCore
     PUBLIC UBAANEXT_ENABLE_MOCKS=$<BOOL:${UBAANEXT_ENABLE_MOCKS}>
 )
-
-if(WIN32)
-    target_link_libraries(UBAANextCore PRIVATE winhttp crypt32 bcrypt)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "OHOS")
-    target_compile_definitions(UBAANextCore PRIVATE UBAANEXT_USE_OH_CRYPTO=1)
-    target_link_libraries(UBAANextCore PRIVATE libohcrypto.so)
-endif()

@@ -3,7 +3,7 @@
  * @brief 基于 WinHTTP 的 HTTP 客户端实现
  */
 
-#include <UBAANext/Net/WinHttpClient.hpp>
+#include <UBAANext/Platform/Windows/WinHttpClient.hpp>
 
 #include <dpapi.h>
 
@@ -154,15 +154,13 @@ Result<HttpResponse> WinHttpClient::send(const HttpRequest &request) {
     WinHttpSetTimeouts(hRequest, m_config.connect_timeout_ms, m_config.connect_timeout_ms,
                        m_config.request_timeout_ms, m_config.request_timeout_ms);
 
-    // 禁用 WinHTTP 自动功能：重定向和 cookie（使用手动 CookieJar）
     DWORD disable_flags = WINHTTP_DISABLE_COOKIES;
-    if (!m_config.follow_redirects) {
+    if (!request.redirect.follow_redirects) {
         disable_flags |= WINHTTP_DISABLE_REDIRECTS;
     }
     WinHttpSetOption(hRequest, WINHTTP_OPTION_DISABLE_FEATURE, &disable_flags, sizeof(disable_flags));
 
-    // 额外设置重定向策略为永不跟随
-    if (!m_config.follow_redirects) {
+    if (!request.redirect.follow_redirects) {
         DWORD redirect_policy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
         WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &redirect_policy, sizeof(redirect_policy));
     }

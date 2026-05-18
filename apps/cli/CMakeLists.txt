@@ -25,10 +25,6 @@ target_compile_definitions(ubaa
     PRIVATE UBAANEXT_ENABLE_MOCKS=$<BOOL:${UBAANEXT_ENABLE_MOCKS}>
 )
 
-if(WIN32)
-    target_link_libraries(ubaa PRIVATE crypt32)
-endif()
-
 set_target_properties(ubaa PROPERTIES
     CXX_STANDARD ${UBAANEXT_CXX_STANDARD}
     CXX_STANDARD_REQUIRED ON

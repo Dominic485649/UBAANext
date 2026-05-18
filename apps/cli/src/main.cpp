@@ -35,7 +35,7 @@
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
 #if defined(_WIN32)
-#include <UBAANext/Net/WinHttpClient.hpp>
+#include <UBAANext/Platform/Windows/WinHttpClient.hpp>
 #endif
 
 #if UBAANEXT_ENABLE_MOCKS

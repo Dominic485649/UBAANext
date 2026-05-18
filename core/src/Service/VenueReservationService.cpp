@@ -4,9 +4,6 @@
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/VenueReservationParser.hpp>
 #include <UBAANext/Protocol/AppBuaaSession.hpp>
-#if defined(_WIN32)
-#include <UBAANext/Net/WinHttpClient.hpp>
-#endif
 
 #include <algorithm>
 #include <charconv>
@@ -173,22 +170,8 @@ std::string extract_sso_token_from_set_cookie(const std::string &set_cookie) {
 }
 
 std::string sso_token_from_cookie_jar(IHttpClient &http_client, ConnectionMode mode) {
+    (void)http_client;
     (void)mode;
-#if defined(_WIN32)
-    if (auto *win_http = dynamic_cast<WinHttpClient *>(&http_client)) {
-        for (const auto *host : {"cgyy.buaa.edu.cn", "venue.buaa.edu.cn", "buaa.edu.cn", "d.buaa.edu.cn"}) {
-            if (auto token = win_http->cookies().get_cookie(host, "sso_buaa_zhjs_token")) return *token;
-        }
-        if (auto token = win_http->cookies().get_cookie("sso_buaa_zhjs_token")) return *token;
-        for (const auto &line : win_http->cookies().serialize()) {
-            std::vector<std::string> parts;
-            std::istringstream input(line);
-            std::string part;
-            while (std::getline(input, part, '\t')) parts.push_back(std::move(part));
-            if (parts.size() >= 4 && is_cgyy_sso_cookie_name(parts[2]) && !parts[3].empty()) return parts[3];
-        }
-    }
-#endif
     return {};
 }
 
@@ -200,6 +183,11 @@ Result<std::string> acquire_sso_token(IHttpClient &http_client, ConnectionMode m
         request.url = resolve_for_mode(current_url, mode);
         request.headers["Accept"] = "application/json, text/plain, */*";
         request.headers["Referer"] = resolve_for_mode(referer_url, mode);
+        request.redirect.follow_redirects = false;
+        request.redirect.max_redirects = 0;
+        request.redirect.expose_location_header = true;
+        request.redirect.post_policy = RedirectPostPolicy::PreserveMethod;
+        request.redirect.restrict_to_http_https = true;
 
         auto response = http_client.send(request);
         if (!response) return make_error(ErrorCode::NetworkError, "激活研讨室 SSO 失败: " + response.error().message);

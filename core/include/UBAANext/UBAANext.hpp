@@ -32,13 +32,13 @@
 
 // ── 网络层 ───────────────────────────────────────────────────────
 #include <UBAANext/Net/CookieJar.hpp>
+#include <UBAANext/Net/CookieStore.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Net/HttpRequest.hpp>
 #include <UBAANext/Net/HttpResponse.hpp>
+#include <UBAANext/Net/NetworkStack.hpp>
+#include <UBAANext/Net/RedirectController.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
-#ifdef _WIN32
-#include <UBAANext/Net/WinHttpClient.hpp>
-#endif
 
 // ── 存储层 ──────────────────────────────────────────────────────────
 #include <UBAANext/Storage/CacheStore.hpp>
