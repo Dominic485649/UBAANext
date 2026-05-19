@@ -25,7 +25,7 @@ public:
 #endif
     ExamService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
-    Result<std::vector<Model::Exam>> get_exams(const std::string &term_code = "2025-2026-2");
+    Result<std::vector<Model::Exam>> get_exams(const std::string &term_code = "");
 
 private:
     IHttpClient &m_http_client;

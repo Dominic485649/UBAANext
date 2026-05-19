@@ -30,6 +30,8 @@ public:
         } else if (request.url.find("https://cgyy.buaa.edu.cn/venue-zhjs-server/api/orders/lock/code?") == 0) {
             ++lock_code_requests;
             response.body = R"JSON({"code":200,"data":{"code":"123456"}})JSON";
+        } else if (request.url == "https://app.buaa.edu.cn/uc/wap/notice/list") {
+            response.body = R"JSON({"code":0,"data":{"list":[{"id":"ann-1","title":"系统公告","status":"published","publishTime":"2026-05-18"}]}})JSON";
         } else {
             response.status_code = 404;
             response.body = R"JSON({"code":404,"message":"unexpected request"})JSON";
@@ -43,16 +45,18 @@ public:
 
 } // namespace
 
-TEST_CASE("FeatureService 明确公告真实协议未接入", "[service][feature]") {
-    UBAANextMocks::MockHttpClient http_client;
+TEST_CASE("FeatureService 公告真实协议解析列表", "[service][feature]") {
+    FeatureFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::FeatureService service(http_client, cache, UBAANext::ConnectionMode::Direct);
 
     auto result = service.list("announcement", "list");
 
-    REQUIRE_FALSE(result);
-    CHECK(result.error().code == UBAANext::ErrorCode::NotImplemented);
-    CHECK(result.error().message == "公告真实协议尚未接入");
+    REQUIRE(result);
+    REQUIRE(result->size() == 1);
+    CHECK((*result)[0].id == "ann-1");
+    CHECK((*result)[0].title == "系统公告");
+    CHECK((*result)[0].status == "published");
 }
 
 TEST_CASE("FeatureService 公告 mock 保持可用", "[service][feature]") {

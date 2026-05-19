@@ -12,8 +12,50 @@
 #include <chrono>
 #include <cstdio>
 #include <ctime>
+#include <exception>
+#include <string>
 
 namespace UBAANext {
+
+namespace {
+
+std::string json_to_string(const nlohmann::json &value) {
+    if (value.is_string()) return value.get<std::string>();
+    if (value.is_number_integer()) return std::to_string(value.get<int>());
+    if (value.is_number_unsigned()) return std::to_string(value.get<unsigned int>());
+    if (value.is_number_float()) return std::to_string(value.get<double>());
+    if (value.is_boolean()) return value.get<bool>() ? "true" : "false";
+    return {};
+}
+
+int json_to_int(const nlohmann::json &value, int fallback = 0) {
+    auto text = json_to_string(value);
+    if (text.empty()) return fallback;
+    try {
+        return std::stoi(text);
+    } catch (...) {
+        return fallback;
+    }
+}
+
+bool api_success(const nlohmann::json &json) {
+    auto code = json.find("code");
+    if (code == json.end()) return true;
+    return json_to_string(*code) == "0";
+}
+
+std::string api_message(const nlohmann::json &json) {
+    for (const auto *key : {"msg", "message", "error"}) {
+        auto it = json.find(key);
+        if (it != json.end()) {
+            auto message = json_to_string(*it);
+            if (!message.empty()) return message;
+        }
+    }
+    return "未知业务错误";
+}
+
+} // namespace
 
 static constexpr int kCacheTtlSeconds = 300;
 
@@ -87,8 +129,8 @@ Result<std::vector<Model::Course>> CourseService::get_date_courses(const std::st
 
         try {
             auto json = nlohmann::json::parse(response.body);
-            if (json.value("code", "") != "0") {
-                return UBAANext::make_error(ErrorCode::NetworkError, "日期课表 API 返回错误: code=" + json.value("code", "?"));
+            if (!api_success(json)) {
+                return UBAANext::make_error(ErrorCode::AuthFailed, "日期课表 API 返回错误: " + api_message(json));
             }
 
             std::vector<Model::Course> courses;
@@ -158,7 +200,7 @@ Result<std::vector<Model::Course>> CourseService::get_week_courses(int week) {
     }
 
     if (m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) {
-        return fetch_week_courses_real(week, "2025-2026-2");
+        return UBAANext::make_error(ErrorCode::InvalidArgument, "真实周课表查询需要显式 term_code");
     }
 
 #if UBAANEXT_ENABLE_MOCKS
@@ -191,6 +233,9 @@ Result<std::vector<Model::Course>> CourseService::get_week_courses(int week) {
 
 Result<std::vector<Model::Course>> CourseService::get_week_courses(int week, const std::string &term_code) {
     if (m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) {
+        if (term_code.empty()) {
+            return UBAANext::make_error(ErrorCode::InvalidArgument, "真实周课表查询需要显式 term_code");
+        }
         return fetch_week_courses_real(week, term_code);
     }
 #if UBAANEXT_ENABLE_MOCKS
@@ -201,6 +246,10 @@ Result<std::vector<Model::Course>> CourseService::get_week_courses(int week, con
 }
 
 Result<std::vector<Model::Course>> CourseService::fetch_week_courses_real(int week, const std::string &term_code) {
+    if (week <= 0) {
+        return UBAANext::make_error(ErrorCode::InvalidArgument, "真实周课表查询需要有效 week");
+    }
+
     auto activate_result = Protocol::Byxt::ensure_session(m_http_client, m_mode);
     if (!activate_result) {
         return UBAANext::make_error(activate_result.error().code, "激活周课表会话失败: " + activate_result.error().message);
@@ -212,8 +261,7 @@ Result<std::vector<Model::Course>> CourseService::fetch_week_courses_real(int we
     req.headers["Content-Type"] = "application/x-www-form-urlencoded";
     apply_schedule_headers(req, m_mode);
 
-    int actual_week = (week > 0) ? week : 8;
-    req.body = "termCode=" + term_code + "&type=week&week=" + std::to_string(actual_week);
+    req.body = "termCode=" + term_code + "&type=week&week=" + std::to_string(week);
 
     auto response_result = m_http_client.send(req);
     if (!response_result) {
@@ -227,11 +275,11 @@ Result<std::vector<Model::Course>> CourseService::fetch_week_courses_real(int we
 
     try {
         auto json = nlohmann::json::parse(response.body);
-        if (json.value("code", "") != "0") {
-            return UBAANext::make_error(ErrorCode::NetworkError, "周课表 API 返回错误: code=" + json.value("code", "?") + " msg=" + json.value("msg", "none"));
+        if (!api_success(json)) {
+            return UBAANext::make_error(ErrorCode::AuthFailed, "周课表 API 返回错误: " + api_message(json));
         }
 
-        auto &datas = json["datas"];
+        const auto &datas = json["datas"];
         if (!datas.contains("arrangedList") || !datas["arrangedList"].is_array()) {
             return std::vector<Model::Course>{};
         }
@@ -254,9 +302,9 @@ Result<std::vector<Model::Course>> CourseService::fetch_week_courses_real(int we
             c.credit = string_or_empty(item, "credit");
             c.begin_time = string_or_empty(item, "beginTime");
             c.end_time = string_or_empty(item, "endTime");
-            c.section_start = item.value("beginSection", 0);
-            c.section_end = item.value("endSection", 0);
-            c.day_of_week = item.value("dayOfWeek", 0);
+            c.section_start = item.contains("beginSection") ? json_to_int(item["beginSection"]) : 0;
+            c.section_end = item.contains("endSection") ? json_to_int(item["endSection"]) : 0;
+            c.day_of_week = item.contains("dayOfWeek") ? json_to_int(item["dayOfWeek"]) : 0;
 
             std::string wt = string_or_empty(item, "weeksAndTeachers");
             auto dash = wt.find('-');

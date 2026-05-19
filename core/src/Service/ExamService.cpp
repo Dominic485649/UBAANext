@@ -9,6 +9,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <string>
+
 namespace UBAANext {
 
 namespace {
@@ -17,11 +19,47 @@ static constexpr const char *kCacheKeyExams = "cache:exam:list";
 static constexpr int kCacheTtlSeconds = 300;
 static constexpr const char *kExamUrl = "https://byxt.buaa.edu.cn/jwapp/sys/homeapp/api/home/student/exams.do";
 
+std::string json_to_string(const nlohmann::json &value) {
+    if (value.is_string()) return value.get<std::string>();
+    if (value.is_number_integer()) return std::to_string(value.get<int>());
+    if (value.is_number_unsigned()) return std::to_string(value.get<unsigned int>());
+    if (value.is_number_float()) return std::to_string(value.get<double>());
+    if (value.is_boolean()) return value.get<bool>() ? "true" : "false";
+    return {};
+}
+
+int json_to_int(const nlohmann::json &value, int fallback = 0) {
+    auto text = json_to_string(value);
+    if (text.empty()) return fallback;
+    try {
+        return std::stoi(text);
+    } catch (...) {
+        return fallback;
+    }
+}
+
+bool api_success(const nlohmann::json &json) {
+    auto code = json.find("code");
+    if (code == json.end()) return true;
+    return json_to_string(*code) == "0";
+}
+
+std::string api_message(const nlohmann::json &json) {
+    for (const auto *key : {"msg", "message", "error"}) {
+        auto it = json.find(key);
+        if (it != json.end()) {
+            auto message = json_to_string(*it);
+            if (!message.empty()) return message;
+        }
+    }
+    return "未知业务错误";
+}
+
 Result<std::vector<Model::Exam>> parse_real_exams(const std::string &body) {
     try {
         auto json = nlohmann::json::parse(body);
-        if (json.value("code", "") != "0") {
-            return make_error(ErrorCode::NetworkError, "考试 API 返回错误: " + body.substr(0, 200));
+        if (!api_success(json)) {
+            return make_error(ErrorCode::AuthFailed, "考试 API 返回错误: " + api_message(json));
         }
 
         std::vector<Model::Exam> exams;
@@ -38,7 +76,7 @@ Result<std::vector<Model::Exam>> parse_real_exams(const std::string &body) {
                 exam.end_time = item.value("endTime", "");
                 exam.seat_no = item.value("examSeatNo", "");
                 exam.exam_type = item.value("examType", "");
-                int status = item.value("examStatus", 0);
+                int status = item.contains("examStatus") ? json_to_int(item["examStatus"]) : 0;
                 if (status >= 0 && status <= 2) {
                     exam.status = static_cast<Model::ExamStatus>(status);
                 }
@@ -71,6 +109,10 @@ Result<std::vector<Model::Exam>> ExamService::get_exams(const std::string &term_
 #endif
 
     if (m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) {
+        if (term_code.empty()) {
+            return make_error(ErrorCode::InvalidArgument, "真实考试查询需要显式 term_code");
+        }
+
         auto activate_result = Protocol::Byxt::ensure_session(m_http_client, m_mode);
         if (!activate_result) {
             return make_error(activate_result.error().code, "激活考试会话失败: " + activate_result.error().message);

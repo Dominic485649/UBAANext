@@ -122,6 +122,10 @@ Result<std::vector<Model::Grade>> GradeService::list_grades(const std::string &t
     }
 #endif
 
+    if (term_code.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "真实成绩查询需要显式 term_code");
+    }
+
     auto session = Protocol::Score::ensure_session(m_http_client, m_mode);
     if (!session) {
         return make_error(session.error().code, "激活成绩系统失败: " + session.error().message);
@@ -157,7 +161,7 @@ Result<std::vector<Model::Grade>> GradeService::list_all_grades() {
     }
 #endif
 
-    return list_grades("");
+    return make_error(ErrorCode::InvalidArgument, "真实全部成绩查询需要显式学期");
 }
 
 } // namespace UBAANext

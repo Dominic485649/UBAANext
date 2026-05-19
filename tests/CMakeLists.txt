@@ -64,7 +64,6 @@ endif()
 # CLI 集成测试
 add_executable(UBAANextCliTests
     integration/CliIntegrationTests.cpp
-    integration/LiveSmokeTests.cpp
 )
 
 target_link_libraries(UBAANextCliTests

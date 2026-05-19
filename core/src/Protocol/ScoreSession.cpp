@@ -29,7 +29,12 @@ void apply_form_headers(HttpRequest &request) {
 bool is_session_expired_response(const HttpResponse &response) {
     return response.status_code == 401 || response.status_code == 403 ||
            response.body.find("统一身份认证") != std::string::npos ||
-           response.body.find("input name=\"execution\"") != std::string::npos;
+           response.body.find("input name=\"execution\"") != std::string::npos ||
+           response.body.find("name='execution'") != std::string::npos ||
+           response.body.find("sso.buaa.edu.cn") != std::string::npos ||
+           response.body.find("请重新登录") != std::string::npos ||
+           response.body.find("登录失效") != std::string::npos ||
+           response.body.find("会话已过期") != std::string::npos;
 }
 
 Result<void> ensure_session(IHttpClient &http_client, ConnectionMode mode) {

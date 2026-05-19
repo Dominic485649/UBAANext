@@ -9,9 +9,47 @@
 
 #include <nlohmann/json.hpp>
 
+#include <string>
+
 namespace UBAANext {
 
 namespace {
+
+std::string json_to_string(const nlohmann::json &value) {
+    if (value.is_string()) return value.get<std::string>();
+    if (value.is_number_integer()) return std::to_string(value.get<int>());
+    if (value.is_number_unsigned()) return std::to_string(value.get<unsigned int>());
+    if (value.is_number_float()) return std::to_string(value.get<double>());
+    if (value.is_boolean()) return value.get<bool>() ? "true" : "false";
+    return {};
+}
+
+int json_to_int(const nlohmann::json &value, int fallback = 0) {
+    auto text = json_to_string(value);
+    if (text.empty()) return fallback;
+    try {
+        return std::stoi(text);
+    } catch (...) {
+        return fallback;
+    }
+}
+
+bool api_success(const nlohmann::json &json) {
+    auto code = json.find("code");
+    if (code == json.end()) return true;
+    return json_to_string(*code) == "0";
+}
+
+std::string api_message(const nlohmann::json &json) {
+    for (const auto *key : {"msg", "message", "error"}) {
+        auto it = json.find(key);
+        if (it != json.end()) {
+            auto message = json_to_string(*it);
+            if (!message.empty()) return message;
+        }
+    }
+    return "未知业务错误";
+}
 
 static constexpr const char *kCacheKeyTerms = "cache:term:list";
 static constexpr int kCacheTtlSeconds = 300;
@@ -21,18 +59,18 @@ static constexpr const char *kWeeksUrl = "https://byxt.buaa.edu.cn/jwapp/sys/hom
 Result<std::vector<Model::Term>> parse_real_terms(const std::string &body) {
     try {
         auto json = nlohmann::json::parse(body);
-        if (json.value("code", "") != "0") {
-            return make_error(ErrorCode::NetworkError, "学期 API 返回错误: " + body.substr(0, 200));
+        if (!api_success(json)) {
+            return make_error(ErrorCode::AuthFailed, "学期 API 返回错误: " + api_message(json));
         }
 
         std::vector<Model::Term> terms;
         if (json.contains("datas") && json["datas"].is_array()) {
             for (const auto &item : json["datas"]) {
                 Model::Term term;
-                term.code = item.value("itemCode", "");
-                term.name = item.value("itemName", "");
+                term.code = json_to_string(item.value("itemCode", nlohmann::json{}));
+                term.name = json_to_string(item.value("itemName", nlohmann::json{}));
                 term.selected = item.value("selected", false);
-                term.index = item.value("itemIndex", 0);
+                term.index = item.contains("itemIndex") ? json_to_int(item["itemIndex"]) : 0;
                 terms.push_back(std::move(term));
             }
         }
@@ -45,18 +83,18 @@ Result<std::vector<Model::Term>> parse_real_terms(const std::string &body) {
 Result<std::vector<Model::Week>> parse_real_weeks(const std::string &body) {
     try {
         auto json = nlohmann::json::parse(body);
-        if (json.value("code", "") != "0") {
-            return make_error(ErrorCode::NetworkError, "周次 API 返回错误: " + body.substr(0, 200));
+        if (!api_success(json)) {
+            return make_error(ErrorCode::AuthFailed, "周次 API 返回错误: " + api_message(json));
         }
 
         std::vector<Model::Week> weeks;
         if (json.contains("datas") && json["datas"].is_array()) {
             for (const auto &item : json["datas"]) {
                 Model::Week week;
-                week.serial_number = item.value("serialNumber", 0);
-                week.name = item.value("name", "");
-                week.start_date = item.value("startDate", "");
-                week.end_date = item.value("endDate", "");
+                week.serial_number = item.contains("serialNumber") ? json_to_int(item["serialNumber"]) : 0;
+                week.name = json_to_string(item.value("name", nlohmann::json{}));
+                week.start_date = json_to_string(item.value("startDate", nlohmann::json{}));
+                week.end_date = json_to_string(item.value("endDate", nlohmann::json{}));
                 week.is_current = item.value("curWeek", false);
                 weeks.push_back(std::move(week));
             }
@@ -137,6 +175,10 @@ Result<std::vector<Model::Term>> TermService::get_terms() {
 }
 
 Result<std::vector<Model::Week>> TermService::get_weeks(const std::string &term_code) {
+    if ((m_mode == ConnectionMode::Direct || m_mode == ConnectionMode::WebVPN) && term_code.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "真实周次查询需要显式 term_code");
+    }
+
     std::string cache_key = "cache:week:" + term_code;
 
 #if UBAANEXT_ENABLE_MOCKS
