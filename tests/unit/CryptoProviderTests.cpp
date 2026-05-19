@@ -1,6 +1,18 @@
 #include <UBAANext/Crypto/CryptoProvider.hpp>
+#include <UBAANext/Platform/OpenSSL/OpenSslCryptoInstaller.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+
+TEST_CASE("CryptoProvider 未安装平台 provider 时 fail-fast", "[crypto][capability]") {
+    UBAANext::set_default_crypto_provider(nullptr);
+
+    auto digest = UBAANext::default_crypto_provider().md5_hex("abc");
+
+    REQUIRE_FALSE(digest);
+    REQUIRE(digest.error().code == UBAANext::ErrorCode::NotImplemented);
+
+    UBAANext::Platform::OpenSSL::install_open_ssl_crypto_provider();
+}
 
 TEST_CASE("CryptoProvider base64 编解码", "[crypto]") {
     const std::vector<unsigned char> data = {'U', 'B', 'A', 'A'};

@@ -38,3 +38,7 @@ desktop.ini
 # Environment
 .env
 .env.local
+
+# Claude local workspace
+.claude/
+.mcp.json

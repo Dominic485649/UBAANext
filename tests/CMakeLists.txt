@@ -11,6 +11,7 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/SessionManagerTests.cpp
         unit/CookieJarTests.cpp
         unit/SecureStoreAdapterTests.cpp
+        unit/SecurityRedactionTests.cpp
         unit/ExamServiceTests.cpp
         unit/FeatureServiceTests.cpp
         unit/ClassroomServiceTests.cpp
@@ -48,6 +49,14 @@ if(UBAANEXT_ENABLE_MOCKS)
         PRIVATE Catch2::Catch2
     )
 
+    target_sources(UBAANextTests
+        PRIVATE ${CMAKE_SOURCE_DIR}/apps/cli/src/SecurityRedaction.cpp
+    )
+
+    target_include_directories(UBAANextTests
+        PRIVATE ${CMAKE_SOURCE_DIR}/apps/cli/include
+    )
+
     target_compile_definitions(UBAANextTests PRIVATE
         UBAA_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
     )
@@ -62,8 +71,15 @@ if(UBAANEXT_ENABLE_MOCKS)
 endif()
 
 # CLI 集成测试
-add_executable(UBAANextCliTests
+set(UBAANEXT_CLI_TEST_SOURCES
     integration/CliIntegrationTests.cpp
+)
+if(UBAANEXT_BUILD_LIVE_SMOKE)
+    list(APPEND UBAANEXT_CLI_TEST_SOURCES integration/LiveSmokeTests.cpp)
+endif()
+
+add_executable(UBAANextCliTests
+    ${UBAANEXT_CLI_TEST_SOURCES}
 )
 
 target_link_libraries(UBAANextCliTests
