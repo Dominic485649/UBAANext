@@ -1867,7 +1867,7 @@ ExitCode cmd_ygdk_submit(const CliArgs &args, ServiceFactory &factory, OutputFor
     auto photo = read_upload_part(args.photo_path, "file");
     if (!photo) {
         out.print_error({photo.error().code, photo.error().message});
-        return static_cast<ExitCode>(exit_code_from_error(photo.error().code));
+        return ExitCode::InvalidArgument;
     }
     return print_mutation_result(factory, out, service.submit_clockin(args.item_id.empty() ? args.id : args.item_id, args.start_time, args.end_time, args.place, args.share, *photo));
 }

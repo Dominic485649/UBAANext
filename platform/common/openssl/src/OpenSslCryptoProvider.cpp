@@ -1,9 +1,6 @@
 #include <UBAANext/Platform/OpenSSL/OpenSslCryptoProvider.hpp>
 
-#include <openssl/bio.h>
 #include <openssl/evp.h>
-#include <openssl/pem.h>
-#include <openssl/rsa.h>
 #include <openssl/x509.h>
 
 #include <algorithm>
@@ -22,8 +19,12 @@ struct EvpCipherCtxDeleter {
     void operator()(EVP_CIPHER_CTX *ctx) const { EVP_CIPHER_CTX_free(ctx); }
 };
 
-struct RsaDeleter {
-    void operator()(RSA *rsa) const { RSA_free(rsa); }
+struct EvpPkeyDeleter {
+    void operator()(EVP_PKEY *key) const { EVP_PKEY_free(key); }
+};
+
+struct EvpPkeyCtxDeleter {
+    void operator()(EVP_PKEY_CTX *ctx) const { EVP_PKEY_CTX_free(ctx); }
 };
 
 std::string bytes_to_hex(const std::vector<unsigned char> &data) {
@@ -128,14 +129,19 @@ Result<std::string> OpenSslCryptoProvider::rsa_pkcs1_encrypt_base64(const std::v
     auto der = base64_decode(public_key_der_base64);
     if (der.empty()) return make_error(ErrorCode::InvalidArgument, "RSA 公钥不能为空");
     const unsigned char *cursor = der.data();
-    std::unique_ptr<RSA, RsaDeleter> rsa(d2i_RSA_PUBKEY(nullptr, &cursor, static_cast<long>(der.size())));
-    if (!rsa) return make_error(ErrorCode::NetworkError, "解析 RSA 公钥失败");
-    auto block_len = RSA_size(rsa.get());
-    if (data.size() > static_cast<size_t>(block_len - 11)) return make_error(ErrorCode::InvalidArgument, "RSA 明文过长");
-    std::vector<unsigned char> out(static_cast<size_t>(block_len));
-    int encrypted_len = RSA_public_encrypt(static_cast<int>(data.size()), data.data(), out.data(), rsa.get(), RSA_PKCS1_PADDING);
-    if (encrypted_len <= 0) return make_error(ErrorCode::NetworkError, "RSA 加密失败");
-    out.resize(static_cast<size_t>(encrypted_len));
+    std::unique_ptr<EVP_PKEY, EvpPkeyDeleter> key(d2i_PUBKEY(nullptr, &cursor, static_cast<long>(der.size())));
+    if (!key) return make_error(ErrorCode::NetworkError, "解析 RSA 公钥失败");
+
+    std::unique_ptr<EVP_PKEY_CTX, EvpPkeyCtxDeleter> ctx(EVP_PKEY_CTX_new(key.get(), nullptr));
+    if (!ctx) return make_error(ErrorCode::NetworkError, "创建 RSA 上下文失败");
+    if (EVP_PKEY_encrypt_init(ctx.get()) != 1) return make_error(ErrorCode::NetworkError, "初始化 RSA 加密失败");
+    if (EVP_PKEY_CTX_set_rsa_padding(ctx.get(), RSA_PKCS1_PADDING) != 1) return make_error(ErrorCode::NetworkError, "设置 RSA padding 失败");
+
+    size_t out_len = 0;
+    if (EVP_PKEY_encrypt(ctx.get(), nullptr, &out_len, data.data(), data.size()) != 1) return make_error(ErrorCode::InvalidArgument, "RSA 明文过长");
+    std::vector<unsigned char> out(out_len);
+    if (EVP_PKEY_encrypt(ctx.get(), out.data(), &out_len, data.data(), data.size()) != 1) return make_error(ErrorCode::NetworkError, "RSA 加密失败");
+    out.resize(out_len);
     return base64_encode(out);
 }
 

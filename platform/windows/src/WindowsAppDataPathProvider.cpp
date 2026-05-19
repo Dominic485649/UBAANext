@@ -5,11 +5,14 @@
 namespace UBAANext::Platform::Windows {
 
 Result<std::filesystem::path> WindowsAppDataPathProvider::app_data_dir() const {
-    const char *local_app_data = std::getenv("LOCALAPPDATA");
-    if (!local_app_data || std::string(local_app_data).empty()) {
-        return make_error(ErrorCode::NotImplemented, "当前平台未提供 AppData 路径");
+    char *buf = nullptr;
+    std::size_t len = 0;
+    if (_dupenv_s(&buf, &len, "LOCALAPPDATA") == 0 && buf != nullptr) {
+        std::filesystem::path path = std::filesystem::path(buf) / "UBAANext";
+        free(buf);
+        return path;
     }
-    return std::filesystem::path(local_app_data) / "UBAANext";
+    return make_error(ErrorCode::NotImplemented, "当前平台未提供 AppData 路径");
 }
 
 } // namespace UBAANext::Platform::Windows

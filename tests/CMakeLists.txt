@@ -4,6 +4,7 @@ include(Catch)
 
 if(UBAANEXT_ENABLE_MOCKS)
     add_executable(UBAANextTests
+        unit/TestMain.cpp
         unit/ResultTests.cpp
         unit/AuthServiceTests.cpp
         unit/CourseServiceTests.cpp
@@ -35,14 +36,16 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/LibrarySeatServiceTests.cpp
         unit/ResponseUtilsTests.cpp
         unit/TermServiceTests.cpp
+        unit/P1ReadonlyContractTests.cpp
         unit/TodoServiceTests.cpp
         unit/VpnCipherTests.cpp
     )
 
     target_link_libraries(UBAANextTests
         PRIVATE UBAANextCore
+        PRIVATE UBAANextPlatformOpenSSL
         PRIVATE UBAANextMocks
-        PRIVATE Catch2::Catch2WithMain
+        PRIVATE Catch2::Catch2
     )
 
     target_compile_definitions(UBAANextTests PRIVATE
@@ -61,6 +64,7 @@ endif()
 # CLI 集成测试
 add_executable(UBAANextCliTests
     integration/CliIntegrationTests.cpp
+    integration/LiveSmokeTests.cpp
 )
 
 target_link_libraries(UBAANextCliTests

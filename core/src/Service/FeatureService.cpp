@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 
 #include <charconv>
+#include <map>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -70,6 +71,95 @@ std::vector<std::string> split_colon_fields(const std::string &text) {
         parts.push_back(item);
     }
     return parts;
+}
+
+std::string json_to_string(const nlohmann::json &value) {
+    if (value.is_string()) return value.get<std::string>();
+    if (value.is_number_integer()) return std::to_string(value.get<int>());
+    if (value.is_number_unsigned()) return std::to_string(value.get<unsigned int>());
+    if (value.is_number_float()) return std::to_string(value.get<double>());
+    if (value.is_boolean()) return value.get<bool>() ? "true" : "false";
+    return {};
+}
+
+std::string pick_string(const nlohmann::json &value, std::initializer_list<const char *> keys) {
+    if (!value.is_object()) return {};
+    for (const auto *key : keys) {
+        auto it = value.find(key);
+        if (it != value.end()) {
+            auto text = json_to_string(*it);
+            if (!text.empty()) return text;
+        }
+    }
+    return {};
+}
+
+const nlohmann::json *find_array_payload(const nlohmann::json &json) {
+    if (json.is_array()) return &json;
+    if (!json.is_object()) return nullptr;
+    for (const auto *key : {"data", "datas", "list", "rows", "items", "result"}) {
+        auto it = json.find(key);
+        if (it == json.end()) continue;
+        if (it->is_array()) return &*it;
+        if (it->is_object()) {
+            if (auto nested = find_array_payload(*it)) return nested;
+        }
+    }
+    return nullptr;
+}
+
+std::vector<Model::FeatureRecord> parse_announcement_records(const std::string &body) {
+    auto json = nlohmann::json::parse(body);
+    auto payload = find_array_payload(json);
+    if (payload == nullptr) return {};
+
+    std::vector<Model::FeatureRecord> records;
+    for (std::size_t i = 0; i < payload->size(); ++i) {
+        const auto &item = (*payload)[i];
+        auto id = pick_string(item, {"id", "noticeId", "announcementId", "uuid"});
+        auto title = pick_string(item, {"title", "name", "subject", "bt"});
+        auto status = pick_string(item, {"status", "state", "publishStatus"});
+        std::map<std::string, std::string> fields;
+        if (item.is_object()) {
+            for (const auto &[key, value] : item.items()) {
+                auto text = json_to_string(value);
+                if (!text.empty()) fields[key] = text;
+            }
+        }
+        if (id.empty()) id = "announcement-" + std::to_string(i + 1);
+        if (title.empty()) title = "公告";
+        if (status.empty()) status = "published";
+        records.push_back(make_record(std::move(id), std::move(title), std::move(status), std::move(fields)));
+    }
+    return records;
+}
+
+Result<std::vector<Model::FeatureRecord>> fetch_announcements(IHttpClient &http_client, ConnectionMode mode) {
+    constexpr const char *kAnnouncementsUrl = "https://app.buaa.edu.cn/uc/wap/notice/list";
+
+    HttpRequest request;
+    request.method = HttpMethod::Get;
+    request.url = resolve_for_mode(kAnnouncementsUrl, mode);
+    request.headers["Accept"] = "application/json, text/javascript, */*; q=0.01";
+    request.headers["X-Requested-With"] = "XMLHttpRequest";
+    request.headers["User-Agent"] = "UBAANext/0.4";
+
+    auto response = http_client.send(request);
+    if (!response) {
+        return make_error(ErrorCode::NetworkError, "请求公告失败: " + response.error().message);
+    }
+    if (response_is_sso(*response)) {
+        return make_error(ErrorCode::SessionExpired, "公告会话已过期");
+    }
+    if (response->status_code != 200) {
+        return make_error(ErrorCode::NetworkError, "公告请求返回: " + std::to_string(response->status_code));
+    }
+
+    try {
+        return parse_announcement_records(response->body);
+    } catch (const std::exception &e) {
+        return make_error(ErrorCode::ParseError, std::string("解析公告 JSON 失败: ") + e.what());
+    }
 }
 
 Result<int> parse_positive_int(const std::string &value, const std::string &name) {
@@ -206,7 +296,7 @@ Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string
 
     if (domain == "announcement") {
         if (operation == "list") {
-            return make_error(ErrorCode::NotImplemented, "公告真实协议尚未接入");
+            return fetch_announcements(m_http_client, m_mode);
         }
         return make_error(ErrorCode::InvalidArgument, "未知的公告查询操作: " + operation);
     }
@@ -507,21 +597,7 @@ Result<Model::MutationResult> FeatureService::mutate(const std::string &domain,
         return service.submit_evaluations(id);
     }
     if (domain == "ygdk" && operation.rfind("submit:", 0) == 0) {
-        auto rest = operation.substr(7);
-        auto first = rest.find('\n');
-        auto second = first == std::string::npos ? std::string::npos : rest.find('\n', first + 1);
-        auto third = second == std::string::npos ? std::string::npos : rest.find('\n', second + 1);
-        auto fourth = third == std::string::npos ? std::string::npos : rest.find('\n', third + 1);
-        if (first == std::string::npos || second == std::string::npos || third == std::string::npos || fourth == std::string::npos) {
-            return make_error(ErrorCode::InvalidArgument, "ygdk submit 参数不完整");
-        }
-        YgdkService service(m_http_client, m_cache, m_mode);
-        return service.submit_clockin(id,
-                                      rest.substr(0, first),
-                                      rest.substr(first + 1, second - first - 1),
-                                      rest.substr(second + 1, third - second - 1),
-                                      rest.substr(third + 1, fourth - third - 1) == "1",
-                                      rest.substr(fourth + 1));
+        return make_error(ErrorCode::InvalidArgument, "ygdk submit 需要由 app 层提供上传文件 bytes");
     }
     if (domain == "cgyy" && operation.rfind("reserve:", 0) == 0) {
         auto rest = operation.substr(8);

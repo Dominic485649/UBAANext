@@ -562,13 +562,14 @@ TEST_CASE("CLI 博雅签到要求显式课程和签到类型", "[cli][integratio
     REQUIRE(json["error"]["code"] == "InvalidArgument");
 }
 
-TEST_CASE("CLI 公告真实模式返回稳定未实现错误", "[cli][integration]") {
+TEST_CASE("CLI 公告真实模式返回稳定空列表", "[cli][integration]") {
     auto result = run_cli({"app", "announcement", "--json"});
-    REQUIRE(result.exit_code == 1);
+    REQUIRE(result.exit_code == 0);
 
     auto json = parse_json_output(result.stdout_output);
-    REQUIRE(json["ok"] == false);
-    REQUIRE(json["error"]["code"] == "NotImplemented");
+    REQUIRE(json["ok"] == true);
+    REQUIRE(json["data"].contains("announcements"));
+    REQUIRE(json["data"]["announcements"].is_array());
 }
 
 TEST_CASE("CLI 图书馆座位真实模式要求查询 ID", "[cli][integration]") {

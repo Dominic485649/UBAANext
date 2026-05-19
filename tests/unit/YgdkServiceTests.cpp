@@ -91,6 +91,10 @@ std::map<std::string, std::string> parse_form(const std::string &body) {
     return form;
 }
 
+UBAANext::UploadPart test_photo() {
+    return UBAANext::UploadPart{"file", "ubaanext-ygdk-test.png", "image/png", {'p', 'n', 'g'}};
+}
+
 } // namespace
 
 TEST_CASE("YgdkService 默认提交参数对齐 UBAA", "[service][ygdk]") {
@@ -98,13 +102,14 @@ TEST_CASE("YgdkService 默认提交参数对齐 UBAA", "[service][ygdk]") {
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
 
-    auto result = service.submit_clockin("", "2026-05-16 20:00", "2026-05-16 21:00", "", false, "");
+    auto photo = test_photo();
+    auto result = service.submit_clockin("", "2026-05-16 20:00", "2026-05-16 21:00", "", false, photo);
 
     REQUIRE(result);
     CHECK(http_client.upload_requests == 1);
     CHECK(http_client.submit_requests == 1);
     CHECK(http_client.last_upload_content_type.find("multipart/form-data") != std::string::npos);
-    CHECK(http_client.last_upload_body.find("filename=\"ygdk_auto.png\"") != std::string::npos);
+    CHECK(http_client.last_upload_body.find("filename=\"ubaanext-ygdk-test.png\"") != std::string::npos);
     CHECK(http_client.last_upload_body.find("Content-Type: image/png") != std::string::npos);
 
     auto form = parse_form(http_client.last_submit_body);
@@ -127,7 +132,8 @@ TEST_CASE("YgdkService 接受 ISO 时间输入", "[service][ygdk]") {
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
 
-    auto result = service.submit_clockin("", "2026-05-16T20:00:00", "2026-05-16T21:00:00", "", false, "");
+    auto photo = test_photo();
+    auto result = service.submit_clockin("", "2026-05-16T20:00:00", "2026-05-16T21:00:00", "", false, photo);
 
     REQUIRE(result);
     auto form = parse_form(http_client.last_submit_body);
@@ -141,7 +147,7 @@ TEST_CASE("YgdkService 拒绝带时区 ISO 时间", "[service][ygdk]") {
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
 
-    auto result = service.submit_clockin("", "2026-05-16T20:00:00Z", "2026-05-16T21:00:00Z", "", false, "");
+    auto result = service.submit_clockin("", "2026-05-16T20:00:00Z", "2026-05-16T21:00:00Z", "", false, test_photo());
 
     REQUIRE_FALSE(result);
     CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
@@ -153,7 +159,7 @@ TEST_CASE("YgdkService 拒绝只提供单侧时间且不发起网络请求", "[s
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
 
-    auto result = service.submit_clockin("", "2026-05-16 20:00", "", "", false, "");
+    auto result = service.submit_clockin("", "2026-05-16 20:00", "", "", false, test_photo());
 
     REQUIRE_FALSE(result);
     CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
@@ -165,14 +171,11 @@ TEST_CASE("YgdkService 空时间默认生成一小时时段", "[service][ygdk]")
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
 
-    auto result = service.submit_clockin("", "", "", "", false, "");
+    auto result = service.submit_clockin("", "", "", "", false, UBAANext::UploadPart{});
 
-    REQUIRE(result);
-    auto form = parse_form(http_client.last_submit_body);
-    auto start = std::stoll(form["start_time"]);
-    auto end = std::stoll(form["end_time"]);
-    CHECK(end - start == 3600);
-    CHECK(form["form_time_fmt"].find("-") != std::string::npos);
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
+    CHECK(http_client.requested_urls.empty());
 }
 
 TEST_CASE("YgdkService 历史记录使用体育分类", "[service][ygdk]") {
@@ -193,7 +196,7 @@ TEST_CASE("YgdkService 无效项目不会上传默认图片", "[service][ygdk]")
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
 
-    auto result = service.submit_clockin("missing-item", "2026-05-16 20:00", "2026-05-16 21:00", "", false, "");
+    auto result = service.submit_clockin("missing-item", "2026-05-16 20:00", "2026-05-16 21:00", "", false, test_photo());
 
     REQUIRE_FALSE(result);
     CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
@@ -218,7 +221,8 @@ TEST_CASE("YgdkService 无跑步项目时选择 sort 最小项目", "[service][y
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
 
-    auto result = service.submit_clockin("", "2026-05-16 20:00", "2026-05-16 21:00", "操场", false, "");
+    auto photo = test_photo();
+    auto result = service.submit_clockin("", "2026-05-16 20:00", "2026-05-16 21:00", "操场", false, photo);
 
     REQUIRE(result);
     auto form = parse_form(http_client.last_submit_body);

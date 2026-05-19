@@ -15,6 +15,7 @@ target_include_directories(ubaa
 target_link_libraries(ubaa
     PRIVATE UBAANextCore
     PRIVATE UBAANextPlatformCurrent
+    PRIVATE UBAANextPlatformOpenSSL
 )
 
 if(UBAANEXT_ENABLE_MOCKS)
