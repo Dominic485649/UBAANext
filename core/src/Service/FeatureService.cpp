@@ -3,6 +3,7 @@
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Version.hpp>
 #include <UBAANext/Protocol/ScoreSession.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 #include <UBAANext/Service/BykcService.hpp>
 #include <UBAANext/Service/EvaluationService.hpp>
 #include <UBAANext/Service/JudgeService.hpp>
@@ -29,9 +30,7 @@ std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
 }
 
 bool response_is_sso(const HttpResponse &response) {
-    return response.status_code == 401 || response.status_code == 403 ||
-           response.body.find("name=\"execution\"") != std::string::npos ||
-           response.body.find("统一身份认证") != std::string::npos;
+    return Protocol::is_session_expired_response(response);
 }
 
 std::string parse_score_xq(const std::string &term_code) {

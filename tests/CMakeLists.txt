@@ -38,6 +38,7 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/ResponseUtilsTests.cpp
         unit/TermServiceTests.cpp
         unit/P1ReadonlyContractTests.cpp
+        unit/PlatformBoundaryTests.cpp
         unit/TodoServiceTests.cpp
         unit/VpnCipherTests.cpp
     )
@@ -59,6 +60,7 @@ if(UBAANEXT_ENABLE_MOCKS)
 
     target_compile_definitions(UBAANextTests PRIVATE
         UBAA_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+        UBAANEXT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     )
 
     set_target_properties(UBAANextTests PROPERTIES

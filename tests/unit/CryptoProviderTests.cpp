@@ -9,7 +9,7 @@ TEST_CASE("CryptoProvider 未安装平台 provider 时 fail-fast", "[crypto][cap
     auto digest = UBAANext::default_crypto_provider().md5_hex("abc");
 
     REQUIRE_FALSE(digest);
-    REQUIRE(digest.error().code == UBAANext::ErrorCode::NotImplemented);
+    REQUIRE(digest.error().code == UBAANext::ErrorCode::UnsupportedCrypto);
 
     UBAANext::Platform::OpenSSL::install_open_ssl_crypto_provider();
 }

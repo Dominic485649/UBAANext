@@ -586,6 +586,25 @@ TEST_CASE("CLI 图书馆座位真实模式要求查询 ID", "[cli][integration]"
     REQUIRE(seats_json["error"]["code"] == "InvalidArgument");
 }
 
+TEST_CASE("CLI 真实 BYXT/Score 只读命令要求显式 term", "[cli][integration][real-readonly]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"course", "week", "--week", "8", "--json"},
+        {"week", "list", "--json"},
+        {"exam", "list", "--json"},
+        {"grade", "list", "--json"},
+        {"grade", "all", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        INFO(result.stdout_output);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
 TEST_CASE("CLI 未知命令返回 InvalidArgument", "[cli][integration]") {
     auto result = run_cli({"unknown", "--json"});
     REQUIRE(result.exit_code == 2);

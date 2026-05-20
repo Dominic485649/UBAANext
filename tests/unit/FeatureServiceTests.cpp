@@ -31,7 +31,9 @@ public:
             ++lock_code_requests;
             response.body = R"JSON({"code":200,"data":{"code":"123456"}})JSON";
         } else if (request.url == "https://app.buaa.edu.cn/uc/wap/notice/list") {
-            response.body = R"JSON({"code":0,"data":{"list":[{"id":"ann-1","title":"系统公告","status":"published","publishTime":"2026-05-18"}]}})JSON";
+            CHECK(request.headers.at("Accept") == "application/json, text/javascript, */*; q=0.01");
+            CHECK(request.headers.at("X-Requested-With") == "XMLHttpRequest");
+            response.body = R"JSON({"code":0,"data":{"list":[{"id":"ann-1","title":"系统公告","status":"published","publishTime":"2026-05-18"},{"noticeId":2,"name":"数字公告","state":1}]}})JSON";
         } else {
             response.status_code = 404;
             response.body = R"JSON({"code":404,"message":"unexpected request"})JSON";
@@ -41,6 +43,21 @@ public:
 
     std::map<std::string, int> request_counts;
     int lock_code_requests = 0;
+};
+
+class AnnouncementExpiredHttpClient : public UBAANext::IHttpClient {
+public:
+    UBAANext::Result<UBAANext::HttpResponse> send(const UBAANext::HttpRequest &request) override {
+        (void)request;
+        ++request_count;
+        UBAANext::HttpResponse response;
+        response.status_code = 302;
+        response.headers["Location"] = "https://sso.buaa.edu.cn/login?service=app";
+        response.body = "统一身份认证";
+        return response;
+    }
+
+    int request_count = 0;
 };
 
 } // namespace
@@ -53,10 +70,38 @@ TEST_CASE("FeatureService 公告真实协议解析列表", "[service][feature]")
     auto result = service.list("announcement", "list");
 
     REQUIRE(result);
-    REQUIRE(result->size() == 1);
+    REQUIRE(result->size() == 2);
     CHECK((*result)[0].id == "ann-1");
     CHECK((*result)[0].title == "系统公告");
     CHECK((*result)[0].status == "published");
+    CHECK((*result)[1].id == "2");
+    CHECK((*result)[1].title == "数字公告");
+    CHECK((*result)[1].status == "1");
+}
+
+TEST_CASE("FeatureService 公告真实协议识别 SSO 会话失效", "[service][feature][session]") {
+    AnnouncementExpiredHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::FeatureService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.list("announcement", "list");
+
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == UBAANext::ErrorCode::SessionExpired);
+    CHECK(http_client.request_count == 1);
+}
+
+TEST_CASE("FeatureService app version 真实协议本地返回", "[service][feature]") {
+    FeatureFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::FeatureService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.list("app", "version");
+
+    REQUIRE(result);
+    REQUIRE(result->size() == 1);
+    CHECK((*result)[0].id == "app-version");
+    CHECK(http_client.request_counts.empty());
 }
 
 TEST_CASE("FeatureService 公告 mock 保持可用", "[service][feature]") {

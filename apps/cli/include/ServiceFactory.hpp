@@ -55,7 +55,7 @@ public:
     [[nodiscard]] UBAANext::TodoService create_todo_service();
     [[nodiscard]] UBAANext::FeatureService create_feature_service();
 
-    [[nodiscard]] UBAANext::IHttpClient &http_client() { return *m_ctx.http; }
+    [[nodiscard]] UBAANext::IHttpClient &http_client();
     [[nodiscard]] const AppContext &context() const { return m_ctx; }
 
 private:

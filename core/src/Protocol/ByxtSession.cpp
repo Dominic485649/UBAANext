@@ -1,6 +1,7 @@
 #include <UBAANext/Protocol/ByxtSession.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <algorithm>
 
@@ -22,8 +23,7 @@ std::string redirect_location(const HttpResponse &response) {
 }
 
 bool is_sso_login_page(const std::string &body) {
-    return body.find("input name=\"execution\"") != std::string::npos ||
-           body.find("统一身份认证") != std::string::npos;
+    return Protocol::has_sso_login_marker(body);
 }
 
 std::string trim_start_copy(const std::string &body) {
@@ -34,14 +34,6 @@ std::string trim_start_copy(const std::string &body) {
 bool is_json_body(const std::string &body) {
     auto trimmed = trim_start_copy(body);
     return !trimmed.empty() && (trimmed.front() == '{' || trimmed.front() == '[');
-}
-
-bool session_expired_body(const std::string &body) {
-    return is_sso_login_page(body) ||
-           body.find("您的会话已经过期") != std::string::npos ||
-           body.find("会话已经过期") != std::string::npos ||
-           body.find("\"url\":\"/login\"") != std::string::npos ||
-           body.find("\"url\": \"/login\"") != std::string::npos;
 }
 
 std::string extract_origin(const std::string &url) {
@@ -130,8 +122,7 @@ void apply_ajax_headers(HttpRequest &request, ConnectionMode mode, const std::st
 }
 
 bool is_session_expired_response(const HttpResponse &response) {
-    return response.status_code == 401 || response.status_code == 403 ||
-           session_expired_body(response.body) || !is_json_body(response.body);
+    return Protocol::is_session_expired_response(response) || !is_json_body(response.body);
 }
 
 Result<void> ensure_session(IHttpClient &http_client, ConnectionMode mode) {
@@ -162,11 +153,8 @@ Result<void> ensure_session(IHttpClient &http_client, ConnectionMode mode) {
             return redirect_result;
         }
     } else if (app_result->status_code == 401 || app_result->status_code == 403 || is_sso_login_page(app_result->body)) {
-        auto trimmed = trim_start_copy(app_result->body);
-        std::string prefix = trimmed.substr(0, std::min<std::size_t>(trimmed.size(), 80));
         return make_error(ErrorCode::SessionExpired,
-                          "需要 SSO 认证: appStatus=" + std::to_string(app_result->status_code) +
-                              " body=" + prefix);
+                          "需要 SSO 认证: appStatus=" + std::to_string(app_result->status_code));
     }
 
     probe_result = http_client.send(probe);
@@ -175,14 +163,9 @@ Result<void> ensure_session(IHttpClient &http_client, ConnectionMode mode) {
     }
 
     if (probe_result) {
-        auto trimmed = trim_start_copy(probe_result->body);
-        std::string prefix = trimmed.substr(0, std::min<std::size_t>(trimmed.size(), 80));
-        auto app_trimmed = trim_start_copy(app_result->body);
-        std::string app_prefix = app_trimmed.substr(0, std::min<std::size_t>(app_trimmed.size(), 80));
         return make_error(ErrorCode::SessionExpired,
                           "BYXT 会话激活失败: appStatus=" + std::to_string(app_result->status_code) +
-                              " appBody=" + app_prefix + " probeStatus=" + std::to_string(probe_result->status_code) +
-                              " probeBody=" + prefix);
+                              " probeStatus=" + std::to_string(probe_result->status_code));
     }
     return make_error(ErrorCode::SessionExpired, "BYXT 会话激活失败: 无探测响应");
 }

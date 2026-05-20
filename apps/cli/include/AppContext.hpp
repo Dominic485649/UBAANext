@@ -7,13 +7,18 @@
 #pragma once
 
 #include <UBAANext/Auth/AuthService.hpp>
+#include <UBAANext/Crypto/CryptoProvider.hpp>
+#include <UBAANext/Net/HttpClient.hpp>
+#include <UBAANext/Net/NetworkStack.hpp>
+#include <UBAANext/Platform/PlatformCapabilities.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
 #include <UBAANext/Storage/SecureStore.hpp>
-#include <UBAANext/Net/HttpClient.hpp>
 
 #include "CliConfig.hpp"
 
 #include <memory>
+#include <filesystem>
+#include <functional>
 
 namespace UBAANextCli {
 
@@ -28,7 +33,13 @@ struct AppContext {
     bool mock_mode = false;                                     ///< 是否使用 mock 实现
     UBAANext::ConnectionMode conn_mode = UBAANext::ConnectionMode::WebVPN;  ///< 连接模式
     CliConfig config;                                           ///< CLI 配置
-    std::unique_ptr<UBAANext::IHttpClient> http;                ///< HTTP 客户端
+    std::unique_ptr<UBAANext::IHttpClient> http;                ///< HTTP 客户端（过渡期兼容）
+    std::unique_ptr<UBAANext::INetworkStack> network_stack;     ///< 平台网络栈
+    UBAANext::PlatformCapabilities capabilities;                ///< 当前平台能力
+    UBAANext::ICryptoProvider *crypto = nullptr;                ///< 平台加密 provider（过渡期可为空）
+    std::filesystem::path cookie_file_path;                      ///< Cookie 持久化路径（legacy bridge）
+    std::function<void()> save_cookies;                          ///< Cookie 保存回调（legacy bridge）
+    std::function<void()> clear_cookies;                         ///< Cookie 清理回调（legacy bridge）
     std::unique_ptr<UBAANext::ICacheStore> cache;               ///< 缓存存储
     std::unique_ptr<UBAANext::ISecureStore> store;              ///< 安全存储（开发态为 PlainFileStore）
 };

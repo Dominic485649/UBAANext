@@ -11,10 +11,47 @@
  */
 
 #include <UBAANext/Base/Result.hpp>
+#include <UBAANext/Net/HttpRequest.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 namespace um = UBAANext;
+
+TEST_CASE("ErrorCode 字符串覆盖平台能力错误", "[Error]") {
+    CHECK(um::error_code_to_string(um::ErrorCode::UnsupportedPlatform) == "UnsupportedPlatform");
+    CHECK(um::error_code_to_string(um::ErrorCode::UnsupportedNetwork) == "UnsupportedNetwork");
+    CHECK(um::error_code_to_string(um::ErrorCode::UnsupportedSecureStore) == "UnsupportedSecureStore");
+    CHECK(um::error_code_to_string(um::ErrorCode::UnsupportedCrypto) == "UnsupportedCrypto");
+    CHECK(um::error_code_to_string(um::ErrorCode::UnsupportedCookiePersistence) == "UnsupportedCookiePersistence");
+    CHECK(um::error_code_to_string(um::ErrorCode::Timeout) == "Timeout");
+    CHECK(um::error_code_to_string(um::ErrorCode::TlsError) == "TlsError");
+    CHECK(um::error_code_to_string(um::ErrorCode::CryptoError) == "CryptoError");
+    CHECK(um::error_code_to_string(um::ErrorCode::StorageError) == "StorageError");
+}
+
+TEST_CASE("HttpRequest 传输选项默认保持平台默认", "[http][dto]") {
+    um::HttpRequest request;
+
+    CHECK(request.transport.connect_timeout_ms == 0);
+    CHECK(request.transport.request_timeout_ms == 0);
+    CHECK(request.transport.proxy.empty());
+    CHECK(request.transport.tls_verify_peer);
+    CHECK(request.transport.tls_verify_host);
+    CHECK(request.transport.redact_url_query_in_errors);
+    CHECK(request.multipart_parts.empty());
+    CHECK(request.redirect.follow_redirects);
+}
+
+TEST_CASE("HttpRequest 上传部件只携带已准备字节", "[http][dto]") {
+    um::HttpRequest request;
+    request.multipart_parts.push_back({"file", "photo.png", "image/png", {'p', 'n', 'g'}});
+
+    REQUIRE(request.multipart_parts.size() == 1);
+    CHECK(request.multipart_parts[0].field_name == "file");
+    CHECK(request.multipart_parts[0].filename == "photo.png");
+    CHECK(request.multipart_parts[0].content_type == "image/png");
+    CHECK(request.multipart_parts[0].bytes == std::vector<unsigned char>{'p', 'n', 'g'});
+}
 
 // ============================================================
 // 测试：Result 成功时包含值

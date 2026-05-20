@@ -21,6 +21,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace UBAANext {
 
@@ -41,6 +42,32 @@ enum class HttpMethod {
     Post,    ///< HTTP POST 请求 —— 用于提交数据，参数通过请求体传递
     Put,     ///< HTTP PUT 请求 —— 用于更新资源，参数通过请求体传递
     Delete   ///< HTTP DELETE 请求 —— 用于删除指定资源
+};
+
+/**
+ * @brief 平台无关的上传部件。
+ *
+ * App/Shell 层负责读取本地文件、权限处理和 MIME 推断；HTTP adapter 只发送已经准备好的 bytes。
+ */
+struct HttpUploadPart {
+    std::string field_name;
+    std::string filename;
+    std::string content_type;
+    std::vector<unsigned char> bytes;
+};
+
+/**
+ * @brief 单次 HTTP 请求的传输选项。
+ *
+ * 字段为 0 / 空字符串时表示使用平台 adapter 默认值。
+ */
+struct HttpTransportOptions {
+    int connect_timeout_ms = 0;
+    int request_timeout_ms = 0;
+    std::string proxy;
+    bool tls_verify_peer = true;
+    bool tls_verify_host = true;
+    bool redact_url_query_in_errors = true;
 };
 
 /**
@@ -95,6 +122,10 @@ struct HttpRequest {
     std::unordered_map<std::string, std::string> headers;
 
     std::string body;
+
+    std::vector<HttpUploadPart> multipart_parts;
+
+    HttpTransportOptions transport;
 
     RedirectOptions redirect;
 };

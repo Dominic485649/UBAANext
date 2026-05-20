@@ -27,23 +27,12 @@
 #include "Console.hpp"
 #include "ExitCodes.hpp"
 #include "OutputFormatter.hpp"
-#include "PlainFileStore.hpp"
+#include "PlatformContextFactory.hpp"
 #include "SecurityRedaction.hpp"
 #include "ServiceFactory.hpp"
 
 #include <UBAANext/Version.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
-#include <UBAANext/Storage/MemoryCacheStore.hpp>
-#include <UBAANext/Platform/OpenSSL/OpenSslCryptoInstaller.hpp>
-#if defined(_WIN32)
-#include <UBAANext/Platform/Windows/DpapiSecureStore.hpp>
-#include <UBAANext/Platform/Windows/WinHttpClient.hpp>
-#endif
-
-#if UBAANEXT_ENABLE_MOCKS
-#include <UBAANextMocks/MockCacheStore.hpp>
-#include <UBAANextMocks/MockHttpClient.hpp>
-#endif
 
 #include <nlohmann/json.hpp>
 
@@ -547,45 +536,13 @@ CliArgs parse_args(int argc, char *argv[]) {
 // ── 上下文构建 ──────────────────────────────────────────────────
 
 AppContext build_context(bool mock, const std::string &mode, const CliConfig &config) {
-    AppContext ctx;
-    ctx.mock_mode = mock;
-#if UBAANEXT_ENABLE_MOCKS
-    if (mock) {
-        ctx.conn_mode = um::ConnectionMode::Mock;
-    } else
-#endif
-    {
-        ctx.conn_mode = (mode == "direct") ? um::ConnectionMode::Direct : um::ConnectionMode::WebVPN;
-    }
-    ctx.config = config;
-
-#if UBAANEXT_ENABLE_MOCKS
-    if (mock) {
-        ctx.http = std::make_unique<UBAANextMocks::MockHttpClient>();
-        ctx.cache = std::make_unique<UBAANextMocks::MockCacheStore>();
-    } else
-#endif
-    {
-#if defined(_WIN32)
-        um::WinHttpConfig cfg;
-        cfg.follow_redirects = false;
-        if (!config.proxy.empty()) {
-            cfg.proxy = config.proxy;
-        }
-        auto client = std::make_unique<um::WinHttpClient>(cfg);
-        client->load_cookies(get_cookie_file_path().string());
-        ctx.http = std::move(client);
-#else
-        ctx.http = nullptr;
-#endif
-        ctx.cache = std::make_unique<um::MemoryCacheStore>();
-    }
-#if defined(_WIN32)
-    ctx.store = std::make_unique<UBAANext::Platform::Windows::DpapiSecureStore>(get_session_file_path());
-#else
-    ctx.store = std::make_unique<UBAANextCli::PlainFileStore>(get_session_file_path());
-#endif
-    return ctx;
+    UBAANextCli::PlatformContextOptions options;
+    options.mock = mock;
+    options.mode = mode;
+    options.config = config;
+    options.session_file_path = get_session_file_path();
+    options.cookie_file_path = get_cookie_file_path();
+    return UBAANextCli::create_current_platform_context(options);
 }
 
 // ── 帮助 ──────────────────────────────────────────────────
@@ -786,15 +743,9 @@ void print_usage() {
 void save_real_cookies(ServiceFactory &factory);
 
 void clear_real_cookies(ServiceFactory &factory) {
-#if defined(_WIN32)
-    if (auto *win_http = dynamic_cast<um::WinHttpClient *>(&factory.http_client())) {
-        win_http->cookies().clear();
-    }
+    UBAANextCli::clear_platform_cookies(const_cast<AppContext &>(factory.context()));
     std::error_code ec;
     std::filesystem::remove(get_cookie_file_path(), ec);
-#else
-    (void)factory;
-#endif
 }
 
 ExitCode cmd_version(OutputFormatter &out) {
@@ -894,21 +845,23 @@ ExitCode map_error_to_exit_code(const um::Error &error) {
     case um::ErrorCode::InvalidArgument: return ExitCode::InvalidArgument;
     case um::ErrorCode::SessionExpired:
     case um::ErrorCode::AuthFailed:      return ExitCode::AuthRequired;
-    case um::ErrorCode::NetworkError:    return ExitCode::Network;
+    case um::ErrorCode::NetworkError:
+    case um::ErrorCode::UnsupportedNetwork:
+    case um::ErrorCode::Timeout:
+    case um::ErrorCode::TlsError:         return ExitCode::Network;
+    case um::ErrorCode::UnsupportedPlatform:
+    case um::ErrorCode::UnsupportedSecureStore:
+    case um::ErrorCode::UnsupportedCrypto:
+    case um::ErrorCode::UnsupportedCookiePersistence:
+    case um::ErrorCode::CryptoError:
+    case um::ErrorCode::StorageError:    return ExitCode::General;
     case um::ErrorCode::ParseError:      return ExitCode::Parse;
     default:                             return ExitCode::General;
     }
 }
 
 void save_real_cookies(ServiceFactory &factory) {
-#if defined(_WIN32)
-    auto *win_http = dynamic_cast<um::WinHttpClient *>(&factory.http_client());
-    if (win_http) {
-        win_http->save_cookies(get_cookie_file_path().string());
-    }
-#else
-    (void)factory;
-#endif
+    UBAANextCli::save_platform_cookies(const_cast<AppContext &>(factory.context()));
 }
 
 ExitCode cmd_course_today(const CliArgs & /*args*/, ServiceFactory &factory, OutputFormatter &out) {
@@ -948,29 +901,16 @@ ExitCode cmd_course_week(const CliArgs &args, ServiceFactory &factory, OutputFor
         return ExitCode::InvalidArgument;
     }
 
-    std::string term_code;
-    if (factory.context().conn_mode == um::ConnectionMode::Direct || factory.context().conn_mode == um::ConnectionMode::WebVPN) {
-        auto term_service = factory.create_term_service();
-        auto terms = term_service.get_terms();
-        if (!terms) {
-            out.print_error(terms.error());
-            return map_error_to_exit_code(terms.error());
-        }
-        for (const auto &term : *terms) {
-            if (term.selected) {
-                term_code = term.code;
-                break;
-            }
-        }
-        if (term_code.empty() && !terms->empty()) {
-            term_code = terms->front().code;
-        }
+    if ((factory.context().conn_mode == um::ConnectionMode::Direct || factory.context().conn_mode == um::ConnectionMode::WebVPN) &&
+        args.term.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "真实 course week 需要 --term <term_code>"});
+        return ExitCode::InvalidArgument;
     }
 
     auto service = factory.create_course_service();
-    auto result = term_code.empty()
+    auto result = args.term.empty()
         ? service.get_week_courses(args.week)
-        : service.get_week_courses(args.week, term_code);
+        : service.get_week_courses(args.week, args.term);
     if (!result) {
         out.print_error(result.error());
         return map_error_to_exit_code(result.error());
@@ -981,9 +921,15 @@ ExitCode cmd_course_week(const CliArgs &args, ServiceFactory &factory, OutputFor
     return ExitCode::Ok;
 }
 
-ExitCode cmd_exam_list(const CliArgs & /*args*/, ServiceFactory &factory, OutputFormatter &out) {
+ExitCode cmd_exam_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if ((factory.context().conn_mode == um::ConnectionMode::Direct || factory.context().conn_mode == um::ConnectionMode::WebVPN) &&
+        args.term.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "真实 exam list 需要 --term <term_code>"});
+        return ExitCode::InvalidArgument;
+    }
+
     auto service = factory.create_exam_service();
-    auto result = service.get_exams();
+    auto result = service.get_exams(args.term);
     if (!result) {
         out.print_error(result.error());
         return map_error_to_exit_code(result.error());
@@ -1041,27 +987,15 @@ ExitCode cmd_term_list(const CliArgs & /*args*/, ServiceFactory &factory, Output
     return ExitCode::Ok;
 }
 
-ExitCode cmd_week_list(const CliArgs & /*args*/, ServiceFactory &factory, OutputFormatter &out) {
-    auto service = factory.create_term_service();
-    std::string term_code;
-    if (factory.context().conn_mode == um::ConnectionMode::Direct || factory.context().conn_mode == um::ConnectionMode::WebVPN) {
-        auto terms = service.get_terms();
-        if (!terms) {
-            out.print_error(terms.error());
-            return map_error_to_exit_code(terms.error());
-        }
-        for (const auto &term : *terms) {
-            if (term.selected) {
-                term_code = term.code;
-                break;
-            }
-        }
-        if (term_code.empty() && !terms->empty()) {
-            term_code = terms->front().code;
-        }
+ExitCode cmd_week_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if ((factory.context().conn_mode == um::ConnectionMode::Direct || factory.context().conn_mode == um::ConnectionMode::WebVPN) &&
+        args.term.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "真实 week list 需要 --term <term_code>"});
+        return ExitCode::InvalidArgument;
     }
 
-    auto result = service.get_weeks(term_code);
+    auto service = factory.create_term_service();
+    auto result = service.get_weeks(args.term);
     if (!result) {
         out.print_error(result.error());
         return map_error_to_exit_code(result.error());
@@ -1158,6 +1092,13 @@ ExitCode cmd_cache_clear(const CliArgs &args, ServiceFactory & /*factory*/, Outp
 }
 
 ExitCode cmd_grade_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!args.all &&
+        (factory.context().conn_mode == um::ConnectionMode::Direct || factory.context().conn_mode == um::ConnectionMode::WebVPN) &&
+        args.term.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "真实 grade list 需要 --term <term_code>"});
+        return ExitCode::InvalidArgument;
+    }
+
     auto service = factory.create_grade_service();
     auto result = args.all ? service.list_all_grades() : service.list_grades(args.term.empty() ? "2025-2026-2" : args.term);
     if (!result) {
@@ -1895,8 +1836,6 @@ ExitCode cmd_evaluation_submit(const CliArgs &args, ServiceFactory &factory, Out
 // ── 主入口 ──────────────────────────────────────────────────
 
 int main(int argc, char *argv[]) {
-    UBAANext::Platform::OpenSSL::install_open_ssl_crypto_provider();
-
     CliArgs args = parse_args(argc, argv);
 
     OutputFormatter out(args.json_output);

@@ -2,6 +2,7 @@ add_executable(ubaa
     src/main.cpp
     src/PlainFileStore.cpp
     src/ServiceFactory.cpp
+    src/PlatformContextFactory.cpp
     src/OutputFormatter.cpp
     src/CliConfig.cpp
     src/SecurityRedaction.cpp

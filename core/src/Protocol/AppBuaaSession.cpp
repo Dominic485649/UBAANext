@@ -1,6 +1,7 @@
 #include <UBAANext/Protocol/AppBuaaSession.hpp>
 
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -158,14 +159,7 @@ void apply_ajax_headers(HttpRequest &request, ConnectionMode mode, const std::st
 }
 
 bool is_session_expired_response(const HttpResponse &response) {
-    auto location = response.headers.find("Location");
-    auto lower_location = response.headers.find("location");
-    std::string redirect = location != response.headers.end() ? location->second :
-        lower_location != response.headers.end() ? lower_location->second : std::string{};
-    return response.status_code == 401 || response.status_code == 403 ||
-           redirect.find("sso.buaa.edu.cn") != std::string::npos ||
-           response.body.find("统一身份认证") != std::string::npos ||
-           response.body.find("input name=\"execution\"") != std::string::npos;
+    return Protocol::is_session_expired_response(response);
 }
 
 Result<void> ensure_session(IHttpClient &http_client,
@@ -226,9 +220,8 @@ Result<void> ensure_session(IHttpClient &http_client,
     }
 
     if (response->status_code < 200 || response->status_code >= 400 || is_session_expired_response(*response)) {
-        auto prefix = response->body.substr(0, std::min<std::size_t>(response->body.size(), 120));
         return make_error(ErrorCode::SessionExpired,
-                          "app.buaa 会话同步失败: status=" + std::to_string(response->status_code) + " body=" + prefix);
+                          "app.buaa 会话同步失败: status=" + std::to_string(response->status_code));
     }
     return {};
 }

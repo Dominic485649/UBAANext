@@ -27,6 +27,15 @@ enum class ErrorCode {
     AuthFailed,        ///< 认证或凭据错误
     SessionExpired,    ///< 已存储的会话令牌不再有效
     ParseError,        ///< 响应解析失败（JSON 等）
+    UnsupportedPlatform,          ///< 当前平台不支持该能力
+    UnsupportedNetwork,           ///< 当前平台未接入真实网络能力
+    UnsupportedSecureStore,       ///< 当前平台未接入安全存储能力
+    UnsupportedCrypto,            ///< 当前平台未接入真实加密能力
+    UnsupportedCookiePersistence, ///< 当前平台未接入安全 Cookie 持久化
+    Timeout,                      ///< 网络或平台操作超时
+    TlsError,                     ///< TLS/证书校验失败
+    CryptoError,                  ///< 加密、摘要或签名操作失败
+    StorageError,                 ///< 安全存储或本地状态读写失败
     NotImplemented     ///< 功能预留，将在未来版本实现
 };
 
@@ -54,6 +63,24 @@ constexpr std::string_view error_code_to_string(ErrorCode code) {
         return "SessionExpired";
     case ErrorCode::ParseError:
         return "ParseError";
+    case ErrorCode::UnsupportedPlatform:
+        return "UnsupportedPlatform";
+    case ErrorCode::UnsupportedNetwork:
+        return "UnsupportedNetwork";
+    case ErrorCode::UnsupportedSecureStore:
+        return "UnsupportedSecureStore";
+    case ErrorCode::UnsupportedCrypto:
+        return "UnsupportedCrypto";
+    case ErrorCode::UnsupportedCookiePersistence:
+        return "UnsupportedCookiePersistence";
+    case ErrorCode::Timeout:
+        return "Timeout";
+    case ErrorCode::TlsError:
+        return "TlsError";
+    case ErrorCode::CryptoError:
+        return "CryptoError";
+    case ErrorCode::StorageError:
+        return "StorageError";
     case ErrorCode::NotImplemented:
         return "NotImplemented";
     }

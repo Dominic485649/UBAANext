@@ -10,12 +10,12 @@ $ErrorActionPreference = 'Stop'
 function Redact-Text([string]$Text) {
     if ($null -eq $Text) { return '' }
     $redacted = $Text
-    foreach ($value in @($env:UBAANEXT_PASSWORD, $env:UBAANEXT_TOKEN, $env:UBAANEXT_COOKIE, $env:UBAANEXT_TICKET)) {
+    foreach ($value in @($env:UBAANEXT_PASSWORD, $env:UBAANEXT_TOKEN, $env:UBAANEXT_COOKIE, $env:UBAANEXT_TICKET, $env:UBAANEXT_SESSION)) {
         if (![string]::IsNullOrWhiteSpace($value)) {
             $redacted = $redacted.Replace($value, '[REDACTED]')
         }
     }
-    $redacted = [regex]::Replace($redacted, '(?i)(password|passwd|pwd|token|cookie|ticket|captcha|session[_-]?id)\s*[:=]\s*[^\s,}]+', '$1=[REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?i)(password|passwd|pwd|token|cookie|set-cookie|authorization|ticket|captcha|session[_-]?id|session)\s*[:=]\s*[^\s,}]+', '$1=[REDACTED]')
     return $redacted
 }
 

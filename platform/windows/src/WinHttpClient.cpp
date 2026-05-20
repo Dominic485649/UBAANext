@@ -151,8 +151,10 @@ Result<HttpResponse> WinHttpClient::send(const HttpRequest &request) {
     }
 
     // 设置超时
-    WinHttpSetTimeouts(hRequest, m_config.connect_timeout_ms, m_config.connect_timeout_ms,
-                       m_config.request_timeout_ms, m_config.request_timeout_ms);
+    const int connect_timeout_ms = request.transport.connect_timeout_ms > 0 ? request.transport.connect_timeout_ms : m_config.connect_timeout_ms;
+    const int request_timeout_ms = request.transport.request_timeout_ms > 0 ? request.transport.request_timeout_ms : m_config.request_timeout_ms;
+    WinHttpSetTimeouts(hRequest, connect_timeout_ms, connect_timeout_ms,
+                       request_timeout_ms, request_timeout_ms);
 
     DWORD disable_flags = WINHTTP_DISABLE_COOKIES;
     if (!request.redirect.follow_redirects) {

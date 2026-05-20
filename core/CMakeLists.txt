@@ -22,6 +22,7 @@ add_library(UBAANextCore STATIC
     src/Protocol/ByxtSession.cpp
     src/Protocol/AppBuaaSession.cpp
     src/Protocol/ScoreSession.cpp
+    src/Protocol/SessionGuards.cpp
     src/Net/CookieJar.cpp
     src/Net/VpnCipher.cpp
     src/Crypto/CryptoProvider.cpp

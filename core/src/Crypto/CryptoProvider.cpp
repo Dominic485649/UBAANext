@@ -13,11 +13,11 @@ bool valid_aes_key(const std::string &key) {
 class UnsupportedCryptoProvider final : public ICryptoProvider {
 public:
     Result<std::string> md5_hex(const std::string &) override {
-        return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 MD5 实现");
+        return make_error(ErrorCode::UnsupportedCrypto, "当前平台尚未接入 MD5 实现");
     }
 
     Result<std::vector<unsigned char>> sha1_digest(const std::vector<unsigned char> &) override {
-        return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 SHA-1 实现");
+        return make_error(ErrorCode::UnsupportedCrypto, "当前平台尚未接入 SHA-1 实现");
     }
 
     Result<std::vector<unsigned char>> aes_cbc_encrypt(const std::vector<unsigned char> &data,
@@ -26,26 +26,26 @@ public:
         if (!valid_aes_key(key)) return make_error(ErrorCode::InvalidArgument, "AES key 长度必须为 16、24 或 32 字节");
         if (iv.size() != 16) return make_error(ErrorCode::InvalidArgument, "AES CBC IV 长度必须为 16 字节");
         if (data.empty() || data.size() % 16 != 0) return make_error(ErrorCode::InvalidArgument, "AES CBC 明文长度必须为 16 字节倍数");
-        return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 AES CBC 加密实现");
+        return make_error(ErrorCode::UnsupportedCrypto, "当前平台尚未接入 AES CBC 加密实现");
     }
 
     Result<std::vector<unsigned char>> aes_ecb_pkcs7_encrypt(const std::vector<unsigned char> &,
                                                              const std::string &key) override {
         if (!valid_aes_key(key)) return make_error(ErrorCode::InvalidArgument, "AES key 长度必须为 16、24 或 32 字节");
-        return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 AES ECB 加密实现");
+        return make_error(ErrorCode::UnsupportedCrypto, "当前平台尚未接入 AES ECB 加密实现");
     }
 
     Result<std::vector<unsigned char>> aes_ecb_pkcs7_decrypt(const std::vector<unsigned char> &data,
                                                              const std::string &key) override {
         if (!valid_aes_key(key)) return make_error(ErrorCode::InvalidArgument, "AES key 长度必须为 16、24 或 32 字节");
         if (data.empty() || data.size() % 16 != 0) return make_error(ErrorCode::InvalidArgument, "AES ECB 密文长度必须为 16 字节倍数");
-        return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 AES ECB 解密实现");
+        return make_error(ErrorCode::UnsupportedCrypto, "当前平台尚未接入 AES ECB 解密实现");
     }
 
     Result<std::string> rsa_pkcs1_encrypt_base64(const std::vector<unsigned char> &,
                                                  const std::string &public_key_der_base64) override {
         if (public_key_der_base64.empty()) return make_error(ErrorCode::InvalidArgument, "RSA 公钥不能为空");
-        return make_error(ErrorCode::NotImplemented, "当前平台尚未接入 RSA PKCS#1 加密实现");
+        return make_error(ErrorCode::UnsupportedCrypto, "当前平台尚未接入 RSA PKCS#1 加密实现");
     }
 };
 
