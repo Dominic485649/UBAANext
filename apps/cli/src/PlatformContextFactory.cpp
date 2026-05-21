@@ -155,12 +155,27 @@ AppContext create_current_platform_context(const PlatformContextOptions &options
 }
 
 void save_platform_cookies(AppContext &ctx) {
+    if (ctx.network_stack) {
+        auto loaded = ctx.network_stack->cookie_store().load();
+        if (loaded) {
+            auto saved = ctx.network_stack->cookie_store().save(*loaded);
+            if (saved) {
+                return;
+            }
+        }
+    }
     if (ctx.save_cookies) {
         ctx.save_cookies();
     }
 }
 
 void clear_platform_cookies(AppContext &ctx) {
+    if (ctx.network_stack) {
+        auto cleared = ctx.network_stack->cookie_store().clear();
+        if (cleared) {
+            return;
+        }
+    }
     if (ctx.clear_cookies) {
         ctx.clear_cookies();
     }

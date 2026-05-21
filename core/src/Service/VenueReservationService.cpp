@@ -53,8 +53,8 @@ std::int64_t now_millis() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-Result<std::string> md5_hex(const std::string &input) {
-    return default_crypto_provider().md5_hex(input);
+Result<std::string> md5_hex(ICryptoProvider &crypto, const std::string &input) {
+    return crypto.md5_hex(input);
 }
 
 Result<long long> parse_numeric_id(const std::string &value, const char *name) {
@@ -86,7 +86,7 @@ Result<void> require_direct_mode(ConnectionMode mode) {
     return {};
 }
 
-Result<std::string> sign_request(const std::string &path, const std::map<std::string, std::string> &params, std::int64_t timestamp) {
+Result<std::string> sign_request(ICryptoProvider &crypto, const std::string &path, const std::map<std::string, std::string> &params, std::int64_t timestamp) {
     std::string normalized = path.empty() || path.front() != '/' ? "/" + path : path;
     std::string payload = sign_prefix + normalized;
     for (const auto &[key, value] : params) {
@@ -97,7 +97,7 @@ Result<std::string> sign_request(const std::string &path, const std::map<std::st
     payload += std::to_string(timestamp);
     payload += " ";
     payload += sign_prefix;
-    return md5_hex(payload);
+    return md5_hex(crypto, payload);
 }
 
 bool response_is_login(const HttpResponse &response) {
@@ -253,7 +253,10 @@ std::vector<Model::FeatureRecord> to_records(const std::vector<T> &items) {
 } // namespace
 
 VenueReservationService::VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
-    : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
+    : VenueReservationService(http_client, cache, mode, default_crypto_provider()) {}
+
+VenueReservationService::VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto)
+    : m_http_client(http_client), m_cache(cache), m_mode(mode), m_crypto(crypto) {}
 
 Result<void> VenueReservationService::ensure_login(bool force_refresh) {
     auto direct_mode = require_direct_mode(m_mode);
@@ -299,7 +302,7 @@ Result<nlohmann::json> VenueReservationService::request_json(HttpMethod method,
     auto sign_params = method == HttpMethod::Get ? params : form;
     auto request_params = params;
     if (method == HttpMethod::Get && request_params.find("nocache") == request_params.end()) request_params["nocache"] = std::to_string(timestamp);
-    auto sign = sign_request(path, method == HttpMethod::Get ? request_params : sign_params, timestamp);
+    auto sign = sign_request(m_crypto, path, method == HttpMethod::Get ? request_params : sign_params, timestamp);
     if (!sign) return make_error(sign.error().code, sign.error().message);
 
     HttpRequest request;

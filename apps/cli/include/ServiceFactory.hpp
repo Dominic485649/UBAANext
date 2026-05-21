@@ -56,6 +56,7 @@ public:
     [[nodiscard]] UBAANext::FeatureService create_feature_service();
 
     [[nodiscard]] UBAANext::IHttpClient &http_client();
+    [[nodiscard]] UBAANext::ICryptoProvider &crypto_provider();
     [[nodiscard]] const AppContext &context() const { return m_ctx; }
 
 private:

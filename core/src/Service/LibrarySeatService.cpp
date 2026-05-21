@@ -92,14 +92,14 @@ std::string libbook_aes_key(const std::string &day) {
     return digits + reversed;
 }
 
-Result<std::string> encrypt_reserve_payload(const nlohmann::json &body, const std::string &day) {
+Result<std::string> encrypt_reserve_payload(ICryptoProvider &crypto, const nlohmann::json &body, const std::string &day) {
     auto key = libbook_aes_key(day);
     if (key.empty()) return make_error(ErrorCode::InvalidArgument, "libbook book 需要有效 --date <yyyy-MM-dd>");
     auto plain = body.dump();
     std::vector<unsigned char> data(plain.begin(), plain.end());
     auto pad = 16 - (data.size() % 16);
     data.insert(data.end(), pad, static_cast<unsigned char>(pad));
-    auto encrypted = default_crypto_provider().aes_cbc_encrypt(data, key, reserve_iv);
+    auto encrypted = crypto.aes_cbc_encrypt(data, key, reserve_iv);
     if (!encrypted) return make_error(encrypted.error().code, "LibBook " + encrypted.error().message);
     return base64_encode(*encrypted);
 }
@@ -195,7 +195,10 @@ std::vector<Model::FeatureRecord> to_records(const std::vector<T> &items) {
 } // namespace
 
 LibrarySeatService::LibrarySeatService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
-    : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
+    : LibrarySeatService(http_client, cache, mode, default_crypto_provider()) {}
+
+LibrarySeatService::LibrarySeatService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto)
+    : m_http_client(http_client), m_cache(cache), m_mode(mode), m_crypto(crypto) {}
 
 Result<std::string> LibrarySeatService::fetch_cas_token() {
     std::string current_url = cas_login_url;
@@ -410,7 +413,7 @@ Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string
         }
     }
 
-    auto encrypted = encrypt_reserve_payload({{"seat_id", seat_id}, {"segment", segment}, {"day", day}, {"start_time", resolved_start}, {"end_time", resolved_end}}, day);
+    auto encrypted = encrypt_reserve_payload(m_crypto, {{"seat_id", seat_id}, {"segment", segment}, {"day", day}, {"start_time", resolved_start}, {"end_time", resolved_end}}, day);
     if (!encrypted) {
         return make_error(encrypted.error().code, encrypted.error().message);
     }

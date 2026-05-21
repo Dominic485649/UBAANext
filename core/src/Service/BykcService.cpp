@@ -147,9 +147,8 @@ std::string generate_aes_key() {
     return key;
 }
 
-Result<std::tuple<std::string, std::string, std::string, std::string>> encrypt_request(const std::string &json) {
+Result<std::tuple<std::string, std::string, std::string, std::string>> encrypt_request(const std::string &json, ICryptoProvider &crypto) {
     auto key = generate_aes_key();
-    auto &crypto = default_crypto_provider();
     auto encrypted = crypto.aes_ecb_pkcs7_encrypt(string_bytes(json), key);
     if (!encrypted) return make_error(encrypted.error().code, encrypted.error().message);
     auto digest = crypto.sha1_digest(string_bytes(json));
@@ -335,7 +334,10 @@ Model::FeatureRecord stat_to_record(const Model::BykcStat &stat) {
 } // namespace
 
 BykcService::BykcService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
-    : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
+    : BykcService(http_client, cache, mode, default_crypto_provider()) {}
+
+BykcService::BykcService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto)
+    : m_http_client(http_client), m_cache(cache), m_mode(mode), m_crypto(crypto) {}
 
 Result<void> BykcService::ensure_login(bool force_refresh) {
     (void)m_cache;
@@ -356,7 +358,7 @@ Result<std::string> BykcService::call_api_raw(const std::string &api_name, const
     auto login = ensure_login();
     if (!login) return make_error(login.error().code, login.error().message);
     auto plain = payload.dump();
-    auto encrypted = encrypt_request(plain);
+    auto encrypted = encrypt_request(plain, m_crypto);
     if (!encrypted) return make_error(encrypted.error().code, encrypted.error().message);
     auto [body, ak, sk, aes_key] = *encrypted;
 
@@ -386,7 +388,7 @@ Result<std::string> BykcService::call_api_raw(const std::string &api_name, const
     auto encoded_json = nlohmann::json::parse(response->body, nullptr, false);
     std::string encoded_payload = encoded_json.is_string() ? encoded_json.get<std::string>() : response->body;
     auto encrypted_response = base64_decode(encoded_payload);
-    auto decrypted = default_crypto_provider().aes_ecb_pkcs7_decrypt(encrypted_response, aes_key);
+    auto decrypted = m_crypto.aes_ecb_pkcs7_decrypt(encrypted_response, aes_key);
     std::string decoded = decrypted ? std::string(decrypted->begin(), decrypted->end()) : encoded_payload;
     if (decoded.find("会话已失效") != std::string::npos || decoded.find("未登录") != std::string::npos) {
         m_token.clear();

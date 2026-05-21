@@ -13,6 +13,10 @@ UBAANext::IHttpClient &ServiceFactory::http_client() {
     return m_ctx.network_stack ? m_ctx.network_stack->http_client() : *m_ctx.http;
 }
 
+UBAANext::ICryptoProvider &ServiceFactory::crypto_provider() {
+    return m_ctx.crypto ? *m_ctx.crypto : UBAANext::default_crypto_provider();
+}
+
 UBAANext::AuthService ServiceFactory::create_auth_service() {
     UBAANext::AuthService auth(http_client(), *m_ctx.store);
     auth.set_connection_mode(m_ctx.conn_mode);
@@ -60,15 +64,15 @@ UBAANext::EvaluationService ServiceFactory::create_evaluation_service() {
 }
 
 UBAANext::BykcService ServiceFactory::create_bykc_service() {
-    return UBAANext::BykcService(http_client(), *m_ctx.cache, m_ctx.conn_mode);
+    return UBAANext::BykcService(http_client(), *m_ctx.cache, m_ctx.conn_mode, crypto_provider());
 }
 
 UBAANext::VenueReservationService ServiceFactory::create_venue_reservation_service() {
-    return UBAANext::VenueReservationService(http_client(), *m_ctx.cache, m_ctx.conn_mode);
+    return UBAANext::VenueReservationService(http_client(), *m_ctx.cache, m_ctx.conn_mode, crypto_provider());
 }
 
 UBAANext::LibrarySeatService ServiceFactory::create_library_seat_service() {
-    return UBAANext::LibrarySeatService(http_client(), *m_ctx.cache, m_ctx.conn_mode);
+    return UBAANext::LibrarySeatService(http_client(), *m_ctx.cache, m_ctx.conn_mode, crypto_provider());
 }
 
 UBAANext::TodoService ServiceFactory::create_todo_service() {

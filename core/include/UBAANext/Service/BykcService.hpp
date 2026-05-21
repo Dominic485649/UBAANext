@@ -1,7 +1,7 @@
 #pragma once
 
 #include <UBAANext/Auth/AuthService.hpp>
-#include <UBAANext/Base/Result.hpp>
+#include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Model/Bykc.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
@@ -29,6 +29,7 @@ struct BykcCourseQuery {
 class BykcService {
 public:
     BykcService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
+    BykcService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto);
 
     Result<Model::BykcProfile> get_profile();
     Result<std::vector<Model::BykcCourse>> list_courses(int page = 1, int size = 100, bool all = false);
@@ -51,6 +52,7 @@ private:
     IHttpClient &m_http_client;
     ICacheStore &m_cache;
     ConnectionMode m_mode;
+    ICryptoProvider &m_crypto;
     std::string m_token;
 
     Result<void> ensure_login(bool force_refresh = false);

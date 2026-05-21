@@ -1,7 +1,7 @@
 #pragma once
 
 #include <UBAANext/Auth/AuthService.hpp>
-#include <UBAANext/Base/Result.hpp>
+#include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Model/LibrarySeat.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
@@ -17,6 +17,7 @@ namespace UBAANext {
 class LibrarySeatService {
 public:
     LibrarySeatService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
+    LibrarySeatService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto);
 
     Result<std::vector<Model::LibraryInfo>> libraries(const std::string &day);
     Result<std::vector<Model::LibraryArea>> areas(const std::string &library_id, const std::string &day, const std::string &storey_id = "");
@@ -40,6 +41,7 @@ private:
     IHttpClient &m_http_client;
     ICacheStore &m_cache;
     ConnectionMode m_mode;
+    ICryptoProvider &m_crypto;
     std::string m_token;
 
     Result<void> ensure_login(bool force_refresh = false);

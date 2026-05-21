@@ -1,7 +1,7 @@
 #pragma once
 
 #include <UBAANext/Auth/AuthService.hpp>
-#include <UBAANext/Base/Result.hpp>
+#include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Model/VenueReservation.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
@@ -18,6 +18,7 @@ namespace UBAANext {
 class VenueReservationService {
 public:
     VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
+    VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto);
 
     Result<std::vector<Model::VenueSite>> venue_sites();
     Result<std::vector<Model::VenuePurposeType>> purpose_types();
@@ -47,6 +48,7 @@ private:
     IHttpClient &m_http_client;
     ICacheStore &m_cache;
     ConnectionMode m_mode;
+    ICryptoProvider &m_crypto;
     std::string m_access_token;
 
     Result<void> ensure_login(bool force_refresh = false);

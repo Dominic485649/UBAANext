@@ -15,6 +15,7 @@ target_include_directories(UBAANextPlatformCurl
 
 target_link_libraries(UBAANextPlatformCurl
     PUBLIC UBAANextCore
+    PRIVATE CURL::libcurl
 )
 
 set_target_properties(UBAANextPlatformCurl PROPERTIES

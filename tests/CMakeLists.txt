@@ -10,6 +10,8 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/CourseServiceTests.cpp
         unit/SessionManagerTests.cpp
         unit/CookieJarTests.cpp
+        unit/CurlCookieStoreTests.cpp
+        unit/CurlHttpClientTests.cpp
         unit/SecureStoreAdapterTests.cpp
         unit/SecurityRedactionTests.cpp
         unit/ExamServiceTests.cpp
@@ -17,6 +19,7 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/ClassroomServiceTests.cpp
         unit/CacheStoreTests.cpp
         unit/CryptoProviderTests.cpp
+        unit/CryptoInjectionTests.cpp
         unit/PublicApiTests.cpp
         unit/JsonParserTests.cpp
         unit/JudgeParserTests.cpp
@@ -45,10 +48,15 @@ if(UBAANEXT_ENABLE_MOCKS)
 
     target_link_libraries(UBAANextTests
         PRIVATE UBAANextCore
+        PRIVATE UBAANextPlatformCurl
         PRIVATE UBAANextPlatformOpenSSL
         PRIVATE UBAANextMocks
         PRIVATE Catch2::Catch2
     )
+
+    if(WIN32)
+        target_link_libraries(UBAANextTests PRIVATE ws2_32)
+    endif()
 
     target_sources(UBAANextTests
         PRIVATE ${CMAKE_SOURCE_DIR}/apps/cli/src/SecurityRedaction.cpp
