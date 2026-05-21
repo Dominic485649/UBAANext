@@ -3,11 +3,11 @@
 #include "PlainFileStore.hpp"
 
 #include <UBAANext/Platform/OpenSSL/OpenSslCryptoInstaller.hpp>
+#include <UBAANext/Platform/Curl/CurlNetworkStack.hpp>
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
 
 #if defined(_WIN32)
 #include <UBAANext/Platform/Windows/DpapiSecureStore.hpp>
-#include <UBAANext/Platform/Windows/WinHttpClient.hpp>
 #include <UBAANext/Platform/Windows/WindowsPlatformCapabilities.hpp>
 #endif
 
@@ -117,24 +117,11 @@ AppContext create_current_platform_context(const PlatformContextOptions &options
 #endif
 
 #if defined(_WIN32)
-    UBAANext::WinHttpConfig cfg;
-    cfg.follow_redirects = false;
-    if (!options.config.proxy.empty()) {
-        cfg.proxy = options.config.proxy;
-    }
-    auto client = std::make_unique<UBAANext::WinHttpClient>(cfg);
-    client->load_cookies(options.cookie_file_path.string());
-    auto *win_http = client.get();
-    ctx.http = std::move(client);
-    ctx.save_cookies = [win_http, path = options.cookie_file_path.string()] {
-        win_http->save_cookies(path);
-    };
-    ctx.clear_cookies = [win_http] {
-        win_http->cookies().clear();
-    };
-    ctx.capabilities = UBAANext::Platform::Windows::WindowsPlatformCapabilities{}.capabilities();
-    ctx.network_stack = std::make_unique<HttpClientNetworkStack>(*ctx.http);
     ctx.store = std::make_unique<UBAANext::Platform::Windows::DpapiSecureStore>(options.session_file_path);
+    ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>(*ctx.store);
+    auto loaded_cookies = ctx.network_stack->cookie_store().load();
+    (void)loaded_cookies;
+    ctx.capabilities = UBAANext::Platform::Windows::WindowsPlatformCapabilities{}.capabilities();
 #else
     ctx.http = std::make_unique<UnsupportedHttpClient>();
     ctx.capabilities.real_network = false;

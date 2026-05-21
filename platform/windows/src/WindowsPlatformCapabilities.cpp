@@ -5,8 +5,8 @@ namespace UBAANext::Platform::Windows {
 PlatformCapabilities WindowsPlatformCapabilities::capabilities() const {
     PlatformCapabilities caps;
     caps.real_network = true;
-    caps.secure_cookie_persistence = false;
-    caps.cookie_persistence = false;
+    caps.secure_cookie_persistence = true;
+    caps.cookie_persistence = true;
     caps.redirect_control = true;
     caps.openssl_crypto = true;
     caps.secure_store = true;

@@ -20,6 +20,8 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/CacheStoreTests.cpp
         unit/CryptoProviderTests.cpp
         unit/CryptoInjectionTests.cpp
+        unit/HarmonyPlatformTests.cpp
+        unit/LinuxPlatformTests.cpp
         unit/PublicApiTests.cpp
         unit/JsonParserTests.cpp
         unit/JudgeParserTests.cpp
