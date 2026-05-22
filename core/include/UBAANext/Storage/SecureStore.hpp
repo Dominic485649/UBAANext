@@ -8,6 +8,8 @@
  */
 #pragma once
 
+#include <UBAANext/Base/Result.hpp>
+
 #include <optional>
 #include <string>
 
@@ -42,6 +44,16 @@ public:
      * @param key 要移除的键
      */
     virtual void remove(const std::string &key) = 0;
+
+    /**
+     * @brief Flush pending secure-store updates to durable storage when supported.
+     *
+     * Implementations with immediate persistence can return success. File-backed
+     * implementations should override this so multi-process CLI flows can observe
+     * credentials/cookies saved by a previous command without waiting for object
+     * destruction timing.
+     */
+    virtual Result<void> flush() { return {}; }
 
     /** @brief 移除所有已存储的键值对 */
     virtual void clear() = 0;

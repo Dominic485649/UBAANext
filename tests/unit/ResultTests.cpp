@@ -114,6 +114,19 @@ TEST_CASE("Result 失败时携带错误信息", "[Result]") {
     REQUIRE(result.error().message == "超时");
 }
 
+TEST_CASE("Result value 失败时抛出携带原始 Error 的异常", "[Result]") {
+    auto result = um::Result<int>(um::make_error(um::ErrorCode::SessionExpired, "会话已过期"));
+
+    try {
+        (void)result.value();
+        FAIL("value() should throw");
+    } catch (const um::ResultError &error) {
+        CHECK(error.error().code == um::ErrorCode::SessionExpired);
+        CHECK(error.error().message == "会话已过期");
+        CHECK(std::string(error.what()) == "会话已过期");
+    }
+}
+
 // ============================================================
 // 测试：Result<void> 成功
 // 验证 void 特化版本在成功时的语义：
@@ -144,4 +157,17 @@ TEST_CASE("Result<void> 失败", "[Result]") {
 
     // 断言错误码为 AuthFailed
     REQUIRE(result.error().code == um::ErrorCode::AuthFailed);
+}
+
+TEST_CASE("Result<void> value 失败时抛出携带原始 Error 的异常", "[Result]") {
+    auto result = um::Result<void>(um::make_error(um::ErrorCode::UnsupportedSecureStore, "安全存储不可用"));
+
+    try {
+        result.value();
+        FAIL("value() should throw");
+    } catch (const um::ResultError &error) {
+        CHECK(error.error().code == um::ErrorCode::UnsupportedSecureStore);
+        CHECK(error.error().message == "安全存储不可用");
+        CHECK(std::string(error.what()) == "安全存储不可用");
+    }
 }

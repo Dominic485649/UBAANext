@@ -9,7 +9,7 @@ TEST_CASE("CLI redaction removes sensitive headers and key values", "[security][
         "Cookie: SID=cookie-secret\n"
         "Set-Cookie: SESSION=set-cookie-secret\n"
         "Authorization: Bearer auth-secret\n"
-        "token=token-secret&ticket=ticket-secret&session=session-secret&password=password-secret&captcha=captcha-secret&验证码=code-secret";
+        "token=token-secret&ticket=ticket-secret&cas=cas-secret&execution=exec-secret&session=session-secret&password=password-secret&captcha=captcha-secret&验证码=code-secret";
 
     auto redacted = UBAANextCli::redact_sensitive_text(text);
 
@@ -18,6 +18,8 @@ TEST_CASE("CLI redaction removes sensitive headers and key values", "[security][
     CHECK(redacted.find("auth-secret") == std::string::npos);
     CHECK(redacted.find("token-secret") == std::string::npos);
     CHECK(redacted.find("ticket-secret") == std::string::npos);
+    CHECK(redacted.find("cas-secret") == std::string::npos);
+    CHECK(redacted.find("exec-secret") == std::string::npos);
     CHECK(redacted.find("session-secret") == std::string::npos);
     CHECK(redacted.find("password-secret") == std::string::npos);
     CHECK(redacted.find("captcha-secret") == std::string::npos);

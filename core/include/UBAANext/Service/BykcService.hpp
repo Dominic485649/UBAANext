@@ -56,6 +56,7 @@ private:
     std::string m_token;
 
     Result<void> ensure_login(bool force_refresh = false);
+    Result<std::string> call_api_raw_once(const std::string &api_name, const nlohmann::json &payload);
     Result<std::string> call_api_raw(const std::string &api_name, const nlohmann::json &payload, bool allow_retry = true);
     Result<nlohmann::json> call_api_data(const std::string &api_name, const nlohmann::json &payload, const std::string &fallback_message);
 };

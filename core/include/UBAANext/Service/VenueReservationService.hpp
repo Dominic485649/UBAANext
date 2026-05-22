@@ -4,6 +4,7 @@
 #include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Model/VenueReservation.hpp>
+#include <UBAANext/Net/CookieStore.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
 
@@ -19,6 +20,7 @@ class VenueReservationService {
 public:
     VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
     VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto);
+    VenueReservationService(IHttpClient &http_client, ICookieStore *cookie_store, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto);
 
     Result<std::vector<Model::VenueSite>> venue_sites();
     Result<std::vector<Model::VenuePurposeType>> purpose_types();
@@ -46,6 +48,7 @@ public:
 
 private:
     IHttpClient &m_http_client;
+    ICookieStore *m_cookie_store = nullptr;
     ICacheStore &m_cache;
     ConnectionMode m_mode;
     ICryptoProvider &m_crypto;

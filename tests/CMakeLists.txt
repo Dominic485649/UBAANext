@@ -41,6 +41,11 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/LibrarySeatParserTests.cpp
         unit/LibrarySeatServiceTests.cpp
         unit/ResponseUtilsTests.cpp
+        unit/DownstreamSessionTypesTests.cpp
+        unit/SessionGuardsTests.cpp
+        unit/RedirectNavigatorTests.cpp
+        unit/CasFormParserTests.cpp
+        unit/AuthorizedDownstreamRequestExecutorTests.cpp
         unit/TermServiceTests.cpp
         unit/P1ReadonlyContractTests.cpp
         unit/PlatformBoundaryTests.cpp

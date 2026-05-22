@@ -21,6 +21,13 @@ TEST_CASE("CurlCookieStore 无安全存储时显式不支持持久化", "[curl][
     auto saved = store.save(cookies);
     REQUIRE_FALSE(saved.has_value());
     CHECK(saved.error().code == um::ErrorCode::UnsupportedCookiePersistence);
+    CHECK(live.to_header("sso.buaa.edu.cn").empty());
+
+    live.set_cookie("sso.buaa.edu.cn", "SESSION", "abc");
+    auto current_saved = store.save_current();
+    REQUIRE_FALSE(current_saved.has_value());
+    CHECK(current_saved.error().code == um::ErrorCode::UnsupportedCookiePersistence);
+    CHECK(live.to_header("sso.buaa.edu.cn") == "SESSION=abc");
 
     auto cleared = store.clear();
     REQUIRE_FALSE(cleared.has_value());
@@ -64,6 +71,29 @@ TEST_CASE("CurlCookieStore 拒绝非版本化明文 Cookie blob", "[curl][cookie
     CHECK(live.to_header("sso.buaa.edu.cn").empty());
 }
 
+TEST_CASE("CurlNetworkStack save_current 持久化当前 live CookieJar 且不重新加载旧值", "[curl][cookie]") {
+    UBAANextMocks::MockSecureStore secure_store;
+    curl::CurlNetworkStack stack(secure_store);
+    auto &store = static_cast<curl::CurlCookieStore &>(stack.cookie_store());
+
+    um::CookieJar stale;
+    stale.set_cookie("sso.buaa.edu.cn", "/", "SESSION", "stale");
+    REQUIRE(stack.cookie_store().save(stale).has_value());
+
+    store.live_cookies().set_cookie("sso.buaa.edu.cn", "/", "SESSION", "fresh");
+    store.live_cookies().set_cookie("byxt.buaa.edu.cn", "/", "TOKEN", "fresh-token");
+
+    auto saved = stack.cookie_store().save_current();
+    REQUIRE(saved.has_value());
+    CHECK(store.live_cookies().to_header("sso.buaa.edu.cn") == "SESSION=fresh");
+
+    store.live_cookies().clear();
+    auto loaded = stack.cookie_store().load();
+    REQUIRE(loaded.has_value());
+    CHECK(store.live_cookies().to_header("sso.buaa.edu.cn") == "SESSION=fresh");
+    CHECK(store.live_cookies().to_header("byxt.buaa.edu.cn") == "TOKEN=fresh-token");
+}
+
 TEST_CASE("CurlCookieStore 清理 live jar 和持久化 store", "[curl][cookie]") {
     um::CookieJar live;
     UBAANextMocks::MockSecureStore secure_store;
@@ -85,7 +115,7 @@ TEST_CASE("CurlNetworkStack 可使用 SecureStore 持久化共享 CookieJar", "[
     auto &store = static_cast<curl::CurlCookieStore &>(stack.cookie_store());
 
     store.live_cookies().set_cookie("sso.buaa.edu.cn", "SESSION", "abc");
-    auto saved = stack.cookie_store().save(store.live_cookies());
+    auto saved = stack.cookie_store().save_current();
     REQUIRE(saved.has_value());
 
     store.live_cookies().clear();

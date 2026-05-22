@@ -5,6 +5,8 @@
 
 #include "ServiceFactory.hpp"
 
+#include <utility>
+
 namespace UBAANextCli {
 
 ServiceFactory::ServiceFactory(AppContext &ctx) : m_ctx(ctx) {}
@@ -52,7 +54,10 @@ UBAANext::SpocService ServiceFactory::create_spoc_service() {
 }
 
 UBAANext::SigninService ServiceFactory::create_signin_service() {
-    return UBAANext::SigninService(http_client(), *m_ctx.cache, m_ctx.conn_mode);
+    auto auth = create_auth_service();
+    auto account = auth.restore_session();
+    std::string student_id = account ? account->student_id : std::string{};
+    return UBAANext::SigninService(http_client(), *m_ctx.cache, m_ctx.conn_mode, std::move(student_id));
 }
 
 UBAANext::YgdkService ServiceFactory::create_ygdk_service() {
@@ -68,7 +73,7 @@ UBAANext::BykcService ServiceFactory::create_bykc_service() {
 }
 
 UBAANext::VenueReservationService ServiceFactory::create_venue_reservation_service() {
-    return UBAANext::VenueReservationService(http_client(), *m_ctx.cache, m_ctx.conn_mode, crypto_provider());
+    return UBAANext::VenueReservationService(http_client(), m_ctx.network_stack ? &m_ctx.network_stack->cookie_store() : nullptr, *m_ctx.cache, m_ctx.conn_mode, crypto_provider());
 }
 
 UBAANext::LibrarySeatService ServiceFactory::create_library_seat_service() {

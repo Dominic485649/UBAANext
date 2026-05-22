@@ -5,14 +5,12 @@
 
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
+#include <UBAANext/Protocol/ByxtSession.hpp>
+#include <UBAANext/Protocol/CasFormParser.hpp>
 
 #include <nlohmann/json.hpp>
 #include <cctype>
-#include <iomanip>
-#include <map>
 #include <regex>
-#include <set>
-#include <sstream>
 
 namespace UBAANext {
 
@@ -70,6 +68,10 @@ bool is_allowed_redirect_url(const std::string &url) {
            (host.size() > 12 && host.compare(host.size() - 12, 12, ".buaa.edu.cn") == 0);
 }
 
+void disable_transport_redirects(HttpRequest &request) {
+    request.redirect.follow_redirects = false;
+}
+
 } // namespace
 
 AuthService::AuthService(IHttpClient &http_client, ISecureStore &secure_store)
@@ -89,7 +91,10 @@ Result<Model::Account> AuthService::login_mock(const std::string &username,
     account.student_id = username;
     account.display_name = "Test User";
 
-    m_session_manager.save_session(username, account, connection_mode_to_string(m_conn_mode));
+    auto saved = m_session_manager.save_session(username, account, connection_mode_to_string(m_conn_mode));
+    if (!saved) {
+        return make_error(saved.error().code, saved.error().message);
+    }
     m_session.set_account(account);
     return account;
 }
@@ -109,93 +114,16 @@ std::string AuthService::resolve_url(const std::string &url) const {
 }
 
 std::string AuthService::extract_execution(const std::string &html) {
-    // 匹配 <input name="execution" value="...">
-    std::regex re(R"(<input[^>]*name\s*=\s*["']execution["'][^>]*value\s*=\s*["']([^"']*)["'])",
-                  std::regex::icase);
-    std::smatch m;
-    if (std::regex_search(html, m, re) && m.size() > 1) {
-        return m[1].str();
-    }
-    // 尝试反序: value 在 name 之前
-    std::regex re2(R"(<input[^>]*value\s*=\s*["']([^"']*)["'][^>]*name\s*=\s*["']execution["'])",
-                   std::regex::icase);
-    if (std::regex_search(html, m, re2) && m.size() > 1) {
-        return m[1].str();
-    }
-    return "";
+    return Protocol::extract_execution(html);
 }
 
 std::string AuthService::build_login_form(
     const std::string &html, const std::string &username, const std::string &password,
     const std::string &execution, const std::string &captcha) {
-    std::string form;
-    std::set<std::string> present_names;
-    auto add = [&](const std::string &k, const std::string &v) {
-        if (!form.empty()) form += "&";
-        auto encode = [](const std::string &s) {
-            std::ostringstream encoded;
-            encoded << std::uppercase << std::hex << std::setfill('0');
-            for (unsigned char ch : s) {
-                if (std::isalnum(ch) || ch == '-' || ch == '_' || ch == '.' || ch == '*') {
-                    encoded << static_cast<char>(ch);
-                } else if (ch == ' ') {
-                    encoded << '+';
-                } else {
-                    encoded << '%' << std::setw(2) << static_cast<int>(ch);
-                }
-            }
-            return encoded.str();
-        };
-        form += encode(k) + "=" + encode(v);
-    };
-
-    std::regex input_re(R"(<input\b([^>]*)>)", std::regex::icase);
-    std::regex attr_re(R"(([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*["']([^"']*)["'])");
-    auto inputs_begin = std::sregex_iterator(html.begin(), html.end(), input_re);
-    auto inputs_end = std::sregex_iterator();
-    for (auto it = inputs_begin; it != inputs_end; ++it) {
-        std::string attrs_text = (*it)[1].str();
-        std::map<std::string, std::string> attrs;
-        auto attrs_begin = std::sregex_iterator(attrs_text.begin(), attrs_text.end(), attr_re);
-        for (auto attr_it = attrs_begin; attr_it != inputs_end; ++attr_it) {
-            attrs[(*attr_it)[1].str()] = (*attr_it)[2].str();
-        }
-        auto name_it = attrs.find("name");
-        if (name_it == attrs.end() || name_it->second.empty()) {
-            continue;
-        }
-        std::string name = name_it->second;
-        auto type_it = attrs.find("type");
-        std::string type = type_it != attrs.end() ? type_it->second : "";
-        for (auto &ch : type) {
-            ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-        }
-        present_names.insert(name);
-        if (name == "username" || name == "password" || type == "submit" || type == "button" || type == "image") {
-            continue;
-        }
-        if (type == "checkbox" && attrs_text.find("checked") == std::string::npos) {
-            continue;
-        }
-        auto value_it = attrs.find("value");
-        std::string value = value_it != attrs.end() ? value_it->second : "";
-        if (type == "hidden" || type == "checkbox" || !value.empty()) {
-            add(name, value.empty() && type == "checkbox" ? "on" : value);
-        }
+    auto form = Protocol::build_login_form(html, username, password, execution, captcha);
+    if (!captcha.empty() && form.find("captchaResponse=") == std::string::npos) {
+        form += "&captchaResponse=" + Protocol::form_url_encode(captcha);
     }
-
-    add("username", username);
-    add("password", password);
-    add("submit", "登录");
-    if (present_names.find("execution") == present_names.end()) add("execution", execution);
-    if (present_names.find("_eventId") == present_names.end()) add("_eventId", "submit");
-    if (present_names.find("type") == present_names.end()) add("type", "username_password");
-
-    if (!captcha.empty()) {
-        add("captcha", captcha);
-        add("captchaResponse", captcha);
-    }
-
     return form;
 }
 
@@ -248,6 +176,7 @@ Result<HttpResponse> AuthService::follow_redirects(
                 req.headers["User-Agent"] = "UBAANext/0.4";
                 req.headers["Referer"] = resolve_url(current_url, mode);
                 req.body = build_ignore_password_expiry_form(execution);
+                disable_transport_redirects(req);
                 auto result = m_http_client.send(req);
                 if (!result) {
                     return result;
@@ -294,6 +223,7 @@ Result<HttpResponse> AuthService::follow_redirects(
         req.url = resolve_url(location, mode);
         req.headers["Accept"] = "text/html,application/xhtml+xml,application/json,*/*";
         req.headers["User-Agent"] = "UBAANext/0.4";
+        disable_transport_redirects(req);
 
         auto result = m_http_client.send(req);
         if (!result) {
@@ -320,6 +250,7 @@ Result<Model::Account> AuthService::login_real(
     login_page_req.url = resolve_url(SSO_LOGIN_URL, mode);
     login_page_req.headers["Accept"] = "text/html,application/xhtml+xml,*/*";
     login_page_req.headers["User-Agent"] = "UBAANext/0.4";
+    disable_transport_redirects(login_page_req);
 
     auto page_result = m_http_client.send(login_page_req);
     if (!page_result) {
@@ -349,6 +280,7 @@ Result<Model::Account> AuthService::login_real(
         login_req.headers["User-Agent"] = "UBAANext/0.4";
         login_req.headers["Referer"] = resolve_url(SSO_LOGIN_URL, mode);
         login_req.body = form_body;
+        disable_transport_redirects(login_req);
 
         auto login_result = m_http_client.send(login_req);
         if (!login_result) {
@@ -389,6 +321,7 @@ activate_uc:
         uc_req.url = resolve_url(UC_ACTIVATE_URL, mode);
         uc_req.headers["Accept"] = "text/html,application/xhtml+xml,*/*";
         uc_req.headers["User-Agent"] = "UBAANext/0.4";
+        disable_transport_redirects(uc_req);
 
         auto uc_result = m_http_client.send(uc_req);
         if (!uc_result) {
@@ -480,8 +413,13 @@ activate_uc:
 
         // 持久化并激活会话
         m_conn_mode = mode;
-        m_session_manager.save_session(username, account, connection_mode_to_string(mode));
+        auto saved = m_session_manager.save_session(username, account, connection_mode_to_string(mode));
+        if (!saved) {
+            return make_error(saved.error().code, saved.error().message);
+        }
         m_session.set_account(account);
+
+        (void)Protocol::Byxt::ensure_session(m_http_client, mode);
 
         return account;
     }

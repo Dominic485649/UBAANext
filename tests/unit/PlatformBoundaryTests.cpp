@@ -73,16 +73,13 @@ TEST_CASE("Core CMake 不链接平台库", "[boundary][platform]") {
     }
 }
 
-TEST_CASE("CLI main 不直接依赖具体网络实现", "[boundary][platform][cli]") {
-    const auto text = read_text(std::filesystem::path(source_root()) / "apps" / "cli" / "src" / "main.cpp");
-    const std::vector<std::string> forbidden = {
-        "WinHttpClient.hpp",
-        "DpapiSecureStore.hpp",
-        "install_open_ssl_crypto_provider",
-        "dynamic_cast<",
-    };
+TEST_CASE("CLI real platform context does not use plaintext session store", "[boundary][platform][cli]") {
+    const auto text = read_text(std::filesystem::path(source_root()) / "apps" / "cli" / "src" / "PlatformContextFactory.cpp");
+    const auto mock_return = text.find("return ctx;\n    }\n#endif");
+    REQUIRE(mock_return != std::string::npos);
+    const auto real_branch = text.substr(mock_return);
 
-    for (const auto &needle : forbidden) {
-        CHECK(text.find(needle) == std::string::npos);
-    }
+    CHECK(real_branch.find("std::make_unique<PlainFileStore>") == std::string::npos);
+    CHECK(real_branch.find("UnsupportedHttpClient") == std::string::npos);
+    CHECK(real_branch.find("CurlNetworkStack") != std::string::npos);
 }

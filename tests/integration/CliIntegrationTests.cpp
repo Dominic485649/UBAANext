@@ -288,6 +288,17 @@ TEST_CASE("CLI config show 命令", "[cli][integration]") {
     REQUIRE(json["data"].contains("version"));
 }
 
+#if !defined(_WIN32)
+TEST_CASE("CLI real login fails closed without secure store", "[cli][integration][security]") {
+    auto result = run_cli({"login", "--username", "20260000", "--password", "test", "--json"});
+    REQUIRE(result.exit_code != 0);
+
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"].get<std::string>().find("UnsupportedSecureStore") != std::string::npos);
+}
+#endif
+
 TEST_CASE("CLI config proxy 输出会脱敏凭据", "[cli][integration]") {
     auto set_result = run_cli({"config", "set", "--key", "proxy", "--value", "http://user:secret@example.com:8080", "--confirm", "--json"});
     REQUIRE(set_result.exit_code == 0);

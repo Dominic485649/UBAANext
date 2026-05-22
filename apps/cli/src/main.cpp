@@ -6,6 +6,7 @@
  *   version [--json]
  *   help [--json]
  *   login [--mock] --username <id> --password <pw> [--mode vpn|direct]
+ *   mode [vpn|direct] [--json]
  *   whoami [--json]
  *   logout [--json]
  *   course today [--mock] [--mode vpn|direct] [--json]
@@ -32,6 +33,7 @@
 #include "ServiceFactory.hpp"
 
 #include <UBAANext/Version.hpp>
+#include <UBAANext/Auth/SessionContext.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 
 #include <nlohmann/json.hpp>
@@ -77,7 +79,7 @@ struct CliArgs {
     std::string date;
     std::string config_key;
     std::string config_value;
-    std::string mode;  // "vpn" (default) or "direct"
+    std::string mode;  // empty means use saved config; otherwise "vpn" or "direct"
     std::string term;
     std::string id;
     std::string course_id;
@@ -226,14 +228,15 @@ CliArgs parse_args(int argc, char *argv[]) {
     if ((args.command == "course" || args.command == "exam" ||
          args.command == "classroom" || args.command == "term" ||
          args.command == "week" || args.command == "config" ||
-         args.command == "cache" || args.command == "user" ||
+         args.command == "mode" || args.command == "cache" ||
+         args.command == "user" ||
          args.command == "app" || args.command == "grade" ||
          args.command == "spoc" || args.command == "judge" ||
          args.command == "signin" || args.command == "ygdk" ||
          args.command == "evaluation" || args.command == "bykc" ||
          args.command == "cgyy" || args.command == "libbook" ||
          args.command == "todo") &&
-        i < argc) {
+        i < argc && !looks_like_option(argv[i])) {
         args.subcommand = argv[i];
         ++i;
         if ((args.command == "spoc" || args.command == "judge" || args.command == "bykc" ||
@@ -572,6 +575,10 @@ nlohmann::json get_help_json() {
     };
     add_cmd("login", "登录", login_opts);
 
+    add_cmd("mode", "显示当前连接模式");
+    add_cmd("mode vpn", "切换为 VPN 模式");
+    add_cmd("mode direct", "切换为直连模式");
+
     add_cmd("whoami", "显示当前用户信息");
     add_cmd("logout", "登出");
 
@@ -691,6 +698,9 @@ void print_usage() {
     UBAANextCli::Console::println("  login --mock --username <id> --password <pw>");
     UBAANextCli::Console::println("                                   模拟登录");
 #endif
+    UBAANextCli::Console::println("  mode                            显示当前连接模式");
+    UBAANextCli::Console::println("  mode direct                     切换为直连模式");
+    UBAANextCli::Console::println("  mode vpn                        切换为 VPN 模式");
     UBAANextCli::Console::println("  whoami                           显示当前用户");
     UBAANextCli::Console::println("  logout --confirm                 登出并清除本地会话");
 #if UBAANEXT_ENABLE_MOCKS
@@ -722,6 +732,44 @@ void print_usage() {
     UBAANextCli::Console::println("  term list                        显示学期列表");
     UBAANextCli::Console::println("  week list                        显示教学周列表");
 #endif
+    UBAANextCli::Console::println("\n博雅课程 (bykc):");
+    UBAANextCli::Console::println("  bykc profile                    显示博雅课程档案");
+    UBAANextCli::Console::println("  bykc courses [--page <n>] [--size <n>] [--keyword <kw>]");
+    UBAANextCli::Console::println("                                  显示可选博雅课程");
+    UBAANextCli::Console::println("  bykc chosen                     显示已选博雅课程");
+    UBAANextCli::Console::println("  bykc stats                      显示博雅统计");
+    UBAANextCli::Console::println("  bykc course show --course-id <id>");
+    UBAANextCli::Console::println("                                  显示博雅课程详情");
+    UBAANextCli::Console::println("  bykc select --course-id <id> --confirm");
+    UBAANextCli::Console::println("                                  选择博雅课程");
+    UBAANextCli::Console::println("  bykc unselect --course-id <id> --confirm");
+    UBAANextCli::Console::println("                                  退选博雅课程");
+    UBAANextCli::Console::println("  bykc sign --course-id <id> --sign-type <type> --confirm");
+    UBAANextCli::Console::println("                                  博雅签到/签退");
+    UBAANextCli::Console::println("\n场馆预约 (cgyy):");
+    UBAANextCli::Console::println("  cgyy sites                      显示场馆列表");
+    UBAANextCli::Console::println("  cgyy purpose-types              显示场馆预约用途类型");
+    UBAANextCli::Console::println("  cgyy day-info --site-id <id> --date <yyyy-MM-dd>");
+    UBAANextCli::Console::println("                                  显示场馆日期可预约信息");
+    UBAANextCli::Console::println("  cgyy orders                     显示场馆预约订单");
+    UBAANextCli::Console::println("  cgyy order show --order-id <id> 显示场馆预约订单详情");
+    UBAANextCli::Console::println("  cgyy order lock-code            显示场馆预约锁码");
+    UBAANextCli::Console::println("  cgyy reserve --site-id <id> --space-id <id> --date <yyyy-MM-dd> --confirm");
+    UBAANextCli::Console::println("                                  预约场馆");
+    UBAANextCli::Console::println("  cgyy order cancel --order-id <id> --confirm");
+    UBAANextCli::Console::println("                                  取消场馆预约");
+    UBAANextCli::Console::println("\n图书馆预约 (libbook):");
+    UBAANextCli::Console::println("  libbook libraries               显示图书馆列表");
+    UBAANextCli::Console::println("  libbook areas --library-id <id> 显示图书馆区域列表");
+    UBAANextCli::Console::println("  libbook seats --area-id <id>    显示图书馆座位列表");
+    UBAANextCli::Console::println("  libbook reservations            显示图书馆座位预约记录");
+    UBAANextCli::Console::println("  libbook area show --area-id <id>");
+    UBAANextCli::Console::println("                                  显示图书馆区域详情");
+    UBAANextCli::Console::println("  libbook book --seat-id <id> --date <yyyy-MM-dd> --confirm");
+    UBAANextCli::Console::println("                                  预约图书馆座位");
+    UBAANextCli::Console::println("  libbook cancel --booking-id <id> --confirm");
+    UBAANextCli::Console::println("                                  取消图书馆座位预约");
+    UBAANextCli::Console::println("\n其他:");
     UBAANextCli::Console::println("  config show                      显示当前配置");
     UBAANextCli::Console::println("  config set --key <key> --value <value>");
     UBAANextCli::Console::println("                                   设置配置项");
@@ -731,7 +779,7 @@ void print_usage() {
 #if UBAANEXT_ENABLE_MOCKS
     UBAANextCli::Console::println("  --mock                           使用模拟数据");
 #endif
-    UBAANextCli::Console::println("  --mode vpn|direct                连接模式（默认 vpn）");
+    UBAANextCli::Console::println("  --mode vpn|direct                临时覆盖连接模式（未指定时使用配置，默认 vpn）");
     UBAANextCli::Console::println("\n配置键:");
     UBAANextCli::Console::println("  mode      连接模式 (vpn|direct)");
     UBAANextCli::Console::println("  proxy     代理地址 (url 或空)");
@@ -742,8 +790,90 @@ void print_usage() {
 
 void save_real_cookies(ServiceFactory &factory);
 
+bool command_requires_session(const CliArgs &args) {
+    if (args.mock || args.command.empty()) {
+        return false;
+    }
+    if (args.command == "course") {
+        if (args.subcommand == "week" && args.term.empty()) {
+            return false;
+        }
+        return true;
+    }
+    if (args.command == "exam") {
+        return !args.term.empty();
+    }
+    if (args.command == "week") {
+        return !args.term.empty();
+    }
+    if (args.command == "grade") {
+        return args.subcommand == "list" && !args.term.empty();
+    }
+    if (args.command == "classroom") {
+        return args.subcommand == "query" && args.campus > 0 && !args.date.empty();
+    }
+    if (args.command == "term") {
+        return args.subcommand == "list";
+    }
+    if (args.command == "user" || args.command == "todo") {
+        return true;
+    }
+    if (args.command == "libbook") {
+        return args.subcommand == "libraries" || args.subcommand == "reservations";
+    }
+    if (args.command == "bykc") {
+        return args.subcommand == "profile" || args.subcommand == "courses" ||
+               args.subcommand == "chosen" || args.subcommand == "stats";
+    }
+    if (args.command == "cgyy") {
+        return args.subcommand == "sites" || args.subcommand == "purpose-types" ||
+               args.subcommand == "orders" || (args.subcommand == "order" && args.action == "lock-code");
+    }
+    if (args.command == "signin") {
+        return args.subcommand == "today";
+    }
+    if (args.command == "ygdk") {
+        return args.subcommand == "overview" || args.subcommand == "records";
+    }
+    if (args.command == "evaluation") {
+        return args.subcommand == "list";
+    }
+    if (args.command == "judge") {
+        return args.subcommand == "assignments";
+    }
+    if (args.command == "spoc") {
+        return args.subcommand == "assignments";
+    }
+    return false;
+}
+
+ExitCode restore_session_for_command(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!command_requires_session(args) || !args.mode.empty()) {
+        return ExitCode::Ok;
+    }
+
+    auto auth = factory.create_auth_service();
+    auto restored = um::Auth::restore_session_context(auth);
+    if (!restored) {
+        out.print_error({um::ErrorCode::SessionExpired, "未登录。请先使用 'ubaa login' 登录。"});
+        return ExitCode::AuthRequired;
+    }
+
+    factory.context().conn_mode = restored->connection_mode;
+    return ExitCode::Ok;
+}
+
+bool real_session_persistence_available(const AppContext &ctx) {
+    return ctx.mock_mode || ctx.capabilities.secure_store;
+}
+
+um::Error unsupported_session_persistence_error() {
+    return {um::ErrorCode::UnsupportedSecureStore,
+            "当前平台没有可用安全存储，已拒绝保存真实登录会话；请启用平台安全存储后重试"};
+}
+
 void clear_real_cookies(ServiceFactory &factory) {
-    UBAANextCli::clear_platform_cookies(const_cast<AppContext &>(factory.context()));
+    UBAANextCli::clear_platform_cookies(factory.context());
     std::error_code ec;
     std::filesystem::remove(get_cookie_file_path(), ec);
 }
@@ -789,13 +919,12 @@ ExitCode cmd_login(const CliArgs &args, ServiceFactory &factory, OutputFormatter
     (void)mock;
 #endif
 
-    // 真实 CAS 登录
-    um::ConnectionMode mode = um::ConnectionMode::WebVPN;  // 默认 VPN
-    if (args.mode == "direct") {
-        mode = um::ConnectionMode::Direct;
+    if (!real_session_persistence_available(factory.context())) {
+        out.print_error(unsupported_session_persistence_error());
+        return ExitCode::Storage;
     }
 
-    auto result = auth.login_real(args.username, args.password, mode);
+    auto result = auth.login_real(args.username, args.password, factory.context().conn_mode);
     if (!result) {
         out.print_error(result.error());
         if (result.error().code == um::ErrorCode::AuthFailed) {
@@ -861,7 +990,7 @@ ExitCode map_error_to_exit_code(const um::Error &error) {
 }
 
 void save_real_cookies(ServiceFactory &factory) {
-    UBAANextCli::save_platform_cookies(const_cast<AppContext &>(factory.context()));
+    UBAANextCli::save_platform_cookies(factory.context());
 }
 
 ExitCode cmd_course_today(const CliArgs & /*args*/, ServiceFactory &factory, OutputFormatter &out) {
@@ -1033,6 +1162,41 @@ ExitCode cmd_config_show(OutputFormatter &out, const CliConfig &config) {
     return ExitCode::Ok;
 }
 
+ExitCode save_config_and_report(OutputFormatter &out, const CliConfig &config,
+                                const std::string &key, const std::string &value) {
+    auto config_path = get_config_file_path();
+    std::filesystem::create_directories(config_path.parent_path());
+    config.save(config_path.string());
+
+    out.print_message(UBAANextCli::Console::format("配置已更新: {} = {}", key, key == "proxy" ? UBAANextCli::redact_proxy_url(value) : value));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_mode(const CliArgs &args, OutputFormatter &out, CliConfig &config) {
+    if (args.subcommand.empty()) {
+        if (out.is_json()) {
+            nlohmann::json out_json = {
+                {"ok", true},
+                {"data", {{"mode", config.mode}, {"configPath", get_config_file_path().string()}}},
+                {"error", nullptr},
+            };
+            UBAANextCli::Console::println("{}", out_json.dump(2));
+        } else {
+            UBAANextCli::Console::println("当前连接模式: {}", config.mode);
+            UBAANextCli::Console::println("可用命令: ubaa mode direct | ubaa mode vpn");
+        }
+        return ExitCode::Ok;
+    }
+
+    if (!is_valid_mode(args.subcommand)) {
+        out.print_error({um::ErrorCode::InvalidArgument, "mode 只支持 direct 或 vpn"});
+        return ExitCode::InvalidArgument;
+    }
+
+    config.mode = args.subcommand;
+    return save_config_and_report(out, config, "mode", config.mode);
+}
+
 ExitCode cmd_config_set(const CliArgs &args, OutputFormatter &out, CliConfig &config) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "config set 会修改本地配置，必须显式传入 --confirm 或 --yes"});
@@ -1072,13 +1236,7 @@ ExitCode cmd_config_set(const CliArgs &args, OutputFormatter &out, CliConfig &co
         return ExitCode::InvalidArgument;
     }
 
-    // 保存配置
-    auto config_path = get_config_file_path();
-    std::filesystem::create_directories(config_path.parent_path());
-    config.save(config_path.string());
-
-    out.print_message(UBAANextCli::Console::format("配置已更新: {} = {}", key, key == "proxy" ? UBAANextCli::redact_proxy_url(value) : value));
-    return ExitCode::Ok;
+    return save_config_and_report(out, config, key, value);
 }
 
 ExitCode cmd_cache_clear(const CliArgs &args, ServiceFactory & /*factory*/, OutputFormatter &out) {
@@ -1100,7 +1258,7 @@ ExitCode cmd_grade_list(const CliArgs &args, ServiceFactory &factory, OutputForm
     }
 
     auto service = factory.create_grade_service();
-    auto result = args.all ? service.list_all_grades() : service.list_grades(args.term.empty() ? "2025-2026-2" : args.term);
+    auto result = args.all ? service.list_all_grades() : service.list_grades(args.term);
     if (!result) {
         out.print_error(result.error());
         return map_error_to_exit_code(result.error());
@@ -1870,6 +2028,10 @@ int main(int argc, char *argv[]) {
     auto ctx = build_context(args.mock, config.mode, config);
     ServiceFactory factory(ctx);
 
+    if (args.command == "mode") {
+        return static_cast<int>(cmd_mode(args, out, config));
+    }
+
     if (args.command == "login") {
         return static_cast<int>(cmd_login(args, factory, out, args.mock));
     }
@@ -1878,6 +2040,11 @@ int main(int argc, char *argv[]) {
     }
     if (args.command == "logout") {
         return static_cast<int>(cmd_logout(args, factory, out));
+    }
+
+    auto session_ready = restore_session_for_command(args, factory, out);
+    if (session_ready != ExitCode::Ok) {
+        return static_cast<int>(session_ready);
     }
 
     if (args.command == "course") {

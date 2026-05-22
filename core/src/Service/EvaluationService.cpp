@@ -2,12 +2,14 @@
 
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/EvaluationParser.hpp>
+#include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
+#include <UBAANext/Protocol/RedirectNavigator.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 #include <UBAANext/Service/ResponseUtils.hpp>
 
 #include <cctype>
 #include <iomanip>
 #include <map>
-#include <regex>
 #include <set>
 #include <sstream>
 #include <utility>
@@ -41,38 +43,13 @@ void apply_headers(HttpRequest &request) {
 }
 
 std::string header_value(const HttpResponse &response, const std::string &name) {
-    for (const auto &[key, value] : response.headers) {
-        if (key.size() != name.size()) continue;
-        bool same = true;
-        for (size_t i = 0; i < key.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
-                same = false;
-                break;
-            }
-        }
-        if (same) {
-            auto newline = value.find('\n');
-            return newline == std::string::npos ? value : value.substr(0, newline);
-        }
-    }
-    return {};
+    auto value = Protocol::header_value(response, name);
+    auto newline = value.find('\n');
+    return newline == std::string::npos ? value : value.substr(0, newline);
 }
 
 std::string resolve_redirect_url(const std::string &base_url, const std::string &location) {
-    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) return location;
-    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
-    std::smatch match;
-    if (!std::regex_search(base_url, match, url_re)) return location;
-    std::string authority = match[1].str();
-    std::string path = match.size() > 2 ? match[2].str() : "/";
-    if (location.rfind("//", 0) == 0) {
-        auto colon = authority.find(':');
-        return authority.substr(0, colon) + ":" + location;
-    }
-    if (!location.empty() && location.front() == '/') return authority + location;
-    auto slash = path.find_last_of('/');
-    std::string base_path = slash == std::string::npos ? "/" : path.substr(0, slash + 1);
-    return authority + base_path + location;
+    return Protocol::resolve_location(base_url, location);
 }
 
 std::string json_string(const nlohmann::json &json, const char *key) {
@@ -138,15 +115,34 @@ Result<HttpResponse> send_evaluation_request(IHttpClient &http_client,
         }
 
         auto response = http_client.send(request);
-        if (!response) return make_error(ErrorCode::NetworkError, std::string(failure_message) + ": " + response.error().message);
+        if (!response) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Spoc,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::Unavailable,
+                                                         std::string(failure_message) + ": " + response.error().message,
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
         if (response->status_code < 300 || response->status_code >= 400) return *response;
 
         auto location = header_value(*response, "Location");
-        if (location.empty()) return make_error(ErrorCode::NetworkError, "评教跳转缺少 Location");
+        if (location.empty()) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Spoc,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::ProtocolError,
+                                                         "评教跳转缺少 Location",
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
         current_url = resolve_redirect_url(current_url, location);
         method = HttpMethod::Get;
     }
-    return make_error(ErrorCode::NetworkError, "评教跳转次数过多");
+    auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Spoc,
+                                                 Protocol::DownstreamActivationStage::RedirectFollow,
+                                                 Protocol::DownstreamSessionState::Unavailable,
+                                                 "评教跳转次数过多",
+                                                 Protocol::redact_url_query(current_url));
+    return make_error(error.code, Protocol::to_error(error).message);
 }
 
 } // namespace

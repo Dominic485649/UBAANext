@@ -2,11 +2,13 @@
 
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/JudgeParser.hpp>
+#include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
+#include <UBAANext/Protocol/RedirectNavigator.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <algorithm>
 #include <cctype>
 #include <map>
-#include <regex>
 #include <sstream>
 #include <tuple>
 #include <utility>
@@ -20,56 +22,17 @@ std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
 }
 
 std::string header_value(const HttpResponse &response, const std::string &name) {
-    for (const auto &[key, value] : response.headers) {
-        if (key.size() != name.size()) {
-            continue;
-        }
-        bool same = true;
-        for (size_t i = 0; i < key.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
-                same = false;
-                break;
-            }
-        }
-        if (same) {
-            auto newline = value.find('\n');
-            return newline == std::string::npos ? value : value.substr(0, newline);
-        }
-    }
-    return {};
+    auto value = Protocol::header_value(response, name);
+    auto newline = value.find('\n');
+    return newline == std::string::npos ? value : value.substr(0, newline);
 }
 
 std::string resolve_redirect_url(const std::string &base_url, const std::string &location) {
-    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) {
-        return location;
-    }
-    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
-    std::smatch match;
-    if (!std::regex_search(base_url, match, url_re)) {
-        return location;
-    }
-    std::string authority = match[1].str();
-    std::string path = match.size() > 2 ? match[2].str() : "/";
-    if (location.rfind("//", 0) == 0) {
-        auto colon = authority.find(':');
-        return authority.substr(0, colon) + ":" + location;
-    }
-    if (!location.empty() && location.front() == '/') {
-        return authority + location;
-    }
-    auto slash = path.find_last_of('/');
-    std::string base_path = slash == std::string::npos ? "/" : path.substr(0, slash + 1);
-    return authority + base_path + location;
+    return Protocol::resolve_location(base_url, location);
 }
 
 bool is_sso_or_login_page(const HttpResponse &response) {
-    if (response.status_code == 401 || response.status_code == 403) {
-        return true;
-    }
-    const auto &body = response.body;
-    return body.find("name=\"execution\"") != std::string::npos ||
-           body.find("统一身份认证") != std::string::npos ||
-           body.find("sso.buaa.edu.cn") != std::string::npos;
+    return Protocol::is_session_expired_response(response, {}, false);
 }
 
 Model::FeatureRecord make_record(std::string id,
@@ -137,30 +100,55 @@ Result<HttpResponse> send_judge_request(IHttpClient &http_client, ConnectionMode
         apply_judge_headers(request);
 
         auto response = http_client.send(request);
-        if (!response) return make_error(ErrorCode::NetworkError, std::string(failure_message) + ": " + response.error().message);
+        if (!response) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Judge,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::Unavailable,
+                                                         std::string(failure_message) + ": " + response.error().message,
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
         if (response->status_code < 300 || response->status_code >= 400) return *response;
 
         auto location = header_value(*response, "Location");
-        if (location.empty()) return make_error(ErrorCode::NetworkError, "希冀跳转缺少 Location");
+        if (location.empty()) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Judge,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::ProtocolError,
+                                                         "希冀跳转缺少 Location",
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
         current_url = resolve_redirect_url(current_url, location);
     }
-    return make_error(ErrorCode::NetworkError, "希冀跳转次数过多");
+    auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Judge,
+                                                 Protocol::DownstreamActivationStage::RedirectFollow,
+                                                 Protocol::DownstreamSessionState::Unavailable,
+                                                 "希冀跳转次数过多",
+                                                 Protocol::redact_url_query(current_url));
+    return make_error(error.code, Protocol::to_error(error).message);
 }
 
 } // namespace
 
-Result<void> JudgeService::ensure_session() {
+Result<void> JudgeService::ensure_session(bool force_refresh) {
     (void)m_cache;
+    if (!force_refresh && m_session_activated) {
+        return {};
+    }
 
     auto response = send_judge_request(m_http_client, m_mode, "https://sso.buaa.edu.cn/login?service=http%3A%2F%2Fjudge.buaa.edu.cn%2F", "激活希冀会话失败");
     if (!response) return make_error(response.error().code, response.error().message);
 
     if (is_sso_or_login_page(*response)) {
+        m_session_activated = false;
         return make_error(ErrorCode::SessionExpired, "希冀会话已过期，请重新登录");
     }
     if (response->status_code != 200) {
+        m_session_activated = false;
         return make_error(ErrorCode::NetworkError, "希冀会话激活返回: " + std::to_string(response->status_code));
     }
+    m_session_activated = true;
     return {};
 }
 
@@ -173,7 +161,15 @@ Result<std::string> JudgeService::get_html(const std::string &url) {
     auto response = send_judge_request(m_http_client, m_mode, url, "请求希冀失败");
     if (!response) return make_error(response.error().code, response.error().message);
     if (is_sso_or_login_page(*response)) {
-        return make_error(ErrorCode::SessionExpired, "希冀会话已过期，请重新登录");
+        m_session_activated = false;
+        auto refreshed = ensure_session(true);
+        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+        response = send_judge_request(m_http_client, m_mode, url, "请求希冀失败");
+        if (!response) return make_error(response.error().code, response.error().message);
+        if (is_sso_or_login_page(*response)) {
+            m_session_activated = false;
+            return make_error(ErrorCode::SessionExpired, "希冀会话已过期，请重新登录");
+        }
     }
     if (response->status_code != 200) {
         return make_error(ErrorCode::NetworkError, "希冀请求返回: " + std::to_string(response->status_code));

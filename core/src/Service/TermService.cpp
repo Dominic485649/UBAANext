@@ -6,6 +6,7 @@
 #include <UBAANext/Service/TermService.hpp>
 #include <UBAANext/Parser/JsonParser.hpp>
 #include <UBAANext/Protocol/ByxtSession.hpp>
+#include <UBAANext/Protocol/AuthorizedDownstreamRequestExecutor.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -55,6 +56,29 @@ static constexpr const char *kCacheKeyTerms = "cache:term:list";
 static constexpr int kCacheTtlSeconds = 300;
 static constexpr const char *kTermsUrl = "https://byxt.buaa.edu.cn/jwapp/sys/homeapp/api/home/student/schoolCalendars.do";
 static constexpr const char *kWeeksUrl = "https://byxt.buaa.edu.cn/jwapp/sys/homeapp/api/home/getTermWeeks.do";
+
+Result<std::string> fetch_byxt_json(IHttpClient &http_client,
+                                    ConnectionMode mode,
+                                    HttpRequest request,
+                                    const std::string &failure_prefix) {
+    Protocol::AuthorizedRequestHooks hooks;
+    hooks.system = Protocol::DownstreamSystemId::Byxt;
+    hooks.expired_message = "BYXT 会话已过期";
+    hooks.ensure_authorized = [&](bool) { return Protocol::Byxt::ensure_session(http_client, mode); };
+    hooks.is_expired_response = [](const HttpResponse &response) {
+        return Protocol::Byxt::is_session_expired_response(response);
+    };
+
+    auto response_result = Protocol::send_authorized_request(http_client, std::move(request), std::move(hooks));
+    if (!response_result) {
+        return make_error(response_result.error().code, response_result.error().message);
+    }
+    const auto &response = *response_result;
+    if (response.status_code != 200) {
+        return make_error(ErrorCode::NetworkError, failure_prefix + "返回: " + std::to_string(response.status_code));
+    }
+    return response.body;
+}
 
 Result<std::vector<Model::Term>> parse_real_terms(const std::string &body) {
     try {
@@ -134,18 +158,11 @@ Result<std::vector<Model::Term>> TermService::get_terms() {
         req.url = Protocol::Byxt::resolve_url(kTermsUrl, m_mode);
         Protocol::Byxt::apply_ajax_headers(req, m_mode);
 
-        auto response_result = m_http_client.send(req);
-        if (!response_result) {
-            return make_error(ErrorCode::NetworkError, "请求学期列表失败: " + response_result.error().message);
+        auto body = fetch_byxt_json(m_http_client, m_mode, std::move(req), "学期请求");
+        if (!body) {
+            return make_error(body.error().code, "请求学期列表失败: " + body.error().message);
         }
-        const auto &response = *response_result;
-        if (Protocol::Byxt::is_session_expired_response(response)) {
-            return make_error(ErrorCode::SessionExpired, "BYXT 会话已过期");
-        }
-        if (response.status_code != 200) {
-            return make_error(ErrorCode::NetworkError, "学期请求返回: " + std::to_string(response.status_code));
-        }
-        return parse_real_terms(response.body);
+        return parse_real_terms(*body);
     }
 
 #if UBAANEXT_ENABLE_MOCKS
@@ -199,18 +216,11 @@ Result<std::vector<Model::Week>> TermService::get_weeks(const std::string &term_
         req.url = Protocol::Byxt::resolve_url(std::string(kWeeksUrl) + "?termCode=" + term_code, m_mode);
         Protocol::Byxt::apply_ajax_headers(req, m_mode);
 
-        auto response_result = m_http_client.send(req);
-        if (!response_result) {
-            return make_error(ErrorCode::NetworkError, "请求周次列表失败: " + response_result.error().message);
+        auto body = fetch_byxt_json(m_http_client, m_mode, std::move(req), "周次请求");
+        if (!body) {
+            return make_error(body.error().code, "请求周次列表失败: " + body.error().message);
         }
-        const auto &response = *response_result;
-        if (Protocol::Byxt::is_session_expired_response(response)) {
-            return make_error(ErrorCode::SessionExpired, "BYXT 会话已过期");
-        }
-        if (response.status_code != 200) {
-            return make_error(ErrorCode::NetworkError, "周次请求返回: " + std::to_string(response.status_code));
-        }
-        return parse_real_weeks(response.body);
+        return parse_real_weeks(*body);
     }
 
 #if UBAANEXT_ENABLE_MOCKS

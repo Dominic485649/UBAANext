@@ -57,11 +57,16 @@
 // ── 认证 ───────────────────────────────────────────────────────────
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Auth/Session.hpp>
+#include <UBAANext/Auth/SessionContext.hpp>
 #include <UBAANext/Auth/SessionManager.hpp>
 
 // ── 协议 ───────────────────────────────────────────────────────────
 #include <UBAANext/Protocol/AppBuaaSession.hpp>
+#include <UBAANext/Protocol/AuthorizedDownstreamRequestExecutor.hpp>
 #include <UBAANext/Protocol/ByxtSession.hpp>
+#include <UBAANext/Protocol/CasFormParser.hpp>
+#include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
+#include <UBAANext/Protocol/RedirectNavigator.hpp>
 #include <UBAANext/Protocol/ScoreSession.hpp>
 
 // ── 解析 ──────────────────────────────────────────────────────────

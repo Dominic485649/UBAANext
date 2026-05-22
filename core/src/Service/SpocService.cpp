@@ -2,6 +2,9 @@
 
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/SpocParser.hpp>
+#include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
+#include <UBAANext/Protocol/RedirectNavigator.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <algorithm>
 #include <array>
@@ -9,7 +12,6 @@
 #include <cstdint>
 #include <iomanip>
 #include <map>
-#include <regex>
 #include <sstream>
 #include <tuple>
 #include <utility>
@@ -25,47 +27,26 @@ std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
     return mode == ConnectionMode::WebVPN ? VpnCipher::to_vpn_url(url) : url;
 }
 
+std::string resolve_spoc_url(const std::string &url, ConnectionMode mode) {
+    return mode == ConnectionMode::WebVPN ? VpnCipher::to_vpn_url(url) : url;
+}
+
 std::string header_value(const HttpResponse &response, const std::string &name) {
-    for (const auto &[key, value] : response.headers) {
-        if (key.size() != name.size()) continue;
-        bool same = true;
-        for (size_t i = 0; i < key.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
-                same = false;
-                break;
-            }
-        }
-        if (same) {
-            auto newline = value.find('\n');
-            return newline == std::string::npos ? value : value.substr(0, newline);
-        }
-    }
-    return {};
+    auto value = Protocol::header_value(response, name);
+    auto newline = value.find('\n');
+    return newline == std::string::npos ? value : value.substr(0, newline);
 }
 
 std::string resolve_redirect_url(const std::string &base, const std::string &location) {
-    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) return location;
-    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
-    std::smatch match;
-    if (!std::regex_search(base, match, url_re)) return location;
-    std::string authority = match[1].str();
-    std::string path = match.size() > 2 ? match[2].str() : "/";
-    if (location.rfind("//", 0) == 0) {
-        auto colon = authority.find(':');
-        return authority.substr(0, colon) + ":" + location;
-    }
-    if (!location.empty() && location.front() == '/') return authority + location;
-    auto slash = path.find_last_of('/');
-    std::string base_path = slash == std::string::npos ? "/" : path.substr(0, slash + 1);
-    return authority + base_path + location;
+    return Protocol::resolve_location(base, location);
+}
+
+std::string extract_spoc_token(const std::string &url) {
+    return Protocol::extract_query_parameter_anywhere(url, "token");
 }
 
 bool response_is_login(const HttpResponse &response) {
-    if (response.status_code == 401 || response.status_code == 403) return true;
-    const auto &body = response.body;
-    return body.find("name=\"execution\"") != std::string::npos ||
-           body.find("统一身份认证") != std::string::npos ||
-           body.find("sso.buaa.edu.cn") != std::string::npos;
+    return Protocol::is_session_expired_response(response, {}, false);
 }
 
 void apply_spoc_headers(HttpRequest &request) {
@@ -257,30 +238,56 @@ Result<std::string> SpocService::fetch_login_token() {
     for (int i = 0; i < 8; ++i) {
         HttpRequest request;
         request.method = HttpMethod::Get;
-        request.url = resolve_for_mode(current_url, m_mode);
+        request.url = resolve_spoc_url(current_url, m_mode);
         apply_spoc_headers(request);
+        Protocol::disable_transport_redirects(request);
         auto response = m_http_client.send(request);
-        if (!response) return make_error(ErrorCode::NetworkError, "获取 SPOC 登录 token 失败: " + response.error().message);
+        if (!response) {
+            if (m_mode == ConnectionMode::Direct && current_url == "https://spoc.buaa.edu.cn/spocnewht/cas" &&
+                (response.error().code == ErrorCode::TlsError || response.error().message.find("TLS") != std::string::npos ||
+                 response.error().message.find("handshake") != std::string::npos)) {
+                current_url = "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fspoc.buaa.edu.cn%2Fspocnewht%2FcasLogin";
+                continue;
+            }
+            return make_error(ErrorCode::NetworkError, "获取 SPOC 登录 token 失败: " + response.error().message);
+        }
 
-        std::regex token_re(R"(/spocnew/cas[^?]*\?[^#]*token=([^&#]+))");
-        std::smatch match;
-        if (std::regex_search(current_url, match, token_re) && match.size() > 1) return match[1].str();
+        auto current_token = extract_spoc_token(current_url);
+        if (!current_token.empty()) return current_token;
 
         auto location = header_value(*response, "Location");
-        if (std::regex_search(location, match, token_re) && match.size() > 1) return match[1].str();
+        auto location_token = extract_spoc_token(location);
+        if (!location_token.empty()) return location_token;
         if (location.empty()) {
-            if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "SPOC 会话已过期，请重新登录");
-            return make_error(ErrorCode::NetworkError, "SPOC 登录跳转缺少 Location");
+            if (response_is_login(*response)) {
+                auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Spoc,
+                                                             Protocol::DownstreamActivationStage::RedirectFollow,
+                                                             Protocol::DownstreamSessionState::SsoRequired,
+                                                             "SPOC 会话已过期，请重新登录",
+                                                             Protocol::redact_url_query(current_url));
+                return make_error(error.code, Protocol::to_error(error).message);
+            }
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Spoc,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::ProtocolError,
+                                                         "SPOC 登录跳转缺少 Location",
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
         }
         current_url = resolve_redirect_url(current_url, location);
     }
-    return make_error(ErrorCode::NetworkError, "未能在 SPOC 登录跳转链中获取 token");
+    auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Spoc,
+                                                 Protocol::DownstreamActivationStage::ArtifactExtract,
+                                                 Protocol::DownstreamSessionState::TokenMissing,
+                                                 "未能在 SPOC 登录跳转链中获取 token",
+                                                 Protocol::redact_url_query(current_url));
+    return make_error(error.code, Protocol::to_error(error).message);
 }
 
 Result<void> SpocService::perform_cas_login(const std::string &token) {
     HttpRequest request;
     request.method = HttpMethod::Post;
-    request.url = resolve_for_mode("https://spoc.buaa.edu.cn/spocnewht/sys/casLogin", m_mode);
+    request.url = resolve_spoc_url("https://spoc.buaa.edu.cn/spocnewht/sys/casLogin", m_mode);
     apply_spoc_headers(request);
     request.headers["Content-Type"] = "application/json";
     request.headers["Token"] = "Inco-" + token;
@@ -331,7 +338,7 @@ Result<nlohmann::json> SpocService::unwrap_envelope(const nlohmann::json &envelo
     return make_error(ErrorCode::NetworkError, message);
 }
 
-Result<nlohmann::json> SpocService::get_envelope(const std::string &url) {
+Result<nlohmann::json> SpocService::get_envelope_once(const std::string &url) {
     HttpRequest request;
     request.method = HttpMethod::Get;
     request.url = resolve_for_mode(url, m_mode);
@@ -347,7 +354,7 @@ Result<nlohmann::json> SpocService::get_envelope(const std::string &url) {
     return unwrap_envelope(json, response->body);
 }
 
-Result<nlohmann::json> SpocService::post_envelope(const std::string &url, const nlohmann::json &body) {
+Result<nlohmann::json> SpocService::post_envelope_once(const std::string &url, const nlohmann::json &body) {
     HttpRequest request;
     request.method = HttpMethod::Post;
     request.url = resolve_for_mode(url, m_mode);
@@ -363,6 +370,30 @@ Result<nlohmann::json> SpocService::post_envelope(const std::string &url, const 
     auto json = nlohmann::json::parse(response->body, nullptr, false);
     if (json.is_discarded()) return make_error(ErrorCode::ParseError, "解析 SPOC JSON 失败");
     return unwrap_envelope(json, response->body);
+}
+
+Result<nlohmann::json> SpocService::get_envelope(const std::string &url) {
+    auto result = get_envelope_once(url);
+    if (!result && result.error().code == ErrorCode::SessionExpired) {
+        m_token.clear();
+        m_role_code.clear();
+        auto refreshed = ensure_login(true);
+        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+        return get_envelope_once(url);
+    }
+    return result;
+}
+
+Result<nlohmann::json> SpocService::post_envelope(const std::string &url, const nlohmann::json &body) {
+    auto result = post_envelope_once(url, body);
+    if (!result && result.error().code == ErrorCode::SessionExpired) {
+        m_token.clear();
+        m_role_code.clear();
+        auto refreshed = ensure_login(true);
+        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+        return post_envelope_once(url, body);
+    }
+    return result;
 }
 
 Result<std::vector<Model::SpocAssignmentSummary>> SpocService::list_assignment_summaries_once() {
@@ -405,11 +436,6 @@ Result<std::vector<Model::SpocAssignmentSummary>> SpocService::list_assignment_s
     auto login = ensure_login();
     if (!login) return make_error(login.error().code, login.error().message);
     auto result = list_assignment_summaries_once();
-    if (!result && result.error().code == ErrorCode::SessionExpired) {
-        auto refreshed = ensure_login(true);
-        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
-        result = list_assignment_summaries_once();
-    }
     if (!result) return result;
 
     std::vector<Model::SpocAssignmentSummary> records;
@@ -450,11 +476,6 @@ Result<Model::SpocAssignmentDetail> SpocService::assignment_detail(const std::st
     auto login = ensure_login();
     if (!login) return make_error(login.error().code, login.error().message);
     auto result = assignment_detail_once(assignment_id);
-    if (!result && result.error().code == ErrorCode::SessionExpired) {
-        auto refreshed = ensure_login(true);
-        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
-        return assignment_detail_once(assignment_id);
-    }
     return result;
 }
 

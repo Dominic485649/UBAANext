@@ -68,7 +68,19 @@ Result<void> CurlCookieStore::save(const CookieJar &cookies) {
     }
 
     *m_live_cookies = cookies;
+    return save_current();
+}
+
+Result<void> CurlCookieStore::save_current() {
+    if (!m_secure_store) {
+        return make_error(ErrorCode::UnsupportedCookiePersistence, "当前平台尚未接入安全 Cookie 持久化");
+    }
+
     m_secure_store->set_string(m_key, serialize_cookie_blob(*m_live_cookies));
+    auto flushed = m_secure_store->flush();
+    if (!flushed) {
+        return make_error(flushed.error().code, flushed.error().message);
+    }
     return {};
 }
 
@@ -79,7 +91,15 @@ Result<void> CurlCookieStore::clear() {
     }
 
     m_secure_store->remove(m_key);
+    auto flushed = m_secure_store->flush();
+    if (!flushed) {
+        return make_error(flushed.error().code, flushed.error().message);
+    }
     return {};
+}
+
+const UBAANext::CookieJar *CurlCookieStore::current() const {
+    return m_live_cookies;
 }
 
 UBAANext::CookieJar &CurlCookieStore::live_cookies() {

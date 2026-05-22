@@ -83,22 +83,32 @@ std::string signin_today_url() {
     return "https://iclass.buaa.edu.cn:8347/app/course/get_stu_course_sched.action?id=user-1&dateStr=" + today_yyyymmdd();
 }
 
+std::string direct_spoc_url(const std::string &url) {
+    const auto prefix = std::string("https://d.buaa.edu.cn/https/");
+    auto pos = url.find("/spocnew", prefix.size());
+    if (pos == std::string::npos) {
+        pos = url.find("/pjxt", prefix.size());
+    }
+    return pos == std::string::npos ? url : "https://spoc.buaa.edu.cn" + url.substr(pos);
+}
+
 class TodoFixtureHttpClient : public UBAANext::IHttpClient {
 public:
     UBAANext::Result<UBAANext::HttpResponse> send(const UBAANext::HttpRequest &request) override {
-        ++request_counts[request.url];
+        const auto url = direct_spoc_url(request.url);
+        ++request_counts[url];
         UBAANext::HttpResponse response;
         response.status_code = 200;
-        if (request.url == "https://spoc.buaa.edu.cn/spocnewht/cas") {
+        if (url == "https://spoc.buaa.edu.cn/spocnewht/cas") {
             response.status_code = 302;
             response.headers["Location"] = "https://spoc.buaa.edu.cn/spocnew/cas?token=test-token";
-        } else if (request.url == "https://spoc.buaa.edu.cn/spocnewht/sys/casLogin") {
+        } else if (url == "https://spoc.buaa.edu.cn/spocnewht/sys/casLogin") {
             response.body = kSpocLoginResponse;
-        } else if (request.url == "https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryOne") {
+        } else if (url == "https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryOne") {
             response.body = kSpocTermResponse;
-        } else if (request.url == "https://spoc.buaa.edu.cn/spocnewht/jxkj/queryKclb?kcmc=&xnxq=2025-2026-2") {
+        } else if (url == "https://spoc.buaa.edu.cn/spocnewht/jxkj/queryKclb?kcmc=&xnxq=2025-2026-2") {
             response.body = kSpocCoursesResponse;
-        } else if (request.url == "https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryListByPage") {
+        } else if (url == "https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryListByPage") {
             response.body = kSpocAssignmentsResponse;
         } else if (request.url == "https://sso.buaa.edu.cn/login?service=http%3A%2F%2Fjudge.buaa.edu.cn%2F") {
             response.body = "<html>judge</html>";
@@ -120,19 +130,19 @@ public:
             response.body = R"JSON({"STATUS":"0","result":{"id":"user-1","sessionId":"session-1"}})JSON";
         } else if (request.url == signin_today_url()) {
             response.body = R"JSON({"STATUS":0,"result":[{"id":"signin-1","courseName":"今日签到","signStatus":"0"},{"id":"signin-2","courseName":"已签到课程","signStatus":"1"}]})JSON";
-        } else if (request.url == "https://spoc.buaa.edu.cn/pjxt/cas") {
+        } else if (url == "https://spoc.buaa.edu.cn/pjxt/cas") {
             response.body = R"JSON({"code":1,"data":{}})JSON";
-        } else if (request.url == kEvaluationTermUrl) {
+        } else if (url == kEvaluationTermUrl) {
             response.body = R"JSON({"code":1,"data":[{"xn":"2025","xq":"2026"}]})JSON";
-        } else if (request.url == kEvaluationTasksUrl) {
+        } else if (url == kEvaluationTasksUrl) {
             response.body = R"JSON({"code":1,"data":{"list":[{"rwid":"task-1"}]}})JSON";
-        } else if (request.url == kEvaluationQuestionnairesUrl) {
+        } else if (url == kEvaluationQuestionnairesUrl) {
             response.body = R"JSON({"code":1,"data":[{"wjid":"questionnaire-1","msid":"1"}]})JSON";
-        } else if (request.url == kEvaluationReviseUrl) {
+        } else if (url == kEvaluationReviseUrl) {
             response.body = R"JSON({"code":1,"data":{}})JSON";
-        } else if (request.url == kEvaluationPendingCoursesUrl) {
+        } else if (url == kEvaluationPendingCoursesUrl) {
             response.body = R"JSON({"code":1,"data":[{"kcdm":"CS101","kcmc":"程序设计","bpdm":"teacher-1","bpmc":"陈老师","ypjcs":0,"xypjcs":1}]})JSON";
-        } else if (request.url == kEvaluationEvaluatedCoursesUrl) {
+        } else if (url == kEvaluationEvaluatedCoursesUrl) {
             response.body = R"JSON({"code":1,"data":[{"kcdm":"CS102","kcmc":"已评课程","bpdm":"teacher-2","bpmc":"王老师","ypjcs":1,"xypjcs":1}]})JSON";
         } else {
             response.status_code = 404;

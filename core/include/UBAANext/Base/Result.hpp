@@ -17,6 +17,17 @@ struct Unexpected {
     Error error;
 };
 
+class ResultError : public std::runtime_error {
+public:
+    explicit ResultError(Error error)
+        : std::runtime_error(error.message), m_error(std::move(error)) {}
+
+    [[nodiscard]] const Error &error() const noexcept { return m_error; }
+
+private:
+    Error m_error;
+};
+
 [[nodiscard]] inline Unexpected make_error(ErrorCode code, std::string message) {
     return Unexpected{Error(code, std::move(message))};
 }
@@ -39,8 +50,14 @@ public:
     [[nodiscard]] T *operator->() { return &std::get<T>(m_storage); }
     [[nodiscard]] const T *operator->() const { return &std::get<T>(m_storage); }
 
-    [[nodiscard]] T &value() { return std::get<T>(m_storage); }
-    [[nodiscard]] const T &value() const { return std::get<T>(m_storage); }
+    [[nodiscard]] T &value() {
+        if (!has_value()) throw ResultError(std::get<Error>(m_storage));
+        return std::get<T>(m_storage);
+    }
+    [[nodiscard]] const T &value() const {
+        if (!has_value()) throw ResultError(std::get<Error>(m_storage));
+        return std::get<T>(m_storage);
+    }
 
     [[nodiscard]] Error &error() { return std::get<Error>(m_storage); }
     [[nodiscard]] const Error &error() const { return std::get<Error>(m_storage); }
@@ -60,7 +77,7 @@ public:
 
     void value() const {
         if (!m_has_value) {
-            throw std::logic_error("Result<void> has no value");
+            throw ResultError(m_error);
         }
     }
 

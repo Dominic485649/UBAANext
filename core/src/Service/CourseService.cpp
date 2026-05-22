@@ -6,6 +6,7 @@
 #include <UBAANext/Service/CourseService.hpp>
 #include <UBAANext/Parser/JsonParser.hpp>
 #include <UBAANext/Protocol/ByxtSession.hpp>
+#include <UBAANext/Protocol/AuthorizedDownstreamRequestExecutor.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -61,6 +62,29 @@ static constexpr int kCacheTtlSeconds = 300;
 
 static const char *BYXT_WEEKLY_SCHEDULE = "https://byxt.buaa.edu.cn/jwapp/sys/homeapp/api/home/student/getMyScheduleDetail.do";
 static const char *BYXT_TODAY_SCHEDULE = "https://byxt.buaa.edu.cn/jwapp/sys/homeapp/api/home/teachingSchedule/detail.do";
+
+Result<std::string> fetch_byxt_json(IHttpClient &http_client,
+                                    ConnectionMode mode,
+                                    HttpRequest request,
+                                    const std::string &failure_prefix) {
+    Protocol::AuthorizedRequestHooks hooks;
+    hooks.system = Protocol::DownstreamSystemId::Byxt;
+    hooks.expired_message = "BYXT 会话已过期";
+    hooks.ensure_authorized = [&](bool) { return Protocol::Byxt::ensure_session(http_client, mode); };
+    hooks.is_expired_response = [](const HttpResponse &response) {
+        return Protocol::Byxt::is_session_expired_response(response);
+    };
+
+    auto response_result = Protocol::send_authorized_request(http_client, std::move(request), std::move(hooks));
+    if (!response_result) {
+        return make_error(response_result.error().code, response_result.error().message);
+    }
+    const auto &response = *response_result;
+    if (response.status_code != 200) {
+        return make_error(ErrorCode::NetworkError, failure_prefix + "返回: " + std::to_string(response.status_code));
+    }
+    return response.body;
+}
 
 void apply_schedule_headers(HttpRequest &req, ConnectionMode mode) {
     req.headers["Accept"] = "application/json, text/javascript, */*; q=0.01";
@@ -118,17 +142,13 @@ Result<std::vector<Model::Course>> CourseService::get_date_courses(const std::st
         req.url = resolve_url(std::string(BYXT_TODAY_SCHEDULE) + "?rq=" + date + "&lxdm=student");
         apply_schedule_headers(req, m_mode);
 
-        auto response_result = m_http_client.send(req);
-        if (!response_result) {
-            return UBAANext::make_error(ErrorCode::NetworkError, "请求日期课表失败: " + response_result.error().message);
-        }
-        const auto &response = *response_result;
-        if (response.status_code != 200) {
-            return UBAANext::make_error(ErrorCode::NetworkError, "日期课表请求返回: " + std::to_string(response.status_code));
+        auto body = fetch_byxt_json(m_http_client, m_mode, std::move(req), "日期课表请求");
+        if (!body) {
+            return UBAANext::make_error(body.error().code, "请求日期课表失败: " + body.error().message);
         }
 
         try {
-            auto json = nlohmann::json::parse(response.body);
+            auto json = nlohmann::json::parse(*body);
             if (!api_success(json)) {
                 return UBAANext::make_error(ErrorCode::AuthFailed, "日期课表 API 返回错误: " + api_message(json));
             }
@@ -263,18 +283,13 @@ Result<std::vector<Model::Course>> CourseService::fetch_week_courses_real(int we
 
     req.body = "termCode=" + term_code + "&type=week&week=" + std::to_string(week);
 
-    auto response_result = m_http_client.send(req);
-    if (!response_result) {
-        return UBAANext::make_error(ErrorCode::NetworkError, "请求课表失败: " + response_result.error().message);
-    }
-    const auto &response = *response_result;
-    if (response.status_code != 200) {
-        return UBAANext::make_error(ErrorCode::NetworkError,
-                          "课表请求返回: " + std::to_string(response.status_code));
+    auto body = fetch_byxt_json(m_http_client, m_mode, std::move(req), "课表请求");
+    if (!body) {
+        return UBAANext::make_error(body.error().code, "请求课表失败: " + body.error().message);
     }
 
     try {
-        auto json = nlohmann::json::parse(response.body);
+        auto json = nlohmann::json::parse(*body);
         if (!api_success(json)) {
             return UBAANext::make_error(ErrorCode::AuthFailed, "周课表 API 返回错误: " + api_message(json));
         }

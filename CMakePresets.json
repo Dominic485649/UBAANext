@@ -9,42 +9,28 @@
         {
             "name": "windows-ninja-msvc-debug",
             "displayName": "Windows Ninja MSVC Debug",
-            "description": "Windows 上使用 Ninja + MSVC 的 Debug 构建",
+            "description": "Windows 上使用 Ninja + MSVC 的 Debug 构建；编译器由开发者命令提示符或 PATH 提供",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/windows-ninja-msvc-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "UBAANEXT_CXX_STANDARD": "17",
-                "CMAKE_C_COMPILER": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe",
-                "CMAKE_CXX_COMPILER": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe",
-                "CMAKE_RC_COMPILER": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe",
-                "CMAKE_MT": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/mt.exe"
-            },
-            "environment": {
-                "PATH": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64;$penv{PATH}",
-                "INCLUDE": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/include;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/winrt;$penv{INCLUDE}",
-                "LIB": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/lib/x64;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/ucrt/x64;$penv{LIB}"
+                "UBAANEXT_CXX_STANDARD": "17"
             },
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
         {
             "name": "windows-ninja-msvc-release",
             "displayName": "Windows Ninja MSVC Release",
-            "description": "Windows 上使用 Ninja + MSVC 的 Release 构建",
+            "description": "Windows 上使用 Ninja + MSVC 的 Release 构建；编译器由开发者命令提示符或 PATH 提供",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/windows-ninja-msvc-release",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "UBAANEXT_CXX_STANDARD": "17",
-                "CMAKE_C_COMPILER": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe",
-                "CMAKE_CXX_COMPILER": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe",
-                "CMAKE_RC_COMPILER": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe",
-                "CMAKE_MT": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/mt.exe"
-            },
-            "environment": {
-                "PATH": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64;$penv{PATH}",
-                "INCLUDE": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/include;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/winrt;$penv{INCLUDE}",
-                "LIB": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/lib/x64;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/ucrt/x64;$penv{LIB}"
+                "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded",
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+                "UBAANEXT_BUILD_TESTS": "OFF",
+                "UBAANEXT_CXX_STANDARD": "17"
             },
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
@@ -60,14 +46,7 @@
             "binaryDir": "${sourceDir}/build/windows-msvc-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "UBAANEXT_CXX_STANDARD": "17",
-                "CMAKE_RC_COMPILER": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe",
-                "CMAKE_MT": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/mt.exe"
-            },
-            "environment": {
-                "PATH": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64;$penv{PATH}",
-                "INCLUDE": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/include;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/winrt;$penv{INCLUDE}",
-                "LIB": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/lib/x64;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/ucrt/x64;$penv{LIB}"
+                "UBAANEXT_CXX_STANDARD": "17"
             },
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
@@ -83,51 +62,48 @@
             "binaryDir": "${sourceDir}/build/windows-msvc-release",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "UBAANEXT_CXX_STANDARD": "17",
-                "CMAKE_RC_COMPILER": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/rc.exe",
-                "CMAKE_MT": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/mt.exe"
-            },
-            "environment": {
-                "PATH": "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64;$penv{PATH}",
-                "INCLUDE": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/include;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared;C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/winrt;$penv{INCLUDE}",
-                "LIB": "D:/Microsoft Visual Studio/2026/VC/Tools/MSVC/14.51.36231/lib/x64;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/um/x64;C:/Program Files (x86)/Windows Kits/10/Lib/10.0.26100.0/ucrt/x64;$penv{LIB}"
+                "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded",
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+                "UBAANEXT_BUILD_TESTS": "OFF",
+                "UBAANEXT_CXX_STANDARD": "17"
             },
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
         {
             "name": "openharmony-clang-debug",
             "displayName": "OpenHarmony clang++ Debug",
-            "description": "使用 DevEco Studio OpenHarmony Native clang++ 的 Debug 构建",
+            "description": "使用 DevEco Studio OpenHarmony Native SDK 的 Debug 构建；OHOS_NATIVE_HOME 指向 native SDK 根目录",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/openharmony-clang-debug",
-            "toolchainFile": "D:/DevTools/DevEco Studio/sdk/default/openharmony/native/build/cmake/ohos.toolchain.cmake",
+            "toolchainFile": "$env{OHOS_NATIVE_HOME}/build/cmake/ohos.toolchain.cmake",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "UBAANEXT_CXX_STANDARD": "17",
                 "UBAANEXT_BUILD_TESTS": "OFF",
                 "UBAANEXT_FETCH_DEPS": "OFF",
-                "UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR": "${sourceDir}/build/windows-ninja-msvc-debug/vcpkg_installed/x64-windows/include",
+                "UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR": "$env{UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR}",
                 "OHOS_STL": "c++_shared",
                 "OHOS_ARCH": "arm64-v8a",
-                "CMAKE_CXX_COMPILER": "D:/DevTools/DevEco Studio/sdk/default/openharmony/native/llvm/bin/clang++.exe"
+                "CMAKE_CXX_COMPILER": "$env{OHOS_NATIVE_HOME}/llvm/bin/clang++.exe"
             }
         },
         {
             "name": "openharmony-clang-cpp20-debug",
             "displayName": "OpenHarmony clang++ C++20 Debug",
-            "description": "使用 DevEco Studio OpenHarmony Native clang++ 的 C++20 Debug 构建",
+            "description": "使用 DevEco Studio OpenHarmony Native SDK 的 C++20 Debug 构建；OHOS_NATIVE_HOME 指向 native SDK 根目录",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/openharmony-clang-cpp20-debug",
-            "toolchainFile": "D:/DevTools/DevEco Studio/sdk/default/openharmony/native/build/cmake/ohos.toolchain.cmake",
+            "toolchainFile": "$env{OHOS_NATIVE_HOME}/build/cmake/ohos.toolchain.cmake",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "UBAANEXT_CXX_STANDARD": "20",
                 "UBAANEXT_BUILD_TESTS": "OFF",
                 "UBAANEXT_FETCH_DEPS": "OFF",
-                "UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR": "${sourceDir}/build/windows-ninja-msvc-debug/vcpkg_installed/x64-windows/include",
+                "UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR": "$env{UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR}",
                 "OHOS_STL": "c++_shared",
                 "OHOS_ARCH": "arm64-v8a",
-                "CMAKE_CXX_COMPILER": "D:/DevTools/DevEco Studio/sdk/default/openharmony/native/llvm/bin/clang++.exe"
+                "CMAKE_CXX_COMPILER": "$env{OHOS_NATIVE_HOME}/llvm/bin/clang++.exe"
             }
         }
     ],

@@ -53,6 +53,8 @@ public:
 
     void remove(const std::string &key) override;
 
+    UBAANext::Result<void> flush() override;
+
     void clear() override;
 
 private:

@@ -3,6 +3,10 @@
 #include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/YgdkParser.hpp>
+#include <UBAANext/Protocol/AppBuaaSession.hpp>
+#include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
+#include <UBAANext/Protocol/RedirectNavigator.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -13,7 +17,6 @@
 #include <limits>
 #include <map>
 #include <random>
-#include <regex>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -66,43 +69,27 @@ std::string form_encode(const std::map<std::string, std::string> &form) {
 }
 
 std::string header_value(const HttpResponse &response, const std::string &name) {
-    for (const auto &[key, value] : response.headers) {
-        if (key.size() != name.size()) continue;
-        bool same = true;
-        for (size_t i = 0; i < key.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
-                same = false;
-                break;
-            }
-        }
-        if (same) {
-            auto newline = value.find('\n');
-            return newline == std::string::npos ? value : value.substr(0, newline);
-        }
+    auto value = Protocol::header_value(response, name);
+    auto newline = value.find('\n');
+    return newline == std::string::npos ? value : value.substr(0, newline);
+}
+
+std::string resolve_redirect_url(const std::string &base, const std::string &location) {
+    return Protocol::resolve_location(base, location);
+}
+
+std::string extract_oauth_code(const std::string &url) {
+    auto code = Protocol::extract_query_parameter_anywhere(url, "code");
+    if (!code.empty()) return code;
+    auto fragment = url.find('#');
+    if (fragment != std::string::npos) {
+        return Protocol::extract_query_parameter_anywhere("https://fragment.local/" + url.substr(fragment + 1), "code");
     }
     return {};
 }
 
-std::string resolve_redirect_url(const std::string &base, const std::string &location) {
-    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) return location;
-    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
-    std::smatch match;
-    if (!std::regex_search(base, match, url_re)) return location;
-    std::string authority = match[1].str();
-    std::string path = match.size() > 2 ? match[2].str() : "/";
-    if (location.rfind("//", 0) == 0) {
-        auto colon = authority.find(':');
-        return authority.substr(0, colon) + ":" + location;
-    }
-    if (!location.empty() && location.front() == '/') return authority + location;
-    auto slash = path.find_last_of('/');
-    return authority + (slash == std::string::npos ? "/" : path.substr(0, slash + 1)) + location;
-}
-
-bool response_is_login(const HttpResponse &response) {
-    return response.status_code == 401 || response.status_code == 403 ||
-           response.body.find("name=\"execution\"") != std::string::npos ||
-           response.body.find("统一身份认证") != std::string::npos;
+bool response_is_login(const HttpResponse &response, const std::string &final_url = {}) {
+    return Protocol::is_session_expired_response(response, final_url, false);
 }
 
 std::string json_string(const nlohmann::json &json, const char *key) {
@@ -351,29 +338,55 @@ YgdkService::YgdkService(IHttpClient &http_client, ICacheStore &cache, Connectio
 
 Result<std::string> YgdkService::fetch_oauth_code() {
     std::string current_url = "https://app.buaa.edu.cn/uc/api/oauth/index?redirect=https%3A%2F%2Fygdk.buaa.edu.cn%2F%23%2Fhome&appid=200230221144501510&state=STATE&qrcode=1";
-    std::regex code_re(R"([?&]code=([^&#]+))");
     for (int i = 0; i < 10; ++i) {
-        std::smatch match;
-        if (std::regex_search(current_url, match, code_re) && match.size() > 1) return url_decode(match[1].str());
+        auto current_code = extract_oauth_code(current_url);
+        if (!current_code.empty()) return url_decode(current_code);
         HttpRequest request;
         request.method = HttpMethod::Get;
         request.url = resolve_for_mode(current_url, m_mode);
         request.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
         request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
+        Protocol::disable_transport_redirects(request);
         auto response = m_http_client.send(request);
         if (!response) return make_error(ErrorCode::NetworkError, "获取阳光打卡 OAuth code 失败: " + response.error().message);
-        if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
+
+        auto request_code = extract_oauth_code(request.url);
+        if (!request_code.empty()) return url_decode(request_code);
         auto location = header_value(*response, "Location");
-        if (std::regex_search(location, match, code_re) && match.size() > 1) return url_decode(match[1].str());
-        if (location.empty()) return make_error(ErrorCode::NetworkError, "阳光打卡 OAuth 跳转缺少 Location");
-        current_url = resolve_redirect_url(current_url, location);
+        auto location_code = extract_oauth_code(location);
+        if (!location_code.empty()) return url_decode(location_code);
+        auto resolved_location = location.empty() ? std::string{} : resolve_redirect_url(request.url, location);
+        auto resolved_code = extract_oauth_code(resolved_location);
+        if (!resolved_code.empty()) return url_decode(resolved_code);
+        if (response_is_login(*response, current_url)) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
+        if (location.empty()) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Ygdk,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::ProtocolError,
+                                                         "阳光打卡 OAuth 跳转缺少 Location",
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
+        current_url = std::move(resolved_location);
     }
-    return make_error(ErrorCode::NetworkError, "无法获取阳光打卡登录 code");
+    auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Ygdk,
+                                                 Protocol::DownstreamActivationStage::ArtifactExtract,
+                                                 Protocol::DownstreamSessionState::TokenMissing,
+                                                 "无法获取阳光打卡登录 code",
+                                                 Protocol::redact_url_query(current_url));
+    return make_error(error.code, Protocol::to_error(error).message);
 }
 
 Result<void> YgdkService::ensure_session(bool force_refresh) {
     (void)m_cache;
     if (!force_refresh && !m_uid.empty() && !m_token.empty()) return {};
+    if (m_mode == ConnectionMode::WebVPN) {
+        auto app_session = Protocol::AppBuaa::ensure_session(m_http_client,
+                                                             m_mode,
+                                                             "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fapp.buaa.edu.cn%2Fa_buaa%2Fapi%2Fcas%2Findex%3Fredirect%3Dhttps%253A%252F%252Fapp.buaa.edu.cn%252Fuc%252Fapi%252Foauth%252Findex%26from%3Dwap%26login_from%3D&noAutoRedirect=1",
+                                                             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4");
+        if (!app_session) return make_error(app_session.error().code, app_session.error().message);
+    }
     auto code = fetch_oauth_code();
     if (!code) return make_error(code.error().code, code.error().message);
 
@@ -384,7 +397,7 @@ Result<void> YgdkService::ensure_session(bool force_refresh) {
     request.headers["X-Requested-With"] = "XMLHttpRequest";
     auto response = m_http_client.send(request);
     if (!response) return make_error(ErrorCode::NetworkError, "阳光打卡登录失败: " + response.error().message);
-    if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
+    if (response_is_login(*response, "https://ygdk.buaa.edu.cn/api/Front/Clockin/User/campusAppLogin")) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
     auto data = unwrap_response(response->body);
     if (data.contains("__session_expired")) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
     if (data.contains("__error")) return make_error(ErrorCode::NetworkError, data["__error"].get<std::string>());
@@ -395,7 +408,7 @@ Result<void> YgdkService::ensure_session(bool force_refresh) {
     return {};
 }
 
-Result<nlohmann::json> YgdkService::post_form(const std::string &url, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &form) {
+Result<nlohmann::json> YgdkService::post_form(const std::string &url, const std::map<std::string, std::string> &query, const std::map<std::string, std::string> &form, bool allow_retry) {
     auto login = ensure_session();
     if (!login) return make_error(login.error().code, login.error().message);
     auto all_form = form;
@@ -412,9 +425,12 @@ Result<nlohmann::json> YgdkService::post_form(const std::string &url, const std:
     if (!response) return make_error(ErrorCode::NetworkError, "请求阳光打卡失败: " + response.error().message);
     auto data = unwrap_response(response->body);
     if (data.contains("__session_expired")) {
+        m_uid.clear();
+        m_token.clear();
+        if (!allow_retry) return nlohmann::json::object();
         auto refreshed = ensure_session(true);
-        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
-        return post_form(url, query, form);
+        if (!refreshed) return nlohmann::json::object();
+        return post_form(url, query, form, false);
     }
     if (data.contains("__error")) return make_error(ErrorCode::NetworkError, data["__error"].get<std::string>());
     return data;

@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 function Redact-Text([string]$Text) {
     if ($null -eq $Text) { return '' }
     $redacted = $Text
-    foreach ($value in @($env:UBAANEXT_PASSWORD, $env:UBAANEXT_TOKEN, $env:UBAANEXT_COOKIE, $env:UBAANEXT_TICKET, $env:UBAANEXT_SESSION)) {
+    foreach ($value in @($env:UBAANEXT_USERNAME, $env:UBAANEXT_PASSWORD, $env:UBAANEXT_TOKEN, $env:UBAANEXT_COOKIE, $env:UBAANEXT_TICKET, $env:UBAANEXT_SESSION)) {
         if (![string]::IsNullOrWhiteSpace($value)) {
             $redacted = $redacted.Replace($value, '[REDACTED]')
         }
@@ -19,13 +19,27 @@ function Redact-Text([string]$Text) {
     return $redacted
 }
 
-function Invoke-Ubaa([string[]]$Args) {
-    Write-Host "ubaa $($Args -join ' ')"
-    $output = & $CliPath @Args 2>&1 | Out-String
+function Get-SafeCommandLabel([string[]]$CommandArgs) {
+    $parts = @()
+    foreach ($arg in $CommandArgs) {
+        if ($arg.StartsWith('--')) { break }
+        $parts += $arg
+    }
+    if ($parts.Count -eq 0) { return 'command' }
+    return ($parts -join ' ')
+}
+
+function Invoke-Ubaa([string[]]$CommandArgs) {
+    $safeCommand = "ubaa $(Get-SafeCommandLabel $CommandArgs)"
+    Write-Host $safeCommand
+    $output = & $CliPath @CommandArgs 2>&1 | Out-String
     $exit = $LASTEXITCODE
     $safe = Redact-Text $output
-    if (-not [string]::IsNullOrWhiteSpace($safe)) { Write-Host $safe.TrimEnd() }
-    if ($exit -ne 0) { throw "命令失败，退出码 $exit" }
+    if ($exit -ne 0) {
+        if (-not [string]::IsNullOrWhiteSpace($safe)) { Write-Host $safe.TrimEnd() }
+        throw "命令失败，退出码 ${exit}: $safeCommand"
+    }
+    Write-Host 'OK'
 }
 
 if ($env:UBAANEXT_LIVE -ne '1') {
@@ -66,7 +80,12 @@ Invoke-Ubaa @('signin', 'today', '--mode', $Mode, '--json')
 Invoke-Ubaa @('ygdk', 'overview', '--mode', $Mode, '--json')
 Invoke-Ubaa @('bykc', 'profile', '--mode', $Mode, '--json')
 Invoke-Ubaa @('bykc', 'courses', '--mode', $Mode, '--json')
-Invoke-Ubaa @('cgyy', 'sites', '--mode', 'direct', '--json')
+if ($Mode -eq 'direct') {
+    Invoke-Ubaa @('cgyy', 'sites', '--mode', 'direct', '--json')
+} else {
+    Write-Host 'ubaa cgyy sites'
+    Write-Host 'SKIP：CGYY 当前仅支持 direct 模式。'
+}
 Invoke-Ubaa @('libbook', 'libraries', '--mode', $Mode, '--json')
 
 if ($Level -eq 'L1') {

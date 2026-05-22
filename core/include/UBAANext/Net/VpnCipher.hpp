@@ -5,7 +5,7 @@
  * 将内网 URL 转换为 WebVPN 网关 URL。
  * 加密算法: AES/CFB/NoPadding，key 和 IV 均为 "wrdvpnisthebest!"
  *
- * 参考: reference/UBAA/shared/.../LocalWebVpnSupport.kt
+ * WebVPN 主机名转换沿用 BUAA WebVPN 的 AES/CFB/NoPadding 约定。
  */
 #pragma once
 

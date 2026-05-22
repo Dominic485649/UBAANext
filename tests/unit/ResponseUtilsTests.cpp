@@ -11,6 +11,11 @@ TEST_CASE("ServiceResponse 识别会话过期响应", "[service][response]") {
     html_response.status_code = 200;
     html_response.body = R"(<html><form><input name="execution"></form>统一身份认证</html>)";
     REQUIRE(UBAANext::ServiceResponse::is_session_expired_response(html_response));
+
+    UBAANext::HttpResponse redirect_response;
+    redirect_response.status_code = 302;
+    redirect_response.headers["Location"] = "https://sso.buaa.edu.cn/login?service=https://example.test";
+    REQUIRE(UBAANext::ServiceResponse::is_session_expired_response(redirect_response));
 }
 
 TEST_CASE("ServiceResponse 解析 envelope data 变体", "[service][response]") {
@@ -42,4 +47,25 @@ TEST_CASE("ServiceResponse 非法 JSON 返回 ParseError", "[service][response]"
     auto parsed = UBAANext::ServiceResponse::parse_json_response(response, "测试");
     REQUIRE_FALSE(parsed);
     REQUIRE(parsed.error().code == UBAANext::ErrorCode::ParseError);
+}
+
+TEST_CASE("ServiceResponse 登录页 HTML 在 JSON 解析前返回 SessionExpired", "[service][response]") {
+    UBAANext::HttpResponse response;
+    response.status_code = 200;
+    response.body = R"(<!doctype html><html><body><form><input name="execution" value="e1"></form>统一身份认证</body></html>)";
+
+    auto parsed = UBAANext::ServiceResponse::parse_json_response(response, "测试");
+    REQUIRE_FALSE(parsed);
+    REQUIRE(parsed.error().code == UBAANext::ErrorCode::SessionExpired);
+}
+
+TEST_CASE("ServiceResponse SSO Location 在 JSON 解析前返回 SessionExpired", "[service][response]") {
+    UBAANext::HttpResponse response;
+    response.status_code = 302;
+    response.headers["location"] = "https://SSO.BUAA.EDU.CN/login?service=https://example.test";
+    response.body = "";
+
+    auto parsed = UBAANext::ServiceResponse::parse_json_response(response, "测试");
+    REQUIRE_FALSE(parsed);
+    REQUIRE(parsed.error().code == UBAANext::ErrorCode::SessionExpired);
 }

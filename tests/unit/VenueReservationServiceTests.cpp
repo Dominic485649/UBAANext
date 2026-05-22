@@ -1,4 +1,5 @@
 #include <UBAANext/Service/VenueReservationService.hpp>
+#include <UBAANext/Net/CookieStore.hpp>
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -24,6 +25,23 @@ public:
 UBAANext::VenueReservationService make_service(VenueReservationFixtureHttpClient &http_client, UBAANext::MemoryCacheStore &cache) {
     return UBAANext::VenueReservationService(http_client, cache, UBAANext::ConnectionMode::Direct);
 }
+
+class TestCookieStore : public UBAANext::ICookieStore {
+public:
+    UBAANext::Result<UBAANext::CookieJar> load() override { return cookies; }
+    UBAANext::Result<void> save(const UBAANext::CookieJar &next) override {
+        cookies = next;
+        return {};
+    }
+    UBAANext::Result<void> save_current() override { return {}; }
+    UBAANext::Result<void> clear() override {
+        cookies.clear();
+        return {};
+    }
+    const UBAANext::CookieJar *current() const override { return &cookies; }
+
+    UBAANext::CookieJar cookies;
+};
 
 class VenueReservationLoginFixtureHttpClient : public UBAANext::IHttpClient {
 public:
@@ -73,6 +91,34 @@ public:
     std::string submit_body;
 };
 
+class VenueReservationCookieJarFixtureHttpClient : public UBAANext::IHttpClient {
+public:
+    UBAANext::Result<UBAANext::HttpResponse> send(const UBAANext::HttpRequest &request) override {
+        ++request_counts[request.url];
+        UBAANext::HttpResponse response;
+        response.status_code = 200;
+        if (request.url == "https://cgyy.buaa.edu.cn/venue-zhjs-server/sso/manageLogin") {
+            response.body = R"JSON({"code":200,"data":{}})JSON";
+        } else if (request.url == "https://cgyy.buaa.edu.cn/venue-zhjs-server/api/login") {
+            auto token = request.headers.find("Sso-Token");
+            REQUIRE(token != request.headers.end());
+            CHECK(token->second == "jar-sso-token");
+            response.body = R"JSON({"code":200,"data":{"token":{"access_token":"jar-access-token"}}})JSON";
+        } else if (request.url.find("https://cgyy.buaa.edu.cn/venue-zhjs-server/api/orders/mine?") == 0) {
+            auto auth = request.headers.find("cgAuthorization");
+            REQUIRE(auth != request.headers.end());
+            CHECK(auth->second == "jar-access-token");
+            response.body = R"JSON({"code":200,"data":{"content":[]}})JSON";
+        } else {
+            response.status_code = 500;
+            response.body = R"JSON({"code":500,"message":"unexpected request"})JSON";
+        }
+        return response;
+    }
+
+    std::map<std::string, int> request_counts;
+};
+
 } // namespace
 
 TEST_CASE("VenueReservationService 跟随 SSO 重定向获取 token", "[service][cgyy]") {
@@ -86,6 +132,20 @@ TEST_CASE("VenueReservationService 跟随 SSO 重定向获取 token", "[service]
     REQUIRE(result->size() == 1);
     CHECK((*result)[0].id == "order-1");
     CHECK(http_client.request_counts["https://cgyy.buaa.edu.cn/venue-zhjs-server/sso/landing"] == 1);
+}
+
+TEST_CASE("VenueReservationService 从 CookieJar 回退读取研讨室 SSO token", "[service][cgyy]") {
+    VenueReservationCookieJarFixtureHttpClient http_client;
+    TestCookieStore cookie_store;
+    cookie_store.cookies.set_cookie("cgyy.buaa.edu.cn", "sso_buaa_zhjs_token", "jar-sso-token");
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::VenueReservationService service(http_client, &cookie_store, cache, UBAANext::ConnectionMode::Direct, UBAANext::default_crypto_provider());
+
+    auto result = service.orders();
+
+    REQUIRE(result);
+    CHECK(result->empty());
+    CHECK(http_client.request_counts["https://cgyy.buaa.edu.cn/venue-zhjs-server/api/login"] == 1);
 }
 
 TEST_CASE("VenueReservationService 预约拒绝非数字场地 ID", "[service][cgyy]") {

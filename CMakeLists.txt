@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
 
+if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 include(cmake/UBAANextOptions.cmake)
 
 project(UBAANext
@@ -26,6 +30,7 @@ configure_file(
 )
 
 include(cmake/UBAANextWarnings.cmake)
+
 include(cmake/Dependencies.cmake)
 
 if(UBAANEXT_BUILD_TESTS)

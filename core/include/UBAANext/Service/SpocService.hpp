@@ -43,6 +43,8 @@ private:
     Result<Model::SpocAssignmentDetail> assignment_detail_once(const std::string &assignment_id);
     Result<std::string> fetch_login_token();
     Result<void> perform_cas_login(const std::string &token);
+    Result<nlohmann::json> get_envelope_once(const std::string &url);
+    Result<nlohmann::json> post_envelope_once(const std::string &url, const nlohmann::json &body);
     Result<nlohmann::json> get_envelope(const std::string &url);
     Result<nlohmann::json> post_envelope(const std::string &url, const nlohmann::json &body);
     Result<nlohmann::json> unwrap_envelope(const nlohmann::json &envelope, const std::string &body);

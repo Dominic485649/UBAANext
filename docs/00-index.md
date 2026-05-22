@@ -109,7 +109,7 @@
 
 ## 决策记录
 
-- [0001: 使用 C++17/C++20 作为基线](decisions/0001-use-cpp23-as-baseline.md)
+- [0001: 使用 C++17/C++20 作为基线](decisions/0001-use-cpp17-cpp20-as-baseline.md)
 - [0002: 使用 UBAANext 命名空间](decisions/0002-use-ubaanext-namespace.md)
 - [0003: 使用 C++ Core + Platform Shell](decisions/0003-use-cpp-core-plus-platform-shell.md)
 - [0004: 使用 ArkUI 用于 HarmonyOS](decisions/0004-use-arkui-for-harmonyos.md)

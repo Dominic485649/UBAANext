@@ -4,6 +4,7 @@
  */
 
 #include <UBAANext/Auth/AuthService.hpp>
+#include <UBAANext/Auth/SessionContext.hpp>
 
 #include <UBAANextMocks/MockHttpClient.hpp>
 #include <UBAANextMocks/MockSecureStore.hpp>
@@ -71,4 +72,21 @@ TEST_CASE("AuthService 恢复会话时同步连接模式", "[AuthService]") {
     auto restored = auth2.restore_session();
     REQUIRE(restored.has_value());
     REQUIRE(auth2.connection_mode() == um::ConnectionMode::Direct);
+}
+
+TEST_CASE("SessionContext 恢复账户和有效连接模式", "[AuthService]") {
+    UBAANextMocks::MockHttpClient http_client;
+    UBAANextMocks::MockSecureStore secure_store;
+
+    um::AuthService auth1(http_client, secure_store);
+    auth1.set_connection_mode(um::ConnectionMode::Direct);
+    auto login = auth1.login_mock("20260000", "test");
+    REQUIRE(login.has_value());
+
+    um::AuthService auth2(http_client, secure_store);
+    auth2.set_connection_mode(um::ConnectionMode::WebVPN);
+    auto context = um::Auth::restore_session_context(auth2);
+    REQUIRE(context.has_value());
+    CHECK(context->account.student_id == "20260000");
+    CHECK(context->connection_mode == um::ConnectionMode::Direct);
 }

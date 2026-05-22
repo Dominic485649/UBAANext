@@ -37,8 +37,9 @@ private:
     IHttpClient &m_http_client;
     ICacheStore &m_cache;
     ConnectionMode m_mode;
+    bool m_session_activated = false;
 
-    Result<void> ensure_session();
+    Result<void> ensure_session(bool force_refresh = false);
     Result<std::string> get_html(const std::string &url);
 };
 

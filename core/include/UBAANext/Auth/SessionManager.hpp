@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <UBAANext/Base/Result.hpp>
 #include <UBAANext/Model/Account.hpp>
 #include <UBAANext/Storage/SecureStore.hpp>
 
@@ -39,7 +40,7 @@ public:
      * @param username 用于登录的学号
      * @param account  要持久化的账户数据（复制到存储，移动到缓存）
      */
-    void save_session(const std::string &username, Model::Account account, const std::string &connection_mode = "");
+    Result<void> save_session(const std::string &username, Model::Account account, const std::string &connection_mode = "");
 
     /**
      * @brief 从存储中恢复之前保存的会话

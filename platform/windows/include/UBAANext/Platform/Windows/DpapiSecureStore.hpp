@@ -19,6 +19,7 @@ public:
     void set_string(const std::string &key, const std::string &value) override;
     [[nodiscard]] std::optional<std::string> get_string(const std::string &key) const override;
     void remove(const std::string &key) override;
+    Result<void> flush() override;
     void clear() override;
 
 private:

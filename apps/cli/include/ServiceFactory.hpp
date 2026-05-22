@@ -57,6 +57,7 @@ public:
 
     [[nodiscard]] UBAANext::IHttpClient &http_client();
     [[nodiscard]] UBAANext::ICryptoProvider &crypto_provider();
+    [[nodiscard]] AppContext &context() { return m_ctx; }
     [[nodiscard]] const AppContext &context() const { return m_ctx; }
 
 private:

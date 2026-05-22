@@ -2,6 +2,7 @@ add_library(UBAANextCore STATIC
     src/UBAANext.cpp
     src/Auth/Session.cpp
     src/Auth/AuthService.cpp
+    src/Auth/SessionContext.cpp
     src/Auth/SessionManager.cpp
     src/Service/CourseService.cpp
     src/Service/ExamService.cpp
@@ -21,6 +22,10 @@ add_library(UBAANextCore STATIC
     src/Service/ResponseUtils.cpp
     src/Protocol/ByxtSession.cpp
     src/Protocol/AppBuaaSession.cpp
+    src/Protocol/AuthorizedDownstreamRequestExecutor.cpp
+    src/Protocol/CasFormParser.cpp
+    src/Protocol/DownstreamSessionTypes.cpp
+    src/Protocol/RedirectNavigator.cpp
     src/Protocol/ScoreSession.cpp
     src/Protocol/SessionGuards.cpp
     src/Net/CookieJar.cpp
@@ -50,6 +55,7 @@ set_target_properties(UBAANextCore PROPERTIES
     CXX_STANDARD ${UBAANEXT_CXX_STANDARD}
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
 )
 
 target_link_libraries(UBAANextCore

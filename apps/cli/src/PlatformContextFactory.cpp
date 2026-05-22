@@ -6,9 +6,20 @@
 #include <UBAANext/Platform/Curl/CurlNetworkStack.hpp>
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
 
+#ifndef UBAANEXT_ENABLE_LINUX_LIBSECRET
+#define UBAANEXT_ENABLE_LINUX_LIBSECRET 0
+#endif
+
 #if defined(_WIN32)
 #include <UBAANext/Platform/Windows/DpapiSecureStore.hpp>
 #include <UBAANext/Platform/Windows/WindowsPlatformCapabilities.hpp>
+#elif defined(__linux__)
+#include <UBAANext/Platform/Linux/LinuxPlatformCapabilities.hpp>
+#if UBAANEXT_ENABLE_LINUX_LIBSECRET
+#include <UBAANext/Platform/Linux/SecretServiceSecureStore.hpp>
+#endif
+#elif defined(__OHOS__)
+#include <UBAANext/Platform/Harmony/HarmonyPlatformCapabilities.hpp>
 #endif
 
 #if UBAANEXT_ENABLE_MOCKS
@@ -16,6 +27,8 @@
 #include <UBAANextMocks/MockHttpClient.hpp>
 #endif
 
+#include <optional>
+#include <unordered_map>
 #include <utility>
 
 namespace UBAANextCli {
@@ -32,9 +45,37 @@ public:
         return {};
     }
 
+    UBAANext::Result<void> save_current() override {
+        return {};
+    }
+
     UBAANext::Result<void> clear() override {
         return {};
     }
+};
+
+class VolatileSecureStore final : public UBAANext::ISecureStore {
+public:
+    void set_string(const std::string &key, const std::string &value) override {
+        m_values[key] = value;
+    }
+
+    [[nodiscard]] std::optional<std::string> get_string(const std::string &key) const override {
+        const auto it = m_values.find(key);
+        if (it == m_values.end()) return std::nullopt;
+        return it->second;
+    }
+
+    void remove(const std::string &key) override {
+        m_values.erase(key);
+    }
+
+    void clear() override {
+        m_values.clear();
+    }
+
+private:
+    std::unordered_map<std::string, std::string> m_values;
 };
 
 class StaticRedirectController final : public UBAANext::IRedirectController {
@@ -73,16 +114,6 @@ private:
     StaticRedirectController m_redirect_controller;
 };
 
-#if !defined(_WIN32)
-class UnsupportedHttpClient final : public UBAANext::IHttpClient {
-public:
-    [[nodiscard]] UBAANext::Result<UBAANext::HttpResponse> send(const UBAANext::HttpRequest &request) override {
-        (void)request;
-        return UBAANext::make_error(UBAANext::ErrorCode::UnsupportedNetwork, "当前平台尚未接入真实网络能力");
-    }
-};
-#endif
-
 } // namespace
 
 AppContext create_current_platform_context(const PlatformContextOptions &options) {
@@ -101,6 +132,7 @@ AppContext create_current_platform_context(const PlatformContextOptions &options
     ctx.config = options.config;
     ctx.cookie_file_path = options.cookie_file_path;
     ctx.crypto = &UBAANext::default_crypto_provider();
+    ctx.cache = std::make_unique<UBAANext::MemoryCacheStore>();
 
 #if UBAANEXT_ENABLE_MOCKS
     if (options.mock) {
@@ -122,33 +154,43 @@ AppContext create_current_platform_context(const PlatformContextOptions &options
     auto loaded_cookies = ctx.network_stack->cookie_store().load();
     (void)loaded_cookies;
     ctx.capabilities = UBAANext::Platform::Windows::WindowsPlatformCapabilities{}.capabilities();
+#elif defined(__linux__)
+    ctx.capabilities = UBAANext::Platform::Linux::LinuxPlatformCapabilities{}.capabilities();
+#if UBAANEXT_ENABLE_LINUX_LIBSECRET
+    ctx.store = std::make_unique<UBAANext::Platform::Linux::SecretServiceSecureStore>();
+    ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>(*ctx.store);
+    auto loaded_cookies = ctx.network_stack->cookie_store().load();
+    (void)loaded_cookies;
 #else
-    ctx.http = std::make_unique<UnsupportedHttpClient>();
-    ctx.capabilities.real_network = false;
+    ctx.store = std::make_unique<VolatileSecureStore>();
+    ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>();
+#endif
+#elif defined(__OHOS__)
+    ctx.capabilities = UBAANext::Platform::Harmony::HarmonyPlatformCapabilities{}.capabilities();
+    ctx.store = std::make_unique<VolatileSecureStore>();
+    ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>();
+#else
+    ctx.store = std::make_unique<VolatileSecureStore>();
+    ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>();
+    ctx.capabilities.real_network = true;
     ctx.capabilities.secure_store = false;
     ctx.capabilities.secure_cookie_persistence = false;
     ctx.capabilities.cookie_persistence = false;
-    ctx.capabilities.redirect_control = false;
+    ctx.capabilities.redirect_control = true;
     ctx.capabilities.openssl_crypto = true;
     ctx.capabilities.app_data_path = true;
     ctx.capabilities.upload_bytes = true;
     ctx.capabilities.live_login = false;
     ctx.capabilities.write_operations = false;
-    ctx.network_stack = std::make_unique<HttpClientNetworkStack>(*ctx.http);
-    ctx.store = std::make_unique<PlainFileStore>(options.session_file_path);
 #endif
-    ctx.cache = std::make_unique<UBAANext::MemoryCacheStore>();
     return ctx;
 }
 
 void save_platform_cookies(AppContext &ctx) {
     if (ctx.network_stack) {
-        auto loaded = ctx.network_stack->cookie_store().load();
-        if (loaded) {
-            auto saved = ctx.network_stack->cookie_store().save(*loaded);
-            if (saved) {
-                return;
-            }
+        auto saved = ctx.network_stack->cookie_store().save_current();
+        if (saved) {
+            return;
         }
     }
     if (ctx.save_cookies) {

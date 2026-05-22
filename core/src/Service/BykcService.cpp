@@ -3,6 +3,10 @@
 #include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/BykcParser.hpp>
+#include <UBAANext/Protocol/AuthorizedDownstreamRequestExecutor.hpp>
+#include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
+#include <UBAANext/Protocol/RedirectNavigator.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <charconv>
 #include <chrono>
@@ -11,7 +15,6 @@
 #include <iomanip>
 #include <map>
 #include <random>
-#include <regex>
 #include <sstream>
 #include <tuple>
 #include <utility>
@@ -29,56 +32,17 @@ std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
 }
 
 std::string header_value(const HttpResponse &response, const std::string &name) {
-    for (const auto &[key, value] : response.headers) {
-        if (key.size() != name.size()) continue;
-        bool same = true;
-        for (size_t i = 0; i < key.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
-                same = false;
-                break;
-            }
-        }
-        if (same) {
-            auto newline = value.find('\n');
-            return newline == std::string::npos ? value : value.substr(0, newline);
-        }
-    }
-    return {};
+    auto value = Protocol::header_value(response, name);
+    auto newline = value.find('\n');
+    return newline == std::string::npos ? value : value.substr(0, newline);
 }
 
 std::string resolve_redirect_url(const std::string &base_url, const std::string &location) {
-    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) {
-        return location;
-    }
-    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
-    std::smatch match;
-    if (!std::regex_search(base_url, match, url_re)) {
-        return location;
-    }
-    std::string authority = match[1].str();
-    std::string path = match.size() > 2 ? match[2].str() : "/";
-    auto query = path.find_first_of("?#");
-    std::string path_without_query = query == std::string::npos ? path : path.substr(0, query);
-    if (location.rfind("//", 0) == 0) {
-        auto colon = authority.find(':');
-        return authority.substr(0, colon) + ":" + location;
-    }
-    if (!location.empty() && location.front() == '/') {
-        return authority + location;
-    }
-    if (!location.empty() && (location.front() == '?' || location.front() == '#')) {
-        return authority + path_without_query + location;
-    }
-    auto slash = path_without_query.find_last_of('/');
-    std::string base_path = slash == std::string::npos ? "/" : path_without_query.substr(0, slash + 1);
-    return authority + base_path + location;
+    return Protocol::resolve_location(base_url, location);
 }
 
 std::string extract_bykc_token(const std::string &url) {
-    std::regex token_re(R"([?&]token=([^&#]+))");
-    std::smatch match;
-    if (std::regex_search(url, match, token_re) && match.size() > 1) return match[1].str();
-    return {};
+    return Protocol::extract_query_parameter_anywhere(url, "token");
 }
 
 Result<long long> parse_positive_id(const std::string &value, const std::string &name) {
@@ -96,9 +60,7 @@ void apply_bykc_login_headers(HttpRequest &request) {
 }
 
 bool response_is_login(const HttpResponse &response) {
-    return response.status_code == 401 || response.status_code == 403 ||
-           response.body.find("name=\"execution\"") != std::string::npos ||
-           response.body.find("统一身份认证") != std::string::npos;
+    return Protocol::is_session_expired_response(response, {}, false);
 }
 
 Result<std::string> acquire_bykc_token(IHttpClient &http_client, ConnectionMode mode, const std::string &url, const char *failure_message) {
@@ -111,19 +73,48 @@ Result<std::string> acquire_bykc_token(IHttpClient &http_client, ConnectionMode 
         request.method = HttpMethod::Get;
         request.url = resolve_for_mode(current_url, mode);
         apply_bykc_login_headers(request);
+        Protocol::disable_transport_redirects(request);
 
         auto response = http_client.send(request);
-        if (!response) return make_error(ErrorCode::NetworkError, std::string(failure_message) + ": " + response.error().message);
-        if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "博雅会话已过期，请重新登录");
+        if (!response) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Bykc,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::Unavailable,
+                                                         std::string(failure_message) + ": " + response.error().message,
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
+        if ((response->status_code < 300 || response->status_code >= 400) && response_is_login(*response)) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Bykc,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::SsoRequired,
+                                                         "博雅会话已过期，请重新登录",
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
 
         auto location = header_value(*response, "Location");
         auto location_token = extract_bykc_token(location);
         if (!location_token.empty()) return location_token;
+        auto body_token = extract_bykc_token(response->body);
+        if (!body_token.empty()) return body_token;
         if (response->status_code < 300 || response->status_code >= 400) return std::string{};
-        if (location.empty()) return make_error(ErrorCode::NetworkError, "博雅跳转缺少 Location");
+        if (location.empty()) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Bykc,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::ProtocolError,
+                                                         "博雅跳转缺少 Location",
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
         current_url = resolve_redirect_url(current_url, location);
     }
-    return make_error(ErrorCode::NetworkError, "博雅跳转次数过多");
+    auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Bykc,
+                                                 Protocol::DownstreamActivationStage::RedirectFollow,
+                                                 Protocol::DownstreamSessionState::Unavailable,
+                                                 "博雅跳转次数过多",
+                                                 Protocol::redact_url_query(current_url));
+    return make_error(error.code, Protocol::to_error(error).message);
 }
 
 std::string bytes_to_hex(const std::vector<unsigned char> &bytes) {
@@ -349,14 +340,18 @@ Result<void> BykcService::ensure_login(bool force_refresh) {
         token = acquire_bykc_token(m_http_client, m_mode, "https://bykc.buaa.edu.cn/cas-login?token=", "博雅 CAS 登录失败");
         if (!token) return make_error(token.error().code, token.error().message);
     }
-    if (token->empty()) return make_error(ErrorCode::SessionExpired, "未获取到博雅 auth token");
+    if (token->empty()) {
+        auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Bykc,
+                                                     Protocol::DownstreamActivationStage::ArtifactExtract,
+                                                     Protocol::DownstreamSessionState::TokenMissing,
+                                                     "未获取到博雅 auth token");
+        return make_error(error.code, Protocol::to_error(error).message);
+    }
     m_token = *token;
     return {};
 }
 
-Result<std::string> BykcService::call_api_raw(const std::string &api_name, const nlohmann::json &payload, bool allow_retry) {
-    auto login = ensure_login();
-    if (!login) return make_error(login.error().code, login.error().message);
+Result<std::string> BykcService::call_api_raw_once(const std::string &api_name, const nlohmann::json &payload) {
     auto plain = payload.dump();
     auto encrypted = encrypt_request(plain, m_crypto);
     if (!encrypted) return make_error(encrypted.error().code, encrypted.error().message);
@@ -369,19 +364,22 @@ Result<std::string> BykcService::call_api_raw(const std::string &api_name, const
     request.headers["Accept"] = "application/json";
     request.headers["Referer"] = resolve_for_mode("https://bykc.buaa.edu.cn/system/course-select", m_mode);
     request.headers["Origin"] = resolve_for_mode("https://bykc.buaa.edu.cn", m_mode);
-    request.headers["auth_token"] = m_token;
-    request.headers["authtoken"] = m_token;
     request.headers["ak"] = ak;
     request.headers["sk"] = sk;
     request.headers["ts"] = std::to_string(now_millis());
     request.body = body;
 
+    request.headers["auth_token"] = m_token;
+    request.headers["authtoken"] = m_token;
+
     auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "请求博雅失败: " + response.error().message);
+    if (!response) return make_error(response.error().code, response.error().message);
     if (response_is_login(*response)) {
-        m_token.clear();
-        if (allow_retry) return call_api_raw(api_name, payload, false);
-        return make_error(ErrorCode::SessionExpired, "博雅会话已过期，请重新登录");
+        auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Bykc,
+                                                     Protocol::DownstreamActivationStage::Request,
+                                                     Protocol::DownstreamSessionState::TokenExpired,
+                                                     "博雅会话已过期，请重新登录");
+        return make_error(error.code, Protocol::to_error(error).message);
     }
     if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "博雅请求返回: " + std::to_string(response->status_code));
 
@@ -391,11 +389,27 @@ Result<std::string> BykcService::call_api_raw(const std::string &api_name, const
     auto decrypted = m_crypto.aes_ecb_pkcs7_decrypt(encrypted_response, aes_key);
     std::string decoded = decrypted ? std::string(decrypted->begin(), decrypted->end()) : encoded_payload;
     if (decoded.find("会话已失效") != std::string::npos || decoded.find("未登录") != std::string::npos) {
-        m_token.clear();
-        if (allow_retry) return call_api_raw(api_name, payload, false);
-        return make_error(ErrorCode::SessionExpired, "博雅会话已过期，请重新登录");
+        auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Bykc,
+                                                     Protocol::DownstreamActivationStage::Request,
+                                                     Protocol::DownstreamSessionState::TokenExpired,
+                                                     "博雅会话已过期，请重新登录");
+        return make_error(error.code, Protocol::to_error(error).message);
     }
     return decoded;
+}
+
+Result<std::string> BykcService::call_api_raw(const std::string &api_name, const nlohmann::json &payload, bool allow_retry) {
+    auto login = ensure_login();
+    if (!login) return make_error(login.error().code, login.error().message);
+
+    auto raw = call_api_raw_once(api_name, payload);
+    if (!raw && raw.error().code == ErrorCode::SessionExpired && allow_retry) {
+        m_token.clear();
+        auto refreshed = ensure_login(true);
+        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+        return call_api_raw(api_name, payload, false);
+    }
+    return raw;
 }
 
 Result<nlohmann::json> BykcService::call_api_data(const std::string &api_name, const nlohmann::json &payload, const std::string &fallback_message) {

@@ -43,7 +43,8 @@ private:
     Result<std::string> fetch_oauth_code();
     Result<nlohmann::json> post_form(const std::string &url,
                                      const std::map<std::string, std::string> &query = {},
-                                     const std::map<std::string, std::string> &form = {});
+                                     const std::map<std::string, std::string> &form = {},
+                                     bool allow_retry = true);
 };
 
 } // namespace UBAANext

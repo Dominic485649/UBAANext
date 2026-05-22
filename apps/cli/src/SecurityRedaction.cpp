@@ -112,8 +112,8 @@ std::string redact_sensitive_text(const std::string &text) {
     std::string redacted = text;
     redacted = redact_proxy_url(redacted);
 
-    constexpr std::array<std::string_view, 13> keys = {
-        "password", "passwd", "pwd", "token", "ticket", "session", "session_id", "captcha", "验证码", "cookie", "authorization", "cgauthorization", "photo_path",
+    constexpr std::array<std::string_view, 15> keys = {
+        "password", "passwd", "pwd", "token", "ticket", "cas", "execution", "session", "session_id", "captcha", "验证码", "cookie", "authorization", "cgauthorization", "photo_path",
     };
     for (const auto key : keys) {
         redact_key_values(redacted, key);

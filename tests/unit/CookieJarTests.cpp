@@ -71,6 +71,13 @@ TEST_CASE("CookieJar 按主机隔离 Cookie", "[CookieJar]") {
     REQUIRE(jar.to_header("sso.buaa.edu.cn").find("SESSION=byxt") == std::string::npos);
 }
 
+TEST_CASE("CookieJar 子域可读取父域 Cookie", "[CookieJar]") {
+    um::CookieJar jar;
+    jar.set_cookie("buaa.edu.cn", "sso_buaa_zhjs_token", "sso-token");
+
+    REQUIRE(jar.get_cookie("cgyy.buaa.edu.cn", "sso_buaa_zhjs_token") == "sso-token");
+}
+
 TEST_CASE("CookieJar 序列化保留主机", "[CookieJar]") {
     um::CookieJar jar;
     jar.set_cookie("sso.buaa.edu.cn", "SESSION", "abc");

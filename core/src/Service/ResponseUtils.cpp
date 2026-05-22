@@ -1,4 +1,5 @@
 #include <UBAANext/Service/ResponseUtils.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -12,23 +13,14 @@ namespace {
     return value;
 }
 
-[[nodiscard]] bool body_contains_login_marker(const std::string &body) {
-    return body.find("name=\"execution\"") != std::string::npos ||
-           body.find("统一身份认证") != std::string::npos ||
-           body.find("sso.buaa.edu.cn") != std::string::npos;
-}
-
 } // namespace
 
 bool is_session_expired_message(const std::string &message) {
-    return message.find("登录失效") != std::string::npos ||
-           message.find("未登录") != std::string::npos ||
-           message.find("请重新登录") != std::string::npos ||
-           message.find("会话已过期") != std::string::npos;
+    return Protocol::has_session_expired_marker(message);
 }
 
 bool is_session_expired_response(const HttpResponse &response) {
-    return response.status_code == 401 || response.status_code == 403 || body_contains_login_marker(response.body);
+    return Protocol::is_session_expired_response(response, {}, true);
 }
 
 bool envelope_ok(const nlohmann::json &json) {

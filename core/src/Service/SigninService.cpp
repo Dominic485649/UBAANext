@@ -2,6 +2,7 @@
 
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/SigninParser.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <ctime>
 #include <iomanip>
@@ -20,9 +21,7 @@ std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
 }
 
 bool response_is_sso(const HttpResponse &response) {
-    return response.status_code == 401 || response.status_code == 403 ||
-           response.body.find("name=\"execution\"") != std::string::npos ||
-           response.body.find("统一身份认证") != std::string::npos;
+    return Protocol::is_session_expired_response(response, {}, true);
 }
 
 std::string today_yyyymmdd() {
@@ -118,9 +117,16 @@ std::string sanitize_signin_message(bool success, const std::string &raw_message
 } // namespace
 
 SigninService::SigninService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
-    : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
+    : SigninService(http_client, cache, mode, {}) {}
+
+SigninService::SigninService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode, std::string student_id)
+    : m_http_client(http_client), m_cache(cache), m_mode(mode), m_student_id(std::move(student_id)) {}
 
 Result<std::string> SigninService::get_student_id() {
+    if (!m_student_id.empty()) {
+        return m_student_id;
+    }
+
     HttpRequest request;
     request.method = HttpMethod::Get;
     request.url = resolve_for_mode("https://uc.buaa.edu.cn/api/uc/userinfo", m_mode);
@@ -150,6 +156,7 @@ Result<std::string> SigninService::get_student_id() {
         if (student_id.empty()) {
             return make_error(ErrorCode::SessionExpired, "用户信息缺少学号字段");
         }
+        m_student_id = student_id;
         return student_id;
     } catch (const std::exception &e) {
         return make_error(ErrorCode::ParseError, std::string("解析用户信息 JSON 失败: ") + e.what());
@@ -190,15 +197,31 @@ Result<std::pair<std::string, std::string>> SigninService::login_iclass(const st
     }
 }
 
+Result<std::pair<std::string, std::string>> SigninService::ensure_iclass_session(bool force_refresh) {
+    if (!force_refresh && !m_user_id.empty() && !m_session_id.empty()) {
+        return std::make_pair(m_user_id, m_session_id);
+    }
+    if (force_refresh) {
+        m_user_id.clear();
+        m_session_id.clear();
+    }
+    auto student_id = get_student_id();
+    if (!student_id) return make_error(student_id.error().code, student_id.error().message);
+    auto session = login_iclass(*student_id);
+    if (!session) return make_error(session.error().code, session.error().message);
+    m_user_id = session->first;
+    m_session_id = session->second;
+    return *session;
+}
+
 Result<std::vector<Model::SigninCourse>> SigninService::list_today_courses() {
+    return list_today_courses(true);
+}
+
+Result<std::vector<Model::SigninCourse>> SigninService::list_today_courses(bool allow_retry) {
     (void)m_cache;
 
-    auto student_id = get_student_id();
-    if (!student_id) {
-        return make_error(student_id.error().code, student_id.error().message);
-    }
-
-    auto session = login_iclass(*student_id);
+    auto session = ensure_iclass_session();
     if (!session) {
         return make_error(session.error().code, session.error().message);
     }
@@ -225,7 +248,10 @@ Result<std::vector<Model::SigninCourse>> SigninService::list_today_courses() {
         return make_error(ErrorCode::ParseError, "解析今日签到 JSON 失败");
     }
     if (json.contains("STATUS") && !json_status_success(json)) {
-        return make_error(ErrorCode::SessionExpired, "今日签到会话已过期");
+        if (!allow_retry) return Parser::parse_signin_today_courses(json);
+        auto refreshed = ensure_iclass_session(true);
+        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+        return list_today_courses(false);
     }
     return Parser::parse_signin_today_courses(json);
 }
@@ -239,16 +265,15 @@ Result<std::vector<Model::FeatureRecord>> SigninService::list_today() {
 }
 
 Result<Model::MutationResult> SigninService::perform_signin(const std::string &course_id) {
+    return perform_signin_once(course_id, true);
+}
+
+Result<Model::MutationResult> SigninService::perform_signin_once(const std::string &course_id, bool allow_retry) {
     if (course_id.empty()) {
         return make_error(ErrorCode::InvalidArgument, "signin do 需要 --course-id <id>");
     }
 
-    auto student_id = get_student_id();
-    if (!student_id) {
-        return make_error(student_id.error().code, student_id.error().message);
-    }
-
-    auto session = login_iclass(*student_id);
+    auto session = ensure_iclass_session();
     if (!session) {
         return make_error(session.error().code, session.error().message);
     }
@@ -305,6 +330,11 @@ Result<Model::MutationResult> SigninService::perform_signin(const std::string &c
         auto raw_message = json_string(json, "ERRMSG");
         auto message = sanitize_signin_message(success, raw_message);
         if (!success) {
+            if (allow_retry && raw_message.find("登录") != std::string::npos) {
+                auto refreshed = ensure_iclass_session(true);
+                if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+                return perform_signin_once(course_id, false);
+            }
             return make_error(ErrorCode::InvalidArgument, message);
         }
 

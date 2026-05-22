@@ -17,12 +17,12 @@ namespace UBAANext {
 
 SessionManager::SessionManager(ISecureStore &store) : m_store(store) {}
 
-void SessionManager::save_session(const std::string &username,
-                                   Model::Account account,
-                                   const std::string &connection_mode) {
+Result<void> SessionManager::save_session(const std::string &username,
+                                          Model::Account account,
+                                          const std::string &connection_mode) {
     // 输入验证：用户名不能为空
     if (username.empty()) {
-        return;  // 静默忽略无效调用
+        return make_error(ErrorCode::InvalidArgument, "保存会话失败: 用户名不能为空");
     }
 
     // 更新内存缓存（使用移动语义避免不必要的拷贝）
@@ -42,6 +42,11 @@ void SessionManager::save_session(const std::string &username,
         m_store.remove("session.connection_mode");
     }
     m_store.set_string("session.active", "true");
+    auto flushed = m_store.flush();
+    if (!flushed) {
+        return make_error(flushed.error().code, flushed.error().message);
+    }
+    return {};
 }
 
 std::optional<Model::Account> SessionManager::restore_session() {
@@ -88,6 +93,7 @@ void SessionManager::clear_session() {
     m_store.remove("session.refresh_token");
     m_store.remove("session.connection_mode");
     m_store.remove("session.active");
+    (void)m_store.flush();
 
     // 清除内存缓存
     m_current.reset();

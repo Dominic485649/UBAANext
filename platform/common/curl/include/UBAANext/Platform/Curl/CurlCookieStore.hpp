@@ -15,7 +15,9 @@ public:
 
     [[nodiscard]] Result<CookieJar> load() override;
     [[nodiscard]] Result<void> save(const CookieJar &cookies) override;
+    [[nodiscard]] Result<void> save_current() override;
     [[nodiscard]] Result<void> clear() override;
+    [[nodiscard]] const CookieJar *current() const override;
 
     [[nodiscard]] UBAANext::CookieJar &live_cookies();
     [[nodiscard]] const UBAANext::CookieJar &live_cookies() const;

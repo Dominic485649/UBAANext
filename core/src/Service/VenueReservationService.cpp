@@ -4,6 +4,10 @@
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/VenueReservationParser.hpp>
 #include <UBAANext/Protocol/AppBuaaSession.hpp>
+#include <UBAANext/Protocol/AuthorizedDownstreamRequestExecutor.hpp>
+#include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
+#include <UBAANext/Protocol/RedirectNavigator.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <algorithm>
 #include <charconv>
@@ -12,7 +16,6 @@
 #include <ctime>
 #include <iomanip>
 #include <map>
-#include <regex>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -82,8 +85,12 @@ int count_joiners(const std::string &joiners) {
 }
 
 Result<void> require_direct_mode(ConnectionMode mode) {
-    if (mode != ConnectionMode::Direct) return make_error(ErrorCode::InvalidArgument, "CGYY 真实功能需要直连模式，请使用 --mode direct");
-    return {};
+    if (mode == ConnectionMode::Direct) return {};
+    auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Cgyy,
+                                                 Protocol::DownstreamActivationStage::Probe,
+                                                 Protocol::DownstreamSessionState::UnsupportedMode,
+                                                 "CGYY 真实功能需要直连模式，请使用 --mode direct");
+    return make_error(error.code, Protocol::to_error(error).message);
 }
 
 Result<std::string> sign_request(ICryptoProvider &crypto, const std::string &path, const std::map<std::string, std::string> &params, std::int64_t timestamp) {
@@ -108,38 +115,11 @@ bool response_is_login(const HttpResponse &response) {
 }
 
 std::string header_value(const HttpResponse &response, const std::string &name) {
-    for (const auto &[key, value] : response.headers) {
-        if (key.size() != name.size()) continue;
-        bool same = true;
-        for (size_t i = 0; i < key.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
-                same = false;
-                break;
-            }
-        }
-        if (same) return value;
-    }
-    return {};
+    return Protocol::header_value(response, name);
 }
 
 std::string resolve_redirect_url(const std::string &base, const std::string &location) {
-    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) return location;
-    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
-    std::smatch match;
-    if (!std::regex_search(base, match, url_re)) return location;
-    std::string authority = match[1].str();
-    std::string path = match.size() > 2 ? match[2].str() : "/";
-    auto query = path.find_first_of("?#");
-    std::string path_without_query = query == std::string::npos ? path : path.substr(0, query);
-    if (location.rfind("//", 0) == 0) {
-        auto colon = authority.find(':');
-        return authority.substr(0, colon) + ":" + location;
-    }
-    if (!location.empty() && location.front() == '/') return authority + location;
-    if (!location.empty() && (location.front() == '?' || location.front() == '#')) return authority + path_without_query + location;
-    auto slash = path_without_query.find_last_of('/');
-    auto base_path = slash == std::string::npos ? std::string("/") : path_without_query.substr(0, slash + 1);
-    return authority + base_path + location;
+    return Protocol::resolve_location(base, location);
 }
 
 bool is_cgyy_sso_cookie_name(std::string name) {
@@ -169,13 +149,17 @@ std::string extract_sso_token_from_set_cookie(const std::string &set_cookie) {
     return {};
 }
 
-std::string sso_token_from_cookie_jar(IHttpClient &http_client, ConnectionMode mode) {
-    (void)http_client;
-    (void)mode;
+std::string sso_token_from_cookie_jar(ICookieStore *cookie_store) {
+    if (!cookie_store) return {};
+    auto *cookies = cookie_store->current();
+    if (!cookies) return {};
+    if (auto token = cookies->get_cookie("cgyy.buaa.edu.cn", "sso_buaa_zhjs_token")) {
+        return *token;
+    }
     return {};
 }
 
-Result<std::string> acquire_sso_token(IHttpClient &http_client, ConnectionMode mode) {
+Result<std::string> acquire_sso_token(IHttpClient &http_client, ICookieStore *cookie_store, ConnectionMode mode) {
     std::string current_url = "https://cgyy.buaa.edu.cn/venue-zhjs-server/sso/manageLogin";
     for (int redirects = 0; redirects < 8; ++redirects) {
         HttpRequest request;
@@ -183,25 +167,49 @@ Result<std::string> acquire_sso_token(IHttpClient &http_client, ConnectionMode m
         request.url = resolve_for_mode(current_url, mode);
         request.headers["Accept"] = "application/json, text/plain, */*";
         request.headers["Referer"] = resolve_for_mode(referer_url, mode);
-        request.redirect.follow_redirects = false;
-        request.redirect.max_redirects = 0;
-        request.redirect.expose_location_header = true;
+        Protocol::disable_transport_redirects(request);
         request.redirect.post_policy = RedirectPostPolicy::PreserveMethod;
         request.redirect.restrict_to_http_https = true;
 
         auto response = http_client.send(request);
-        if (!response) return make_error(ErrorCode::NetworkError, "激活研讨室 SSO 失败: " + response.error().message);
-        if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "研讨室会话已过期，请重新登录");
+        if (!response) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Cgyy,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::Unavailable,
+                                                         "激活研讨室 SSO 失败: " + response.error().message,
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
+        if (response_is_login(*response)) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Cgyy,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::SsoRequired,
+                                                         "研讨室会话已过期，请重新登录",
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
 
         auto token = extract_sso_token_from_set_cookie(header_value(*response, "Set-Cookie"));
-        if (token.empty()) token = sso_token_from_cookie_jar(http_client, mode);
+        if (token.empty()) token = sso_token_from_cookie_jar(cookie_store);
         if (!token.empty()) return token;
         if (response->status_code < 300 || response->status_code >= 400) return std::string{};
         auto location = header_value(*response, "Location");
-        if (location.empty()) return make_error(ErrorCode::NetworkError, "研讨室跳转缺少 Location");
+        if (location.empty()) {
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Cgyy,
+                                                         Protocol::DownstreamActivationStage::RedirectFollow,
+                                                         Protocol::DownstreamSessionState::ProtocolError,
+                                                         "研讨室跳转缺少 Location",
+                                                         Protocol::redact_url_query(current_url));
+            return make_error(error.code, Protocol::to_error(error).message);
+        }
         current_url = resolve_redirect_url(current_url, location);
     }
-    return make_error(ErrorCode::NetworkError, "研讨室跳转次数过多");
+    auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Cgyy,
+                                                 Protocol::DownstreamActivationStage::RedirectFollow,
+                                                 Protocol::DownstreamSessionState::Unavailable,
+                                                 "研讨室跳转次数过多",
+                                                 Protocol::redact_url_query(current_url));
+    return make_error(error.code, Protocol::to_error(error).message);
 }
 
 std::string json_string(const nlohmann::json &json, const char *key) {
@@ -253,10 +261,13 @@ std::vector<Model::FeatureRecord> to_records(const std::vector<T> &items) {
 } // namespace
 
 VenueReservationService::VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
-    : VenueReservationService(http_client, cache, mode, default_crypto_provider()) {}
+    : VenueReservationService(http_client, nullptr, cache, mode, default_crypto_provider()) {}
 
 VenueReservationService::VenueReservationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto)
-    : m_http_client(http_client), m_cache(cache), m_mode(mode), m_crypto(crypto) {}
+    : VenueReservationService(http_client, nullptr, cache, mode, crypto) {}
+
+VenueReservationService::VenueReservationService(IHttpClient &http_client, ICookieStore *cookie_store, ICacheStore &cache, ConnectionMode mode, ICryptoProvider &crypto)
+    : m_http_client(http_client), m_cookie_store(cookie_store), m_cache(cache), m_mode(mode), m_crypto(crypto) {}
 
 Result<void> VenueReservationService::ensure_login(bool force_refresh) {
     auto direct_mode = require_direct_mode(m_mode);
@@ -264,7 +275,7 @@ Result<void> VenueReservationService::ensure_login(bool force_refresh) {
     (void)m_cache;
     if (!force_refresh && !m_access_token.empty()) return {};
 
-    auto sso_token = acquire_sso_token(m_http_client, m_mode);
+    auto sso_token = acquire_sso_token(m_http_client, m_cookie_store, m_mode);
     if (!sso_token) return make_error(sso_token.error().code, sso_token.error().message);
     if (sso_token->empty()) {
         auto sync = Protocol::AppBuaa::ensure_session(m_http_client,
@@ -272,17 +283,29 @@ Result<void> VenueReservationService::ensure_login(bool force_refresh) {
                                                       "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fcgyy.buaa.edu.cn%2Fvenue-zhjs-server%2Fsso%2FmanageLogin",
                                                       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4");
         if (!sync) return make_error(sync.error().code, sync.error().message);
-        sso_token = acquire_sso_token(m_http_client, m_mode);
+        sso_token = acquire_sso_token(m_http_client, m_cookie_store, m_mode);
         if (!sso_token) return make_error(sso_token.error().code, sso_token.error().message);
     }
-    if (sso_token->empty()) return make_error(ErrorCode::SessionExpired, "未获取到研讨室 SSO Token");
+    if (sso_token->empty()) {
+        auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Cgyy,
+                                                     Protocol::DownstreamActivationStage::ArtifactExtract,
+                                                     Protocol::DownstreamSessionState::TokenMissing,
+                                                     "未获取到研讨室 SSO Token");
+        return make_error(error.code, Protocol::to_error(error).message);
+    }
 
     auto login = request_json(HttpMethod::Post, "/api/login", {}, {}, {{"Sso-Token", *sso_token}}, false, false);
     if (!login) return make_error(login.error().code, login.error().message);
     if (login->contains("token") && (*login)["token"].is_object()) {
         m_access_token = json_string((*login)["token"], "access_token");
     }
-    if (m_access_token.empty()) return make_error(ErrorCode::SessionExpired, "研讨室登录成功但未返回 access_token");
+    if (m_access_token.empty()) {
+        auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::Cgyy,
+                                                     Protocol::DownstreamActivationStage::TokenExchange,
+                                                     Protocol::DownstreamSessionState::TokenMissing,
+                                                     "研讨室登录成功但未返回 access_token");
+        return make_error(error.code, Protocol::to_error(error).message);
+    }
     return {};
 }
 
@@ -316,24 +339,26 @@ Result<nlohmann::json> VenueReservationService::request_json(HttpMethod method,
     request.headers["app-key"] = app_key;
     request.headers["timestamp"] = std::to_string(timestamp);
     request.headers["sign"] = *sign;
-    if (authorize) request.headers["cgAuthorization"] = m_access_token;
     for (const auto &[key, value] : extra_headers) request.headers[key] = value;
     if (method != HttpMethod::Get) {
         request.headers["Content-Type"] = "application/x-www-form-urlencoded";
         request.body = form_encode(form);
     }
 
-    auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "请求研讨室失败: " + response.error().message);
-    if (response_is_login(*response)) {
-        m_access_token.clear();
-        if (allow_retry && authorize) {
-            auto login = ensure_login(true);
-            if (!login) return make_error(login.error().code, login.error().message);
-            return request_json(method, path, params, form, extra_headers, authorize, false);
-        }
-        return make_error(ErrorCode::SessionExpired, "研讨室会话已过期，请重新登录");
-    }
+    Protocol::AuthorizedRequestHooks hooks;
+    hooks.system = Protocol::DownstreamSystemId::Cgyy;
+    hooks.expired_message = "研讨室会话已过期，请重新登录";
+    hooks.ensure_authorized = [this](bool force_refresh) { return ensure_login(force_refresh); };
+    hooks.invalidate = [this]() { m_access_token.clear(); };
+    hooks.decorate_request = [this](HttpRequest &authorized_request) {
+        authorized_request.headers["cgAuthorization"] = m_access_token;
+    };
+    hooks.is_expired_response = [](const HttpResponse &response) {
+        return response_is_login(response);
+    };
+
+    auto response = Protocol::send_authorized_request(m_http_client, std::move(request), std::move(hooks), authorize, allow_retry);
+    if (!response) return make_error(response.error().code, response.error().message);
     if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "研讨室请求返回: " + std::to_string(response->status_code));
     auto json = nlohmann::json::parse(response->body, nullptr, false);
     if (json.is_discarded()) return make_error(ErrorCode::ParseError, "解析研讨室 JSON 失败");

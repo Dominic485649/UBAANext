@@ -3,6 +3,10 @@
 #include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/LibrarySeatParser.hpp>
+#include <UBAANext/Protocol/AuthorizedDownstreamRequestExecutor.hpp>
+#include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
+#include <UBAANext/Protocol/RedirectNavigator.hpp>
+#include <UBAANext/Protocol/SessionGuards.hpp>
 
 #include <ctime>
 #include <iomanip>
@@ -27,46 +31,22 @@ std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
     return mode == ConnectionMode::WebVPN ? VpnCipher::to_vpn_url(url) : url;
 }
 
+std::string resolve_libbook_url(const std::string &url) {
+    return VpnCipher::to_vpn_url(url);
+}
+
 std::string header_value(const HttpResponse &response, const std::string &name) {
-    for (const auto &[key, value] : response.headers) {
-        if (key.size() != name.size()) {
-            continue;
-        }
-        bool same = true;
-        for (size_t i = 0; i < key.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(key[i])) != std::tolower(static_cast<unsigned char>(name[i]))) {
-                same = false;
-                break;
-            }
-        }
-        if (same) {
-            auto newline = value.find('\n');
-            return newline == std::string::npos ? value : value.substr(0, newline);
-        }
-    }
-    return {};
+    auto value = Protocol::header_value(response, name);
+    auto newline = value.find('\n');
+    return newline == std::string::npos ? value : value.substr(0, newline);
 }
 
 std::string resolve_redirect_url(const std::string &base, const std::string &location) {
-    if (location.rfind("http://", 0) == 0 || location.rfind("https://", 0) == 0) {
-        return location;
-    }
-    std::regex url_re(R"(^([^:]+://[^/]+)(/.*)?$)");
-    std::smatch match;
-    if (!std::regex_search(base, match, url_re)) {
-        return location;
-    }
-    std::string authority = match[1].str();
-    if (!location.empty() && location.front() == '/') {
-        return authority + location;
-    }
-    return authority + "/" + location;
+    return Protocol::resolve_location(base, location);
 }
 
 std::string extract_cas_token(const std::string &url) {
-    std::regex token_re(R"([?&#]cas=([^&#]+))");
-    std::smatch match;
-    return std::regex_search(url, match, token_re) && match.size() > 1 ? match[1].str() : std::string{};
+    return Protocol::extract_query_parameter_anywhere(url, "cas");
 }
 
 std::string today_yyyy_mm_dd() {
@@ -142,6 +122,22 @@ bool contains_any(const std::string &text, std::initializer_list<std::string_vie
     return false;
 }
 
+bool libbook_session_expired_message(const std::string &message) {
+    return message.find("登录失效") != std::string::npos ||
+           message.find("请重新登录") != std::string::npos ||
+           message.find("未登录") != std::string::npos;
+}
+
+bool libbook_response_expired(const HttpResponse &response) {
+    if (response.status_code == 401 || response.status_code == 403) return true;
+    if (libbook_session_expired_message(response.body)) return true;
+    auto json = nlohmann::json::parse(response.body, nullptr, false);
+    if (json.is_discarded()) return false;
+    auto message = json_string(json, "message");
+    if (message.empty()) message = json_string(json, "msg");
+    return libbook_session_expired_message(message);
+}
+
 bool libbook_business_success(const nlohmann::json &json) {
     auto code = json_string(json, "code");
     if (!code.empty() && code != "0" && code != "1") return false;
@@ -205,8 +201,9 @@ Result<std::string> LibrarySeatService::fetch_cas_token() {
     for (int i = 0; i < 8; ++i) {
         HttpRequest request;
         request.method = HttpMethod::Get;
-        request.url = resolve_for_mode(current_url, m_mode);
+        request.url = resolve_libbook_url(current_url);
         apply_headers(request);
+        Protocol::disable_transport_redirects(request);
         auto response = m_http_client.send(request);
         if (!response) {
             return make_error(ErrorCode::NetworkError, "获取图书馆 CAS 参数失败: " + response.error().message);
@@ -215,8 +212,14 @@ Result<std::string> LibrarySeatService::fetch_cas_token() {
         if (auto token = extract_cas_token(current_url); !token.empty()) {
             return token;
         }
+        if (auto token = extract_cas_token(request.url); !token.empty()) {
+            return token;
+        }
         auto location = header_value(*response, "Location");
         if (auto token = extract_cas_token(location); !token.empty()) {
+            return token;
+        }
+        if (auto token = extract_cas_token(response->body); !token.empty()) {
             return token;
         }
         if (response->status_code < 300 || response->status_code >= 400 || location.empty()) {
@@ -224,7 +227,8 @@ Result<std::string> LibrarySeatService::fetch_cas_token() {
         }
         current_url = resolve_redirect_url(current_url, location);
     }
-    return make_error(ErrorCode::SessionExpired, "未能获取图书馆 CAS 参数，请重新登录");
+    return make_error(Protocol::error_code_for_state(Protocol::DownstreamSessionState::MissingCasParameter),
+                      "未能获取图书馆 CAS 参数，请重新登录");
 }
 
 Result<void> LibrarySeatService::ensure_login(bool force_refresh) {
@@ -246,7 +250,11 @@ Result<void> LibrarySeatService::ensure_login(bool force_refresh) {
         auto member = (*response)["data"]["member"];
         auto token = json_string(member, "token");
         if (token.empty()) {
-            return make_error(ErrorCode::SessionExpired, "图书馆登录成功但未返回 token");
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::LibBook,
+                                                         Protocol::DownstreamActivationStage::TokenExchange,
+                                                         Protocol::DownstreamSessionState::TokenMissing,
+                                                         "图书馆登录成功但未返回 token");
+            return make_error(error.code, Protocol::to_error(error).message);
         }
         m_token = std::move(token);
         return {};
@@ -256,44 +264,48 @@ Result<void> LibrarySeatService::ensure_login(bool force_refresh) {
 }
 
 Result<nlohmann::json> LibrarySeatService::request_json(const std::string &path, const nlohmann::json &body, bool authorize, bool allow_retry) {
-    if (authorize) {
-        auto login = ensure_login();
-        if (!login) {
-            return make_error(login.error().code, login.error().message);
-        }
-    }
-
     HttpRequest request;
     request.method = HttpMethod::Post;
     request.url = resolve_for_mode(std::string(base_url) + "/v4/" + path, m_mode);
     apply_headers(request);
     request.headers["Content-Type"] = "application/json";
-    if (authorize) {
-        request.headers["Authorization"] = "bearer" + m_token;
-    }
     request.body = body.dump();
 
-    auto response = m_http_client.send(request);
+    Protocol::AuthorizedRequestHooks hooks;
+    hooks.system = Protocol::DownstreamSystemId::LibBook;
+    hooks.expired_message = "图书馆登录状态已失效";
+    hooks.ensure_authorized = [this](bool force_refresh) { return ensure_login(force_refresh); };
+    hooks.invalidate = [this]() { m_token.clear(); };
+    hooks.decorate_request = [this](HttpRequest &authorized_request) {
+        authorized_request.headers["Authorization"] = "bearer" + m_token;
+    };
+    hooks.is_expired_response = [](const HttpResponse &response) {
+        return libbook_response_expired(response);
+    };
+
+    auto response = Protocol::send_authorized_request(m_http_client, std::move(request), std::move(hooks), authorize, allow_retry);
     if (!response) {
-        return make_error(ErrorCode::NetworkError, "请求图书馆座位系统失败: " + response.error().message);
+        return make_error(response.error().code, response.error().message);
     }
     if (response->status_code != 200) {
-        return make_error(ErrorCode::NetworkError, "图书馆座位系统返回: " + std::to_string(response->status_code));
+        auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::LibBook,
+                                                     Protocol::DownstreamActivationStage::Request,
+                                                     Protocol::DownstreamSessionState::Unavailable,
+                                                     "图书馆座位系统返回: " + std::to_string(response->status_code));
+        return make_error(error.code, Protocol::to_error(error).message);
     }
 
     try {
         auto json = nlohmann::json::parse(response->body);
         auto message = json_string(json, "message");
-        if (message.find("登录失效") != std::string::npos || message.find("请重新登录") != std::string::npos || message.find("未登录") != std::string::npos) {
+        if (message.empty()) message = json_string(json, "msg");
+        if (libbook_session_expired_message(message)) {
             m_token.clear();
-            if (authorize && allow_retry) {
-                auto login = ensure_login(true);
-                if (!login) {
-                    return make_error(login.error().code, login.error().message);
-                }
-                return request_json(path, body, authorize, false);
-            }
-            return make_error(ErrorCode::SessionExpired, "图书馆登录状态已失效");
+            auto error = Protocol::make_downstream_error(Protocol::DownstreamSystemId::LibBook,
+                                                         allow_retry ? Protocol::DownstreamActivationStage::RetryAfterRefresh : Protocol::DownstreamActivationStage::Request,
+                                                         Protocol::DownstreamSessionState::TokenExpired,
+                                                         "图书馆登录状态已失效");
+            return make_error(error.code, Protocol::to_error(error).message);
         }
         if (!libbook_business_success(json)) {
             return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆接口请求失败" : message);
