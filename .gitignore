@@ -48,3 +48,6 @@ desktop.ini
 
 # Local reference snapshots
 reference/buaa-api/
+
+# Local onboarding note
+/ONBOARDING.md
