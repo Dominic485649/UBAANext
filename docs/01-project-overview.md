@@ -12,7 +12,7 @@ UBAA Next 是 **UBAA（智慧北航 Remake）** 的 C++ 原生重写版本，一
 
 ## 当前版本阶段
 
-当前仓库版本号为 **0.3.0**，以 [路线图](02-roadmap.md) 的 `v0.3 — 数据解析与缓存` 为当前基线。该版本阶段覆盖：
+当前仓库版本号为 **0.4.0**，以 [路线图](02-roadmap.md) 的 `v0.4 — CLI 工程化` 为当前基线。该版本阶段覆盖：
 
 - C++ Core 骨架：`Result/Error`、Model、Net/Storage 抽象。
 - Mock 实现与离线测试数据。
@@ -20,9 +20,10 @@ UBAA Next 是 **UBAA（智慧北航 Remake）** 的 C++ 原生重写版本，一
 - JSON 解析、课程/考试/教室/学期/教学周 parser。
 - Service 层的 `Mock HTTP → Parser → Cache → Return` 数据流。
 - MemoryCacheStore TTL。
-- Windows CLI 基础命令：`version`、`login/logout/whoami`、`course`、`exam`、`classroom`、`term list`、`week list`。
+- Windows CLI 工程化：稳定命令树、`CommandHandlers` 命令目录、统一 `--json` envelope、固定 exit code `0-6`、配置/缓存子命令。
+- CLI integration/golden tests：覆盖 help 合同、JSON 输出、exit code、写操作确认门与关键 mock/offline 命令。
 
-仓库中已有部分 v0.4+ 方向的代码和文档草案，例如真实 HTTP、平台能力、C ABI、HarmonyOS 和 Slint 相关内容。这些内容是后续阶段或实验路径，除非路线图阶段完成并同步版本号，否则不作为 v0.3 稳定承诺。
+v0.4 已完成 CLI 工程化，但仍保持 mock/offline 优先的稳定边界。真实 HTTP、平台能力、C ABI、HarmonyOS 和 Slint 相关内容属于 v0.5+ 后续阶段或实验路径，除非对应路线图阶段完成并同步版本号，否则不作为当前稳定承诺。
 
 ## 架构
 

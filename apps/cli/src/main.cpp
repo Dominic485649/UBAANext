@@ -25,6 +25,7 @@
 
 #include "AppContext.hpp"
 #include "CliConfig.hpp"
+#include "CommandHandlers.hpp"
 #include "Console.hpp"
 #include "ExitCodes.hpp"
 #include "OutputFormatter.hpp"
@@ -226,23 +227,10 @@ CliArgs parse_args(int argc, char *argv[]) {
     args.command = argv[1];
 
     int i = 2;
-    if ((args.command == "course" || args.command == "exam" ||
-         args.command == "classroom" || args.command == "term" ||
-         args.command == "week" || args.command == "config" ||
-         args.command == "mode" || args.command == "cache" ||
-         args.command == "user" ||
-         args.command == "app" || args.command == "grade" ||
-         args.command == "spoc" || args.command == "judge" ||
-         args.command == "signin" || args.command == "ygdk" ||
-         args.command == "evaluation" || args.command == "bykc" ||
-         args.command == "cgyy" || args.command == "libbook" ||
-         args.command == "todo" || args.command == "file") &&
-        i < argc && !looks_like_option(argv[i])) {
+    if (UBAANextCli::is_cli_command(args.command) && i < argc && !looks_like_option(argv[i])) {
         args.subcommand = argv[i];
         ++i;
-        if ((args.command == "spoc" || args.command == "judge" || args.command == "bykc" ||
-             args.command == "cgyy" || args.command == "libbook") &&
-            i < argc && std::string_view(argv[i]).find("--") != 0) {
+        if (UBAANextCli::is_command_with_action(args.command) && i < argc && std::string_view(argv[i]).find("--") != 0) {
             args.action = argv[i];
             ++i;
         }
@@ -557,255 +545,6 @@ AppContext build_context(bool mock, const std::string &mode, const CliConfig &co
     return UBAANextCli::create_current_platform_context(options);
 }
 
-// ── 帮助 ──────────────────────────────────────────────────
-
-nlohmann::json get_help_json() {
-    using json = nlohmann::json;
-    json commands = json::array();
-
-    auto add_cmd = [&](const std::string &name, const std::string &desc, const json &opts = {}) {
-        json cmd = {{"name", name}, {"description", desc}};
-        if (!opts.empty()) {
-            cmd["options"] = opts;
-        }
-        commands.push_back(cmd);
-    };
-
-    add_cmd("version", "显示版本信息");
-    add_cmd("help", "显示帮助信息");
-
-    json login_opts = {
-        {{"name", "--username"}, {"description", "学号"}, {"required", true}},
-        {{"name", "--password"}, {"description", "密码"}, {"required", true}},
-#if UBAANEXT_ENABLE_MOCKS
-        {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
-#endif
-        {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
-    };
-    add_cmd("login", "登录", login_opts);
-
-    add_cmd("mode", "显示当前连接模式");
-    add_cmd("mode vpn", "切换为 VPN 模式");
-    add_cmd("mode direct", "切换为直连模式");
-
-    add_cmd("whoami", "显示当前用户信息");
-    add_cmd("logout", "登出");
-
-    json course_opts = {
-#if UBAANEXT_ENABLE_MOCKS
-        {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
-#endif
-        {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
-    };
-    add_cmd("course today", "显示今天的课程", course_opts);
-
-    json course_date_opts = {
-        {{"name", "--date"}, {"description", "日期 (yyyy-MM-dd)"}, {"required", true}},
-#if UBAANEXT_ENABLE_MOCKS
-        {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
-#endif
-        {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
-    };
-    add_cmd("course date", "显示指定日期的课程", course_date_opts);
-
-    json course_week_opts = {
-        {{"name", "--week"}, {"description", "周次 (1-30)"}, {"required", true}},
-#if UBAANEXT_ENABLE_MOCKS
-        {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
-#endif
-        {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
-    };
-    add_cmd("course week", "显示指定周次的课程", course_week_opts);
-
-    json exam_opts = {
-#if UBAANEXT_ENABLE_MOCKS
-        {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
-#endif
-        {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
-    };
-    add_cmd("exam list", "显示考试列表", exam_opts);
-
-    json classroom_opts = {
-        {{"name", "--campus"}, {"description", "校区 ID (1-10)"}, {"required", true}},
-        {{"name", "--date"}, {"description", "日期 (yyyy-MM-dd)"}, {"required", true}},
-#if UBAANEXT_ENABLE_MOCKS
-        {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
-#endif
-        {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
-    };
-    add_cmd("classroom query", "查询空闲教室", classroom_opts);
-
-    json term_opts = {
-#if UBAANEXT_ENABLE_MOCKS
-        {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
-#endif
-        {{"name", "--mode"}, {"description", "连接模式: vpn|direct"}, {"required", false}},
-    };
-    add_cmd("term list", "显示学期列表", term_opts);
-    add_cmd("week list", "显示教学周列表", term_opts);
-
-    add_cmd("config show", "显示当前配置");
-
-    json config_set_opts = {
-        {{"name", "--key"}, {"description", "配置键"}, {"required", true}},
-        {{"name", "--value"}, {"description", "配置值"}, {"required", true}},
-        {{"name", "--confirm"}, {"description", "确认修改本地配置"}, {"required", true}},
-    };
-    add_cmd("config set", "设置配置项", config_set_opts);
-
-    json confirm_opts = {
-        {{"name", "--confirm"}, {"description", "确认执行有副作用操作"}, {"required", true}},
-    };
-    add_cmd("cache clear", "清除缓存", confirm_opts);
-    add_cmd("logout", "登出并清除本地会话", confirm_opts);
-    add_cmd("user info", "显示用户信息");
-    add_cmd("app version", "显示应用版本信息");
-    add_cmd("app announcement", "显示公告");
-    add_cmd("grade list", "显示指定学期成绩");
-    add_cmd("grade all", "显示全部成绩");
-    add_cmd("spoc assignments", "显示 SPOC 作业");
-    add_cmd("spoc assignment show", "显示 SPOC 作业详情");
-    add_cmd("judge assignments", "显示希冀作业");
-    add_cmd("judge assignment show", "显示希冀作业概要");
-    add_cmd("judge assignment details", "显示希冀作业详情");
-    add_cmd("judge assignment details-batch", "批量显示希冀作业详情");
-    add_cmd("signin today", "显示今日签到");
-    add_cmd("signin do", "执行签到", confirm_opts);
-    add_cmd("bykc profile", "显示博雅资料");
-    add_cmd("bykc courses", "显示博雅课程");
-    add_cmd("bykc chosen", "显示已选博雅课程");
-    add_cmd("bykc stats", "显示博雅统计");
-    add_cmd("bykc select", "选择博雅课程", confirm_opts);
-    add_cmd("bykc unselect", "退选博雅课程", confirm_opts);
-    add_cmd("bykc sign", "博雅签到/签退", confirm_opts);
-    add_cmd("cgyy sites", "显示场馆列表");
-    add_cmd("cgyy day-info", "显示场馆日期可预约信息");
-    add_cmd("cgyy reserve", "预约场馆", confirm_opts);
-    add_cmd("cgyy order cancel", "取消场馆预约", confirm_opts);
-    add_cmd("libbook libraries", "显示图书馆列表");
-    add_cmd("libbook seats", "显示座位列表");
-    add_cmd("libbook book", "预约图书馆座位", confirm_opts);
-    add_cmd("libbook cancel", "取消图书馆座位预约", confirm_opts);
-    add_cmd("ygdk overview", "显示阳光打卡概览");
-    add_cmd("ygdk records", "显示阳光打卡记录");
-    add_cmd("ygdk submit", "提交阳光打卡", confirm_opts);
-    add_cmd("evaluation list", "显示评教任务");
-    add_cmd("evaluation submit", "提交评教", confirm_opts);
-    add_cmd("todo list", "显示待办聚合", json{
-        {{"name", "--pending-only"}, {"description", "只显示待处理项目"}, {"required", false}},
-        {{"name", "--all"}, {"description", "包含非待处理项目"}, {"required", false}},
-    });
-    add_cmd("file upload", "保留的文件/附件上传接口，当前稳定返回 NotImplemented", json{
-        {{"name", "--path"}, {"description", "待上传文件路径"}, {"required", true}},
-        {{"name", "--confirm"}, {"description", "确认执行上传类有副作用操作"}, {"required", true}},
-    });
-
-    return {{"ok", true}, {"data", {{"commands", commands}, {"version", UBAANEXT_VERSION_STRING}}}, {"error", nullptr}};
-}
-
-void print_usage() {
-    UBAANextCli::Console::println("用法: ubaa <command> [options]\n");
-    UBAANextCli::Console::println("命令:");
-    UBAANextCli::Console::println("  version                          显示版本");
-    UBAANextCli::Console::println("  help                             显示帮助");
-    UBAANextCli::Console::println("  login --username <id> --password <pw>");
-    UBAANextCli::Console::println("                                   登录（默认 VPN 模式）");
-#if UBAANEXT_ENABLE_MOCKS
-    UBAANextCli::Console::println("  login --mock --username <id> --password <pw>");
-    UBAANextCli::Console::println("                                   模拟登录");
-#endif
-    UBAANextCli::Console::println("  mode                            显示当前连接模式");
-    UBAANextCli::Console::println("  mode direct                     切换为直连模式");
-    UBAANextCli::Console::println("  mode vpn                        切换为 VPN 模式");
-    UBAANextCli::Console::println("  whoami                           显示当前用户");
-    UBAANextCli::Console::println("  logout --confirm                 登出并清除本地会话");
-#if UBAANEXT_ENABLE_MOCKS
-    UBAANextCli::Console::println("  course today [--mock]            显示今天的课程");
-#else
-    UBAANextCli::Console::println("  course today                     显示今天的课程");
-#endif
-    UBAANextCli::Console::println("  course date --date <yyyy-MM-dd>  显示指定日期课程");
-#if UBAANEXT_ENABLE_MOCKS
-    UBAANextCli::Console::println("  course week [--mock] --week <n>  显示指定周次课程");
-#else
-    UBAANextCli::Console::println("  course week --week <n>           显示指定周次课程");
-#endif
-#if UBAANEXT_ENABLE_MOCKS
-    UBAANextCli::Console::println("  exam list [--mock]               显示考试");
-#else
-    UBAANextCli::Console::println("  exam list                        显示考试");
-#endif
-#if UBAANEXT_ENABLE_MOCKS
-    UBAANextCli::Console::println("  classroom query [--mock] --campus <id> --date <yyyy-MM-dd>");
-#else
-    UBAANextCli::Console::println("  classroom query --campus <id> --date <yyyy-MM-dd>");
-#endif
-    UBAANextCli::Console::println("                                   查询空闲教室");
-#if UBAANEXT_ENABLE_MOCKS
-    UBAANextCli::Console::println("  term list [--mock]               显示学期列表");
-    UBAANextCli::Console::println("  week list [--mock]               显示教学周列表");
-#else
-    UBAANextCli::Console::println("  term list                        显示学期列表");
-    UBAANextCli::Console::println("  week list                        显示教学周列表");
-#endif
-    UBAANextCli::Console::println("\n博雅课程 (bykc):");
-    UBAANextCli::Console::println("  bykc profile                    显示博雅课程档案");
-    UBAANextCli::Console::println("  bykc courses [--page <n>] [--size <n>] [--keyword <kw>]");
-    UBAANextCli::Console::println("                                  显示可选博雅课程");
-    UBAANextCli::Console::println("  bykc chosen                     显示已选博雅课程");
-    UBAANextCli::Console::println("  bykc stats                      显示博雅统计");
-    UBAANextCli::Console::println("  bykc course show --course-id <id>");
-    UBAANextCli::Console::println("                                  显示博雅课程详情");
-    UBAANextCli::Console::println("  bykc select --course-id <id> --confirm");
-    UBAANextCli::Console::println("                                  选择博雅课程");
-    UBAANextCli::Console::println("  bykc unselect --course-id <id> --confirm");
-    UBAANextCli::Console::println("                                  退选博雅课程");
-    UBAANextCli::Console::println("  bykc sign --course-id <id> --sign-type <type> --confirm");
-    UBAANextCli::Console::println("                                  博雅签到/签退");
-    UBAANextCli::Console::println("\n场馆预约 (cgyy):");
-    UBAANextCli::Console::println("  cgyy sites                      显示场馆列表");
-    UBAANextCli::Console::println("  cgyy purpose-types              显示场馆预约用途类型");
-    UBAANextCli::Console::println("  cgyy day-info --site-id <id> --date <yyyy-MM-dd>");
-    UBAANextCli::Console::println("                                  显示场馆日期可预约信息");
-    UBAANextCli::Console::println("  cgyy orders                     显示场馆预约订单");
-    UBAANextCli::Console::println("  cgyy order show --order-id <id> 显示场馆预约订单详情");
-    UBAANextCli::Console::println("  cgyy order lock-code            显示场馆预约锁码");
-    UBAANextCli::Console::println("  cgyy reserve --site-id <id> --space-id <id> --date <yyyy-MM-dd> --confirm");
-    UBAANextCli::Console::println("                                  预约场馆");
-    UBAANextCli::Console::println("  cgyy order cancel --order-id <id> --confirm");
-    UBAANextCli::Console::println("                                  取消场馆预约");
-    UBAANextCli::Console::println("\n图书馆预约 (libbook):");
-    UBAANextCli::Console::println("  libbook libraries               显示图书馆列表");
-    UBAANextCli::Console::println("  libbook areas --library-id <id> 显示图书馆区域列表");
-    UBAANextCli::Console::println("  libbook seats --area-id <id>    显示图书馆座位列表");
-    UBAANextCli::Console::println("  libbook reservations            显示图书馆座位预约记录");
-    UBAANextCli::Console::println("  libbook area show --area-id <id>");
-    UBAANextCli::Console::println("                                  显示图书馆区域详情");
-    UBAANextCli::Console::println("  libbook book --seat-id <id> --date <yyyy-MM-dd> --confirm");
-    UBAANextCli::Console::println("                                  预约图书馆座位");
-    UBAANextCli::Console::println("  libbook cancel --booking-id <id> --confirm");
-    UBAANextCli::Console::println("                                  取消图书馆座位预约");
-    UBAANextCli::Console::println("\n作业、待办和占位接口:");
-    UBAANextCli::Console::println("  todo list [--pending-only|--all] 显示待办聚合");
-    UBAANextCli::Console::println("  file upload --path <path> --confirm");
-    UBAANextCli::Console::println("                                  保留接口，当前返回 NotImplemented");
-    UBAANextCli::Console::println("\n其他:");
-    UBAANextCli::Console::println("  config show                      显示当前配置");
-    UBAANextCli::Console::println("  config set --key <key> --value <value>");
-    UBAANextCli::Console::println("                                   设置配置项");
-    UBAANextCli::Console::println("  cache clear                      清除缓存");
-    UBAANextCli::Console::println("\n选项:");
-    UBAANextCli::Console::println("  --json                           JSON 格式输出");
-#if UBAANEXT_ENABLE_MOCKS
-    UBAANextCli::Console::println("  --mock                           使用模拟数据");
-#endif
-    UBAANextCli::Console::println("  --mode vpn|direct                临时覆盖连接模式（未指定时使用配置，默认 vpn）");
-    UBAANextCli::Console::println("\n配置键:");
-    UBAANextCli::Console::println("  mode      连接模式 (vpn|direct)");
-    UBAANextCli::Console::println("  proxy     代理地址 (url 或空)");
-    UBAANextCli::Console::println("  cache     缓存开关 (true|false)");
-}
-
 // ── 命令处理 ──────────────────────────────────────────────────
 
 /** Sensitive cookie persistence forward declaration: saves platform cookies only after real requests. */
@@ -907,12 +646,7 @@ ExitCode cmd_version(OutputFormatter &out) {
 }
 
 ExitCode cmd_help(OutputFormatter &out) {
-    if (out.is_json()) {
-        auto help_json = get_help_json();
-        UBAANextCli::Console::println("{}", help_json.dump(2));
-    } else {
-        print_usage();
-    }
+    UBAANextCli::print_help(out);
     return ExitCode::Ok;
 }
 

@@ -1,6 +1,6 @@
 # UBAA Next 多平台分发与交付计划
 
-> 当前仓库版本阶段为 `v0.3.0`。本页是 v0.4+ 到 v1.0 的分发目标形态规划；v0.3 当前基线不承诺已具备正式 GitHub Release、Windows GUI 或 HarmonyOS HAP 分发能力。
+> 当前仓库版本阶段为 `v0.4.0`。本页是 v0.5+ 到 v1.0 的分发目标形态规划；v0.4 当前基线已具备 Windows CLI 工程化入口，但不承诺已经具备正式 GitHub Release、Windows GUI 或 HarmonyOS HAP 分发能力。
 
 本文档详细规划了 UBAA Next 项目在 Windows（命令行客户端与未来 Slint 图形界面）和 HarmonyOS（鸿蒙 Stage 模型应用）平台上的编译输出、打包封装、分发渠道及安全校验策略，确保软件分发过程合规、高效且具备高抗风险能力。
 
@@ -59,7 +59,7 @@ graph TD
 2. **版本协同矩阵（Versioning Matrix）**：
    HAP 的发布版本号与所内含的 UBAA Next C++ SDK 版本号必须严格记录。例如：
    * **HAP v0.6.0** (应用层版本号，用于应用市场)
-   * **Embedded C++ Core SDK v0.3.0** (C ABI 内核版本号，可由 `ubaanext_version()` 运行时读取并在关于页面展示)
+   * **Embedded C++ Core SDK v0.4.0** (C ABI 内核版本号，可由 `ubaanext_version()` 运行时读取并在关于页面展示)
 3. **剔除冗余**：HAP 的 NAPI 依赖层仅编译 `entry/src/main/cpp` 目录下的胶水代码，严禁将 CLI 的 `main.cpp`、Catch2 测试套件或 Host 端的 Mock 配置打入安装包。
 
 ---

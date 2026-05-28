@@ -17,7 +17,7 @@ UBAA Next 需要一个架构，要求：
 
 - **C++ 核心**（UBAANextCore）— 所有业务逻辑、数据模型、抽象层
 - **平台外壳** — 轻量 UI/入口层：
-  - Windows CLI（当前 v0.3 稳定基线使用 mock/offline 验收；v0.4 完成工程化）
+  - Windows CLI（当前 v0.4 稳定基线使用 mock/offline 验收并完成 CLI 工程化）
   - 通过 NAPI 连接 HarmonyOS ArkUI（v0.6/v0.7）
   - Windows Slint GUI（v0.8）
 

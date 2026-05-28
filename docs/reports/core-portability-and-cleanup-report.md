@@ -1,6 +1,6 @@
 # Core 跨平台性与保守清理报告
 
-> 当前仓库版本阶段为 `v0.3.0`。本报告包含 v0.4+/v0.5 真实协议与平台适配方向的历史审查结论；当前稳定基线仍以 mock/offline parser、service、cache 和基础 CLI 验收为准。
+> 当前仓库版本阶段为 `v0.4.0`。本报告包含 v0.4/v0.5 真实协议与平台适配方向的历史审查结论；当前稳定基线以 mock/offline parser、service、cache、基础 CLI 工程化和 golden 集成测试验收为准。
 
 ## 结论
 

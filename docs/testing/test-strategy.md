@@ -1,6 +1,6 @@
 # 测试策略
 
-> 当前仓库版本阶段为 `v0.3.0`。默认测试策略以路线图 v0.3 的 parser、service、cache 和 mock/offline 回归为稳定基线；真实协议、live smoke 和写操作验证属于后续阶段或显式 opt-in 专项。
+> 当前仓库版本阶段为 `v0.4.0`。默认测试策略以 parser、service、cache、mock/offline CLI 和 CLI golden 集成测试为稳定基线；真实协议、live smoke 和写操作验证属于后续阶段或显式 opt-in 专项。
 
 ## 测试层级
 

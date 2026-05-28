@@ -1,6 +1,6 @@
 # 绑定设计 (Bindings Design)
 
-> 当前仓库版本阶段为 `v0.3.0`。C ABI / NAPI 绑定属于路线图 `v0.6 — HarmonyOS NAPI` 后续计划；本页描述 ABI 目标合同和实验性桥接设计，不代表 v0.3 当前稳定 API。
+> 当前仓库版本阶段为 `v0.4.0`。C ABI / NAPI 绑定属于路线图 `v0.6 — HarmonyOS NAPI` 后续计划；本页描述 ABI 目标合同和实验性桥接设计，不代表 v0.4 当前稳定 API。
 
 本篇文档详述 `UBAANext` 原生核心库对外提供 C ABI 接口的目标设计，以及为 HarmonyOS NAPI 集成所制定的核心合同规范。
 

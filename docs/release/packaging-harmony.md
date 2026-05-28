@@ -1,6 +1,6 @@
 # Harmony 打包
 
-> 当前仓库版本阶段为 `v0.3.0`。Harmony 打包属于路线图 v0.6/v0.7 之后的后续阶段；本页是 native SDK/package 复用方案，不代表 v0.3 已可交付 HAP。
+> 当前仓库版本阶段为 `v0.4.0`。Harmony 打包属于路线图 v0.6/v0.7 之后的后续阶段；本页是 native SDK/package 复用方案，不代表 v0.4 已可交付 HAP。
 
 ## 双项目分工
 

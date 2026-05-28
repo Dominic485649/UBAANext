@@ -1,6 +1,6 @@
 # 错误码注册表 (Error Codes Registry)
 
-> 当前仓库版本阶段为 `v0.3.0`。错误码合同用于 v0.3 的 parser/service/cache 与 CLI mock/offline 验收，并为 v0.4+ 的真实网络、C ABI、NAPI 和 UI 壳保留稳定映射。
+> 当前仓库版本阶段为 `v0.4.0`。错误码合同用于 parser/service/cache 与 CLI mock/offline 验收，并固定 CLI exit code `0-6`；v0.5+ 的真实网络、C ABI、NAPI 和 UI 壳应继续复用该映射。
 
 本篇文档详细列出 `UBAANext` 原生核心库及其 C ABI 所采用的统一错误模型和完整的错误码分类注册表。
 

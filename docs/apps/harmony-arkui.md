@@ -1,6 +1,6 @@
 # HarmonyOS ArkUI 应用
 
-> 当前仓库版本阶段为 `v0.3.0`，HarmonyOS ArkUI 属于路线图 `v0.7 — HarmonyOS ArkUI` 后续计划。本页描述进入条件和安全边界，不代表 v0.3 当前可交付能力。
+> 当前仓库版本阶段为 `v0.4.0`，HarmonyOS ArkUI 属于路线图 `v0.7 — HarmonyOS ArkUI` 后续计划。本页描述进入条件和安全边界，不代表 v0.4 当前可交付能力。
 
 ## 当前进入阶段
 

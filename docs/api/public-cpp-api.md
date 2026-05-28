@@ -1,6 +1,6 @@
 # 公共 C++ API
 
-> 当前仓库版本阶段为 `v0.3.0`。公共 C++ API 以 v0.3 的 typed model、parser、service 和 cache 合同为稳定基线；NAPI、真实登录、真实写与平台持久化能力属于后续阶段或受 capability gate 保护的实验路径。
+> 当前仓库版本阶段为 `v0.4.0`。公共 C++ API 以 typed model、parser、service、cache 和 CLI 工程化合同为稳定基线；NAPI、真实登录、真实写与平台持久化能力属于后续阶段或受 capability gate 保护的实验路径。
 
 ## 范围
 

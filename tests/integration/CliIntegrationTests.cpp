@@ -288,6 +288,97 @@ TEST_CASE("CLI week list mock 命令", "[cli][integration]") {
     REQUIRE(week.contains("endDate"));
 }
 
+TEST_CASE("CLI v0.4 golden help contract", "[cli][integration][golden]") {
+    auto result = run_cli({"help", "--json"});
+    REQUIRE(result.exit_code == 0);
+
+    auto json = parse_json_output(result.stdout_output);
+    require_success_envelope(json);
+    REQUIRE(json["data"].contains("commands"));
+    REQUIRE(json["data"].contains("version"));
+
+    const auto &commands = json["data"]["commands"];
+    REQUIRE(commands.is_array());
+
+    std::vector<std::string> names;
+    for (const auto &command : commands) {
+        REQUIRE(command.contains("name"));
+        REQUIRE(command.contains("description"));
+        names.push_back(command["name"].get<std::string>());
+    }
+
+    auto contains_name = [&](const std::string &name) {
+        return std::find(names.begin(), names.end(), name) != names.end();
+    };
+
+    CHECK(contains_name("config show"));
+    CHECK(contains_name("config set"));
+    CHECK(contains_name("cache clear"));
+    CHECK(contains_name("course today"));
+    CHECK(contains_name("todo list"));
+    CHECK(contains_name("file upload"));
+
+    auto duplicate = std::adjacent_find(names.begin(), names.end());
+    std::sort(names.begin(), names.end());
+    duplicate = std::adjacent_find(names.begin(), names.end());
+    CHECK(duplicate == names.end());
+}
+
+TEST_CASE("CLI v0.4 golden exit code contract", "[cli][integration][golden]") {
+    const std::vector<std::pair<std::vector<std::string>, int>> commands = {
+        {{"version", "--json"}, 0},
+        {{"unknown", "--json"}, 2},
+        {{"config", "set", "--key", "cache", "--value", "false", "--json"}, 2},
+        {{"cache", "clear", "--json"}, 2},
+    };
+
+    for (const auto &[command, expected_exit] : commands) {
+        auto result = run_cli(command);
+        INFO(result.stdout_output);
+        REQUIRE(result.exit_code == expected_exit);
+        CHECK(result.exit_code >= 0);
+        CHECK(result.exit_code <= 6);
+        auto json = parse_json_output(result.stdout_output);
+        if (expected_exit == 0) {
+            require_success_envelope(json);
+        } else {
+            require_error_envelope(json);
+        }
+    }
+}
+
+TEST_CASE("CLI v0.4 config/cache confirm gates", "[cli][integration][golden]") {
+    auto set_without_confirm = run_cli({"config", "set", "--key", "cache", "--value", "false", "--json"});
+    REQUIRE(set_without_confirm.exit_code == 2);
+    auto set_without_confirm_json = parse_json_output(set_without_confirm.stdout_output);
+    require_error_envelope(set_without_confirm_json);
+    CHECK(set_without_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto set_with_confirm = run_cli({"config", "set", "--key", "cache", "--value", "false", "--confirm", "--json"});
+    REQUIRE(set_with_confirm.exit_code == 0);
+    auto set_with_confirm_json = parse_json_output(set_with_confirm.stdout_output);
+    require_success_envelope(set_with_confirm_json);
+    REQUIRE(set_with_confirm_json["data"].contains("message"));
+    CHECK(set_with_confirm_json["data"]["message"].get<std::string>().find("cache = false") != std::string::npos);
+
+    auto show_after_set = run_cli({"config", "show", "--json"});
+    REQUIRE(show_after_set.exit_code == 0);
+    auto show_after_set_json = parse_json_output(show_after_set.stdout_output);
+    require_success_envelope(show_after_set_json);
+    REQUIRE(show_after_set_json["data"].contains("cacheEnabled"));
+    CHECK(show_after_set_json["data"]["cacheEnabled"] == false);
+
+    auto clear_without_confirm = run_cli({"cache", "clear", "--json"});
+    REQUIRE(clear_without_confirm.exit_code == 2);
+    auto clear_without_confirm_json = parse_json_output(clear_without_confirm.stdout_output);
+    require_error_envelope(clear_without_confirm_json);
+    CHECK(clear_without_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto clear_with_confirm = run_cli({"cache", "clear", "--confirm", "--json"});
+    REQUIRE(clear_with_confirm.exit_code == 0);
+    require_success_envelope(parse_json_output(clear_with_confirm.stdout_output));
+}
+
 TEST_CASE("CLI config show 命令", "[cli][integration]") {
     auto result = run_cli({"config", "show", "--json"});
     REQUIRE(result.exit_code == 0);

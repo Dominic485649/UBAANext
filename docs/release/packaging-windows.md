@@ -1,6 +1,6 @@
 # Windows 静态二进制打包与 vcpkg 集成编译指南
 
-> 当前仓库版本阶段为 `v0.3.0`。本页描述 v0.4+ / v1.0 发布前的 Windows 打包目标形态；v0.3 当前基线不承诺已经具备正式静态 Release 分发包。
+> 当前仓库版本阶段为 `v0.4.0`。本页描述 v0.5+ / v1.0 发布前的 Windows 打包目标形态；v0.4 当前基线已具备 CLI 工程化入口，但不承诺已经具备正式静态 Release 分发包。
 
 本文档详尽论述了 UBAA Next 项目在 Windows 平台上的编译构建系统、vcpkg 依赖管理系统的集成方式，以及通过静态链接（Static Linking）机制输出独立绿色版命令行客户端 `ubaa.exe` 的完整技术方案。
 
@@ -26,7 +26,7 @@ UBAA Next 在 Windows 平台上使用 **CMake (3.21+)** 作为构建元系统，
 ```json
 {
   "name": "ubaanext",
-  "version-string": "0.3.0",
+  "version-string": "0.4.0",
   "dependencies": ["nlohmann-json", "catch2", "openssl", "curl"]
 }
 ```

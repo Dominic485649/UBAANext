@@ -1,6 +1,6 @@
 # Slint GUI 许可规范与集成策略 (v0.8 计划)
 
-> 当前仓库版本阶段为 `v0.3.0`。Slint GUI 属于路线图 `v0.8 — Windows Slint GUI` 后续计划，本页是未来引入 Slint 时的许可与合规说明，不代表 v0.3 当前已交付 GUI。
+> 当前仓库版本阶段为 `v0.4.0`。Slint GUI 属于路线图 `v0.8 — Windows Slint GUI` 后续计划，本页是未来引入 Slint 时的许可与合规说明，不代表 v0.4 当前已交付 GUI。
 
 本文档解析 UBAA Next 项目在未来引入 **Slint** 作为原生 Windows GUI（图形界面）框架时的双重/多重许可机制（GPLv3 / 商业许可 / Royalty-Free 免费桌面许可），并规划在保障核心库 MIT 许可纯净性的前提下，实现 GUI 外壳集成的法律与技术策略。
 

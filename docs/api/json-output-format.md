@@ -35,7 +35,7 @@ UBAA Next CLI 的 `--json` 输出遵循统一的 JSON 格式规范。
 {
   "ok": true,
   "data": {
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "error": null
 }
@@ -64,7 +64,7 @@ UBAA Next CLI 的 `--json` 输出遵循统一的 JSON 格式规范。
         ]
       }
     ],
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "error": null
 }
@@ -237,7 +237,7 @@ UBAA Next CLI 的 `--json` 输出遵循统一的 JSON 格式规范。
     "sessionPath": "C:\\Users\\...\\session.dat",
     "cookiePath": "C:\\Users\\...\\cookies.dat",
     "configPath": "C:\\Users\\...\\config.json",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "error": null
 }

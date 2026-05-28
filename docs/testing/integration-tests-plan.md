@@ -1,6 +1,6 @@
 # 集成测试计划
 
-> 当前仓库版本阶段为 `v0.3.0`。本计划同时记录 v0.3 稳定基线和 v0.4+ 后续集成方向；默认集成测试以 mock/offline CLI、parser/service/cache 契约为准，live smoke 与 OpenHarmony/binding 验证属于显式 opt-in 或后续阶段。
+> 当前仓库版本阶段为 `v0.4.0`。本计划记录 v0.4 稳定集成基线和 v0.5+ 后续真实测试方向；默认集成测试以 mock/offline CLI、parser/service/cache、命令树、JSON envelope、exit code 和写操作确认门契约为准，live smoke 与 OpenHarmony/binding 验证属于显式 opt-in 或后续阶段。
 
 ## 目标
 
@@ -12,7 +12,7 @@
 
 | 文件 / 工具 | 范围 |
 | --- | --- |
-| `tests/integration/CliIntegrationTests.cpp` | 离线 CLI 集成测试，覆盖命令分发、JSON 输出、参数错误、写操作未确认时拒绝执行等。 |
+| `tests/integration/CliIntegrationTests.cpp` | 离线 CLI 集成测试，覆盖命令分发、JSON 输出、参数错误、固定 exit code、help golden 合同、config/cache 确认门、写操作未确认时拒绝执行等。 |
 | `tests/integration/LiveSmokeTests.cpp` | 显式 opt-in 的 live smoke gate，默认跳过。 |
 | `tools/live-smoke.ps1` | 手动 live smoke runner；L1 为只读，L2/L3 不自动执行写操作。 |
 | `openharmony-clang-*` CMake presets | OpenHarmony native 构建入口；关闭 CLI/tests，启用 binding，用于验证 DevEco 可复用的 native target。 |
@@ -39,7 +39,7 @@
 
 ## 验收标准
 
-- CLI JSON 输出保持 `ok/data/error` envelope。
+- CLI JSON 输出保持 `ok/data/error` envelope，`help --json` 的命令目录不得出现重复命令名。
 - 参数错误、认证失效、网络错误、解析错误和业务错误不互相混淆。
 - 写操作缺少 `--confirm` / `--yes` 或平台 `write_operations` capability 时必须失败且不触发远端请求。
 - 聚合类只读命令遇到单个来源失败时，应保留成功来源并输出 source-level error，且错误消息必须脱敏，而不是把失败吞成空列表或整体成功。

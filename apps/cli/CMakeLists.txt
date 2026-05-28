@@ -1,5 +1,6 @@
 add_executable(ubaa
     src/main.cpp
+    src/CommandHandlers.cpp
     src/PlainFileStore.cpp
     src/ServiceFactory.cpp
     src/PlatformContextFactory.cpp

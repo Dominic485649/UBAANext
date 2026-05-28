@@ -30,14 +30,17 @@
 - CLI: term list、week list 命令
 - 全面单元测试（JsonParser、TermService、缓存集成）
 
-## v0.4 — CLI 工程化
+## v0.4 — CLI 工程化 ✅
 
-- 命令树稳定化，拆分 AppContext / ServiceFactory / CommandHandlers
-- 所有命令支持 `--json` 输出
-- 固定 exit code（0-6）
-- config / cache clear 子命令
-- CLI integration tests 与 golden output tests
-- 文档完善（JSON 输出格式、错误码、CLI 命令 API）
+- 命令树稳定化：CLI 命令目录、文本 help、`help --json` 合同与命令识别集中到 `CommandHandlers`
+- 运行时边界拆分：`AppContext` 承载进程级依赖，`ServiceFactory` 集中创建 Core Service，命令处理逻辑与平台资源装配解耦
+- 所有公开 CLI 命令支持统一 `--json` envelope：`ok/data/error` 成功与失败格式固定
+- 固定 CLI exit code（0-6）：成功、通用失败、参数错误、认证缺失、网络错误、解析错误、存储错误可被脚本稳定消费
+- `config show`、`config set --confirm`、`cache clear --confirm` 子命令纳入稳定命令合同
+- 写操作和本地破坏性操作继续 fail-closed：缺少 `--confirm` / `--yes` 或平台 `write_operations` capability 时不得触发远端写请求
+- CLI integration tests 与 golden output tests 覆盖 help 命令目录、JSON envelope、exit code 范围、config/cache 确认门和关键 mock/offline 命令
+- 文档同步 CLI 命令 API、JSON 输出格式、错误码、Windows CLI、测试策略和版本号说明
+- 为 v0.5 真实测试准备安全边界：默认测试离线，live smoke 必须显式设置 `UBAANEXT_LIVE=1`，真实凭据不得入库、不得进入日志或测试快照，L1 只读失败不得被已知失败机制掩盖
 
 ## v0.5 — 真实 HTTP 与认证
 

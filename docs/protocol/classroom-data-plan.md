@@ -3,7 +3,7 @@
 ## 概述
 
 教室数据协议定义了 UBAA 教室 API 的请求/响应格式。
-当前 v0.3 使用 Mock HTTP 返回硬编码 JSON，未来 v0.4+ 将对接真实 API。
+当前 v0.4 仍使用 Mock HTTP 返回硬编码 JSON，真实 API 对接进入 v0.5+。
 
 ## API 端点
 

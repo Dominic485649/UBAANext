@@ -7,7 +7,7 @@ endif()
 include(cmake/UBAANextOptions.cmake)
 
 project(UBAANext
-    VERSION 0.3.0
+    VERSION 0.4.0
     LANGUAGES CXX
     DESCRIPTION "UBAA Next - C++ native campus service client"
 )
