@@ -5,6 +5,7 @@
 #include <UBAANext/Model/Evaluation.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
+#include <UBAANext/Service/WriteOperationGate.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
 
 #include <nlohmann/json.hpp>
@@ -18,14 +19,26 @@ class EvaluationService {
 public:
     EvaluationService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    /** PartiallyMigrated read path: fetches evaluation tasks; questionnaire/session drift remains possible. */
     Result<std::vector<Model::EvaluationTask>> list_evaluation_tasks();
+
+    /** PartiallyMigrated read path exposed as FeatureRecord; failures must propagate to Todo partial failure. */
     Result<std::vector<Model::FeatureRecord>> list_evaluations();
+
+    /** WriteGated: installs the explicit confirmation and platform write capability gate. */
+    void set_write_operation_gate(WriteOperationGate gate);
+
+    /**
+     * WriteGated remote mutation: yes. Submitting evaluations can be irreversible and requires the gate;
+     * default platform capabilities keep this operation fail-closed.
+     */
     Result<Model::MutationResult> submit_evaluations(const std::string &target_id);
 
 private:
     IHttpClient &m_http_client;
     ICacheStore &m_cache;
     ConnectionMode m_mode;
+    WriteOperationGate m_write_gate = disabled_write_operation("evaluation submit");
     bool m_activated = false;
 
     Result<void> activate_session();

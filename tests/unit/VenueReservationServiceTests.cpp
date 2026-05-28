@@ -105,10 +105,11 @@ public:
             CHECK(token->second == "jar-sso-token");
             response.body = R"JSON({"code":200,"data":{"token":{"access_token":"jar-access-token"}}})JSON";
         } else if (request.url.find("https://cgyy.buaa.edu.cn/venue-zhjs-server/api/orders/mine?") == 0) {
+            ++orders_requests;
             auto auth = request.headers.find("cgAuthorization");
             REQUIRE(auth != request.headers.end());
             CHECK(auth->second == "jar-access-token");
-            response.body = R"JSON({"code":200,"data":{"content":[]}})JSON";
+            response.body = orders_body.empty() ? R"JSON({"code":200,"data":{"content":[]}})JSON" : orders_body;
         } else {
             response.status_code = 500;
             response.body = R"JSON({"code":500,"message":"unexpected request"})JSON";
@@ -117,6 +118,8 @@ public:
     }
 
     std::map<std::string, int> request_counts;
+    int orders_requests = 0;
+    std::string orders_body;
 };
 
 } // namespace
@@ -148,10 +151,32 @@ TEST_CASE("VenueReservationService 从 CookieJar 回退读取研讨室 SSO token
     CHECK(http_client.request_counts["https://cgyy.buaa.edu.cn/venue-zhjs-server/api/login"] == 1);
 }
 
+TEST_CASE("VenueReservationService 查询业务错误消息会脱敏", "[service][cgyy][security]") {
+    VenueReservationCookieJarFixtureHttpClient http_client;
+    http_client.orders_body = R"JSON({"code":500,"message":"token=token-secret&Cookie: SID=cookie-secret&photo_path=C:/secret/lock-code.txt"})JSON";
+    TestCookieStore cookie_store;
+    cookie_store.cookies.set_cookie("cgyy.buaa.edu.cn", "sso_buaa_zhjs_token", "jar-sso-token");
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::VenueReservationService service(http_client, &cookie_store, cache, UBAANext::ConnectionMode::Direct, UBAANext::default_crypto_provider());
+
+    auto result = service.orders();
+
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == UBAANext::ErrorCode::NetworkError);
+    CHECK(result.error().message.find("token-secret") == std::string::npos);
+    CHECK(result.error().message.find("cookie-secret") == std::string::npos);
+    CHECK(result.error().message.find("C:/secret/lock-code.txt") == std::string::npos);
+    CHECK(result.error().message.find("[REDACTED]") != std::string::npos);
+    CHECK(http_client.orders_requests == 1);
+}
+
 TEST_CASE("VenueReservationService 预约拒绝非数字场地 ID", "[service][cgyy]") {
     VenueReservationFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     auto service = make_service(http_client, cache);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "cgyy reserve"));
 
     auto result = service.reserve("site-1", "space-x", "2026-05-15", "1001", "3", "组会", "13800000000", "张三", "captcha", "token");
 
@@ -164,6 +189,9 @@ TEST_CASE("VenueReservationService 预约拒绝非数字时段 ID", "[service][c
     VenueReservationFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     auto service = make_service(http_client, cache);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "cgyy reserve"));
 
     auto result = service.reserve("site-1", "2001", "2026-05-15", "time-x", "3", "组会", "13800000000", "张三", "captcha", "token");
 
@@ -200,6 +228,9 @@ TEST_CASE("VenueReservationService 取消订单拒绝非数字 ID", "[service][c
     VenueReservationFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     auto service = make_service(http_client, cache);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "cgyy order cancel"));
 
     auto result = service.cancel_order("order-x");
 
@@ -212,6 +243,9 @@ TEST_CASE("VenueReservationService 预约按参与人计算人数", "[service][c
     VenueReservationLoginFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::VenueReservationService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "cgyy reserve"));
 
     auto result = service.reserve("1", "2001", "2026-05-15", "1001", "3", "组会", "13800000000", "张三\n李四", "captcha", "token");
 

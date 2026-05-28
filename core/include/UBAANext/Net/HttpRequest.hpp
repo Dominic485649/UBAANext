@@ -47,7 +47,8 @@ enum class HttpMethod {
 /**
  * @brief 平台无关的上传部件。
  *
- * App/Shell 层负责读取本地文件、权限处理和 MIME 推断；HTTP adapter 只发送已经准备好的 bytes。
+ * Placeholder/Upload boundary：App/Shell 层负责读取本地文件、权限处理和 MIME 推断；HTTP adapter 只发送已经准备好的 bytes。
+ * Sensitive input：filename 和 bytes 不得写入日志；存在该结构不代表业务上传 API 已实现。
  */
 struct HttpUploadPart {
     std::string field_name;
@@ -59,7 +60,8 @@ struct HttpUploadPart {
 /**
  * @brief 单次 HTTP 请求的传输选项。
  *
- * 字段为 0 / 空字符串时表示使用平台 adapter 默认值。
+ * PartiallyMigrated transport boundary：字段为 0 / 空字符串时表示使用平台 adapter 默认值。
+ * `redact_url_query_in_errors` 必须默认开启，错误路径不得泄露 query 中的 token/captcha/session。
  */
 struct HttpTransportOptions {
     int connect_timeout_ms = 0;
@@ -88,10 +90,8 @@ struct HttpTransportOptions {
  *   HttpResponse resp = httpClient->send(req);
  * @endcode
  *
- * 注意事项：
- *   - GET 请求通常不需要设置 body，但结构体不做硬性限制
- *   - headers 中的键名应遵循 HTTP 规范（大小写不敏感）
- *   - url 应包含完整的协议前缀（http:// 或 https://）
+ * Sensitive input：url query、headers、body 和 multipart bytes 可能包含 credentials、cookie、token、captcha 或业务数据，
+ * 错误、日志和 diagnostics 必须脱敏。HTTP method 存在不代表该请求是安全只读，调用方按业务 service gate 判断。
  */
 struct HttpRequest {
     /**
@@ -112,21 +112,20 @@ struct HttpRequest {
     /**
      * @brief 请求头键值对
      *
-     * 以键值对形式存储 HTTP 请求头。常见的请求头包括：
-     *   - "Content-Type"   : 请求体的 MIME 类型
-     *   - "Authorization"  : 认证令牌（如 Bearer Token）
-     *   - "Accept"         : 客户端可接受的响应格式
-     *
-     * 注意：如果插入同名键，后插入的值会覆盖先前的值。
+     * Sensitive input：Authorization、Cookie、Set-Cookie 派生值和 token-like header 不得直接输出。
      */
     std::unordered_map<std::string, std::string> headers;
 
+    /** Sensitive input: request body may contain credentials, captcha, tokens, or write-operation payloads. */
     std::string body;
 
+    /** Placeholder/Upload boundary: preloaded bytes only; this structure never reads local files itself. */
     std::vector<HttpUploadPart> multipart_parts;
 
+    /** PartiallyMigrated transport settings; redaction defaults must remain fail-safe. */
     HttpTransportOptions transport;
 
+    /** Redirect/session boundary: automatic redirects may expose session transitions and must keep URLs redacted. */
     RedirectOptions redirect;
 };
 

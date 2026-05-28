@@ -38,7 +38,7 @@
             "name": "windows-msvc-debug",
             "displayName": "Windows MSVC Debug",
             "description": "Windows 上使用 Visual Studio + MSVC 的 Debug 构建",
-            "generator": "Visual Studio 18 2026",
+            "generator": "Visual Studio 17 2022",
             "architecture": {
                 "value": "x64",
                 "strategy": "set"
@@ -54,7 +54,7 @@
             "name": "windows-msvc-release",
             "displayName": "Windows MSVC Release",
             "description": "Windows 上使用 Visual Studio + MSVC 的 Release 构建",
-            "generator": "Visual Studio 18 2026",
+            "generator": "Visual Studio 17 2022",
             "architecture": {
                 "value": "x64",
                 "strategy": "set"
@@ -81,6 +81,8 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "UBAANEXT_CXX_STANDARD": "17",
                 "UBAANEXT_BUILD_TESTS": "OFF",
+                "UBAANEXT_BUILD_CLI": "OFF",
+                "UBAANEXT_BUILD_BINDINGS": "ON",
                 "UBAANEXT_FETCH_DEPS": "OFF",
                 "UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR": "$env{UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR}",
                 "OHOS_STL": "c++_shared",
@@ -99,6 +101,8 @@
                 "CMAKE_BUILD_TYPE": "Debug",
                 "UBAANEXT_CXX_STANDARD": "20",
                 "UBAANEXT_BUILD_TESTS": "OFF",
+                "UBAANEXT_BUILD_CLI": "OFF",
+                "UBAANEXT_BUILD_BINDINGS": "ON",
                 "UBAANEXT_FETCH_DEPS": "OFF",
                 "UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR": "$env{UBAANEXT_NLOHMANN_JSON_INCLUDE_DIR}",
                 "OHOS_STL": "c++_shared",

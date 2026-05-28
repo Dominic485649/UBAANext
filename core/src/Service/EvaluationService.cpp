@@ -1,5 +1,6 @@
 #include <UBAANext/Service/EvaluationService.hpp>
 
+#include <UBAANext/Net/HttpHeaders.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/EvaluationParser.hpp>
 #include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
@@ -38,7 +39,7 @@ std::string url_encode(const std::string &value) {
 void apply_headers(HttpRequest &request) {
     request.headers["Accept"] = "application/json, text/plain, */*";
     request.headers["Accept-Language"] = "zh-CN,zh;q=0.9";
-    request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
+    request.headers["User-Agent"] = kUserAgent;
     request.headers["X-Requested-With"] = "XMLHttpRequest";
 }
 
@@ -189,7 +190,8 @@ Result<std::vector<Model::EvaluationTask>> EvaluationService::list_evaluation_ta
         auto rwid = json_string(task, "rwid");
         if (rwid.empty()) continue;
         auto questionnaires_data = request_json(HttpMethod::Get, "https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/getQuestionnaireListToTask?rwid=" + url_encode(rwid) + "&sfyp=0&pageNum=1&pageSize=999");
-        if (!questionnaires_data || !questionnaires_data->is_array()) continue;
+        if (!questionnaires_data) return make_error(questionnaires_data.error().code, questionnaires_data.error().message);
+        if (!questionnaires_data->is_array()) return make_error(ErrorCode::ParseError, "评教问卷响应不是数组");
         for (const auto &questionnaire : *questionnaires_data) {
             auto wjid = json_string(questionnaire, "wjid");
             auto msid = json_string(questionnaire, "msid");
@@ -198,7 +200,8 @@ Result<std::vector<Model::EvaluationTask>> EvaluationService::list_evaluation_ta
             (void)request_json(HttpMethod::Post, "https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/reviseQuestionnairePattern", nlohmann::json{{"rwid", rwid}, {"wjid", wjid}, {"msid", msid}});
             for (const auto &sfyp : {std::string("0"), std::string("1")}) {
                 auto courses_data = request_json(HttpMethod::Get, "https://spoc.buaa.edu.cn/pjxt/evaluationMethodSix/getRequiredReviewsData?sfyp=" + sfyp + "&wjid=" + url_encode(wjid) + "&xnxq=" + url_encode(*xnxq) + "&pageNum=1&pageSize=999");
-                if (!courses_data || !courses_data->is_array()) continue;
+                if (!courses_data) return make_error(courses_data.error().code, courses_data.error().message);
+                if (!courses_data->is_array()) return make_error(ErrorCode::ParseError, "评教课程响应不是数组");
                 auto status = sfyp == "1" ? "evaluated" : "pending";
                 for (auto record : Parser::parse_evaluation_required_reviews(*courses_data, rwid, wjid, msid, *xnxq, status)) {
                     records[record.id] = std::move(record);
@@ -221,7 +224,13 @@ Result<std::vector<Model::FeatureRecord>> EvaluationService::list_evaluations() 
     return records;
 }
 
+void EvaluationService::set_write_operation_gate(WriteOperationGate gate) {
+    m_write_gate = std::move(gate);
+}
+
 Result<Model::MutationResult> EvaluationService::submit_evaluations(const std::string &target_id) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     auto records = list_evaluations();
     if (!records) return make_error(records.error().code, records.error().message);
 

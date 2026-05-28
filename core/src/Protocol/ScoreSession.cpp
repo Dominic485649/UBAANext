@@ -2,6 +2,7 @@
 
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Protocol/SessionGuards.hpp>
+#include <UBAANext/Security/SecurityRedaction.hpp>
 
 namespace UBAANext::Protocol::Score {
 
@@ -40,7 +41,7 @@ Result<void> ensure_session(IHttpClient &http_client, ConnectionMode mode) {
 
     auto response = http_client.send(request);
     if (!response) {
-        return make_error(ErrorCode::NetworkError, "成绩系统会话同步失败: " + response.error().message);
+        return make_error(ErrorCode::NetworkError, "成绩系统会话同步失败: " + Security::redact_sensitive_text(response.error().message));
     }
     if (is_session_expired_response(*response)) {
         return make_error(ErrorCode::SessionExpired, "成绩系统会话已过期");

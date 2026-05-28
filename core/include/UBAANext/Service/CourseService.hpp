@@ -25,9 +25,13 @@ public:
 #endif
     CourseService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    /** ReadOnlyCandidate: returns today's courses from cache/mock or the real schedule API; field drift remains possible. */
     Result<std::vector<Model::Course>> get_today_courses();
+    /** ReadOnlyCandidate: remote read for a specific date; unsupported modes fail explicitly. */
     Result<std::vector<Model::Course>> get_date_courses(const std::string &date);
+    /** PartiallyMigrated: mock can infer week-only data, but real mode requires term_code and fails with InvalidArgument. */
     Result<std::vector<Model::Course>> get_week_courses(int week);
+    /** ReadOnlyCandidate: fetches week courses for an explicit term; live BYXT fields remain unverified. */
     Result<std::vector<Model::Course>> get_week_courses(int week, const std::string &term_code);
 
 private:
@@ -37,7 +41,7 @@ private:
 
     [[nodiscard]] std::string resolve_url(const std::string &url) const;
 
-    /// 从 byxt API 解析周课表
+    /** ReadOnlyCandidate helper: fetches real BYXT week courses; propagates activation, network, auth, and parse failures. */
     Result<std::vector<Model::Course>> fetch_week_courses_real(int week, const std::string &term_code);
 };
 

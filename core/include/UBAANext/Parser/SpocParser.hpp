@@ -11,10 +11,12 @@
 namespace UBAANext {
 namespace Parser {
 
+/** PartiallyMigrated parser entry: parses one SPOC assignment page; pending/expired field semantics remain unverified. */
 std::vector<Model::SpocAssignmentSummary> parse_spoc_assignments_page(const nlohmann::json &page,
                                                                       const std::map<std::string, std::pair<std::string, std::string>> &courses,
                                                                       const std::string &term_code,
                                                                       const std::string &term_name);
+/** Sensitive output: parses SPOC assignment detail/submission metadata and must not log raw JSON. */
 Model::SpocAssignmentDetail parse_spoc_assignment_detail(const nlohmann::json &detail,
                                                          const nlohmann::json *submission,
                                                          const std::string &assignment_id);

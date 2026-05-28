@@ -1,5 +1,7 @@
 #include <UBAANext/Parser/SpocParser.hpp>
 
+#include <UBAANext/Base/TimeUtils.hpp>
+
 #include <algorithm>
 #include <charconv>
 #include <cctype>
@@ -103,11 +105,7 @@ std::string normalize_datetime(std::string raw_value) {
         tm.tm_hour = hour;
         tm.tm_min = minute;
         tm.tm_sec = second;
-#ifdef _WIN32
-        auto seconds = _mkgmtime(&tm);
-#else
-        auto seconds = timegm(&tm);
-#endif
+        auto seconds = utc_time_t(tm);
         if (seconds != static_cast<std::time_t>(-1)) {
             if (match[7].matched) {
                 int offset_hour = 0;
@@ -117,12 +115,7 @@ std::string normalize_datetime(std::string raw_value) {
                 seconds += match[7].str() == "+" ? -offset : offset;
             }
             seconds += 8 * 3600;
-            std::tm local{};
-#ifdef _WIN32
-            gmtime_s(&local, &seconds);
-#else
-            gmtime_r(&seconds, &local);
-#endif
+            auto local = utc_time(seconds);
             char buffer[20]{};
             if (std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &local) > 0) return buffer;
         }

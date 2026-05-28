@@ -85,3 +85,58 @@ TEST_CASE("parse_venue_order_detail 解析订单详情", "[VenueReservationParse
     CHECK(order.phone == "13800000000");
     CHECK(order.joiners == "张三,李四");
 }
+
+TEST_CASE("parse_venue_sites 对空数据和字段漂移稳定降级", "[VenueReservationParser][contract]") {
+    CHECK(um::Parser::parse_venue_sites(nlohmann::json::object({{"content", "not-array"}})).empty());
+
+    auto sites = um::Parser::parse_venue_sites(nlohmann::json{{"content", nlohmann::json::array({
+        {{"id", "venue-1"}, {"venueName", 8}, {"campusName", nlohmann::json::array({"bad"})}, {"siteList", nlohmann::json::array({
+            {{"id", nullptr}, {"siteName", "缺少 id"}},
+            {{"id", nlohmann::json::array({"bad"})}, {"siteName", "数组 id"}},
+            {{"id", 42}, {"siteName", nlohmann::json::object({{"bad", true}})}},
+        })}},
+    })}});
+
+    REQUIRE(sites.size() == 1);
+    CHECK(sites[0].id == "42");
+    CHECK(sites[0].name.empty());
+    CHECK(sites[0].venue_name == "8");
+    CHECK(sites[0].campus_name.empty());
+}
+
+TEST_CASE("parse_venue_day_info 对空数据和时间段漂移稳定降级", "[VenueReservationParser][contract]") {
+    CHECK(um::Parser::parse_venue_day_info(nlohmann::json::object({{"reservationDateSpaceInfo", "not-object"}}), "site-1").empty());
+
+    auto spaces = um::Parser::parse_venue_day_info(nlohmann::json{
+        {"spaceTimeInfo", nlohmann::json::array({{{"id", 1001}, {"beginTime", "08:00"}, {"endTime", "10:00"}}})},
+        {"reservationDateSpaceInfo", nlohmann::json{{"20260515", nlohmann::json::array({
+            {{"id", nullptr}, {"spaceName", "缺少 id"}},
+            {{"id", nlohmann::json::array({"bad"})}, {"spaceName", "数组 id"}},
+            {{"id", 9}, {"spaceName", nlohmann::json::object({{"bad", true}})}, {"1001", nlohmann::json{{"reservationStatus", "1"}}}},
+        })}}},
+    }, "site-1");
+
+    REQUIRE(spaces.size() == 1);
+    CHECK(spaces[0].id == "9:1001");
+    CHECK(spaces[0].name.empty());
+    CHECK(spaces[0].date == "20260515");
+    CHECK(spaces[0].site_id == "site-1");
+    CHECK(spaces[0].reservable == "true");
+}
+
+TEST_CASE("parse_venue_orders 对空数据和无 id 记录稳定处理", "[VenueReservationParser][contract]") {
+    CHECK(um::Parser::parse_venue_orders(nlohmann::json::object({{"content", "not-array"}})).empty());
+
+    auto orders = um::Parser::parse_venue_orders(nlohmann::json{{"content", nlohmann::json::array({
+        {{"id", nullptr}, {"topic", "缺少 id"}},
+        {{"id", nlohmann::json::object({{"bad", true}})}, {"topic", "对象 id"}},
+        {{"id", 6}, {"theme", nlohmann::json::array({"bad"})}, {"orderStatus", 3}, {"reservationDate", 20260515}, {"venueSpaceName", nlohmann::json::object({{"bad", true}})}},
+    })}});
+
+    REQUIRE(orders.size() == 1);
+    CHECK(orders[0].id == "6");
+    CHECK(orders[0].title.empty());
+    CHECK(orders[0].status == "3");
+    CHECK(orders[0].reservation_date == "20260515");
+    CHECK(orders[0].space.empty());
+}

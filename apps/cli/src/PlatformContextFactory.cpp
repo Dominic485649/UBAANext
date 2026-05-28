@@ -36,6 +36,7 @@ namespace {
 
 class NoopCookieStore final : public UBAANext::ICookieStore {
 public:
+    /** Unsupported cookie persistence: used only for mock/client wrappers and never as a real session store. */
     UBAANext::Result<UBAANext::CookieJar> load() override {
         return UBAANext::CookieJar{};
     }
@@ -56,6 +57,7 @@ public:
 
 class VolatileSecureStore final : public UBAANext::ISecureStore {
 public:
+    /** Fallback volatile storage: does not prove secure_store or cookie/session persistence capability. */
     void set_string(const std::string &key, const std::string &value) override {
         m_values[key] = value;
     }
@@ -181,6 +183,7 @@ AppContext create_current_platform_context(const PlatformContextOptions &options
     ctx.capabilities.app_data_path = true;
     ctx.capabilities.upload_bytes = true;
     ctx.capabilities.live_login = false;
+    // WriteGated fail-closed default: real remote mutations require an explicit platform opt-in.
     ctx.capabilities.write_operations = false;
 #endif
     return ctx;

@@ -9,6 +9,10 @@ constexpr const char *kSpocLoginResponse = R"JSON({"code":200,"content":{"jsdm":
 constexpr const char *kSpocTermResponse = R"JSON({"code":200,"content":{"mrxq":"2025-2026-2","dqxq":"2025-2026学年第二学期"}})JSON";
 constexpr const char *kSpocCoursesResponse = R"JSON({"code":200,"content":[{"kcid":"course-1","kcmc":"智能制造导论","skjs":"张老师"}]})JSON";
 constexpr const char *kSpocAssignmentsResponse = R"JSON({"code":200,"content":{"list":[{"zyid":"spoc-3","sskcid":"course-1","zymc":"已交作业","tjzt":"已提交","zyjzsj":"2026-03-20 23:59:00"},{"zyid":"spoc-2","sskcid":"course-1","zymc":"过期作业","tjzt":"已过期","zyjzsj":"2026-03-08 23:59:00"},{"zyid":"spoc-1","sskcid":"course-1","zymc":"未交作业","tjzt":"未做","zyjzsj":"2026-03-10 23:59:00"}],"hasNextPage":false,"pages":1}})JSON";
+constexpr const char *kSpocDetailResponse = R"JSON({"code":200,"content":{"sskcid":"course-1","zymc":"单详情作业","zykssj":"2026-03-01 08:00:00","zyjzsj":"2026-03-10 23:59:00","zyfs":"100","zynr":"<p>完成报告</p>"}})JSON";
+constexpr const char *kSpocSubmissionResponse = R"JSON({"code":200,"content":{"tjzt":"已提交","tjsj":"2026-03-09 20:00:00"}})JSON";
+constexpr const char *kSpocSubmissionErrorResponse = R"JSON({"code":500,"msg":"Cookie: SID=cookie-secret&photo_path=C:/secret/spoc-submit.html","content":null})JSON";
+constexpr const char *kSpocDetailErrorResponse = R"JSON({"code":500,"msg":"captcha=captcha-secret&Authorization: bearer-secret&photo_path=C:/secret/spoc-detail.html","content":null})JSON";
 
 std::string direct_spoc_url(const std::string &url) {
     const auto prefix = std::string("https://d.buaa.edu.cn/https/");
@@ -31,9 +35,13 @@ public:
         else if (url == "https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryOne") response.body = kSpocTermResponse;
         else if (url == "https://spoc.buaa.edu.cn/spocnewht/jxkj/queryKclb?kcmc=&xnxq=2025-2026-2") response.body = kSpocCoursesResponse;
         else if (url == "https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryListByPage") response.body = kSpocAssignmentsResponse;
+        else if (url.find("https://spoc.buaa.edu.cn/spocnewht/kczy/queryKczyInfoByid?id=") == 0) response.body = detail_body;
+        else if (url.find("https://spoc.buaa.edu.cn/spocnewht/kczy/queryXsSubmitKczyInfo?kczyid=") == 0) response.body = submission_body;
         else response.body = R"JSON({"code":404,"msg":"unexpected url"})JSON";
         return response;
     }
+    std::string detail_body = kSpocDetailResponse;
+    std::string submission_body = kSpocSubmissionResponse;
 };
 
 class SpocTlsFallbackHttpClient : public UBAANext::IHttpClient {
@@ -45,7 +53,7 @@ public:
             return UBAANext::make_error(UBAANext::ErrorCode::TlsError, "Curl TLS 失败: schannel handshake failed");
         }
         UBAANext::HttpResponse response;
-        if (request.url.find("sso.buaa.edu.cn/login") != std::string::npos || request.url.find("/https/") != std::string::npos && request.url.find("/login") != std::string::npos) {
+        if (request.url.find("sso.buaa.edu.cn/login") != std::string::npos || (request.url.find("/https/") != std::string::npos && request.url.find("/login") != std::string::npos)) {
             ++sso_requests;
             response.status_code = 302;
             response.headers["Location"] = "https://spoc.buaa.edu.cn/spocnew/cas?token=test-token";
@@ -83,6 +91,73 @@ UBAANext::SpocService make_spoc_service(SpocFixtureHttpClient &http_client, UBAA
 }
 
 } // namespace
+
+TEST_CASE("SpocService 单详情返回详情和提交状态", "[service][spoc][contract]") {
+    SpocFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    auto service = make_spoc_service(http_client, cache);
+
+    auto detail = service.assignment_detail("spoc-1");
+
+    REQUIRE(detail);
+    CHECK(detail->id == "spoc-1");
+    CHECK(detail->course_id == "course-1");
+    CHECK(detail->title == "单详情作业");
+    CHECK(detail->status == "submitted");
+    CHECK(detail->submitted_at == "2026-03-09 20:00:00");
+    CHECK(detail->content == "完成报告");
+
+    auto record = service.show_assignment("spoc-1");
+    REQUIRE(record);
+    CHECK(record->id == "spoc-1");
+    CHECK(record->status == "submitted");
+    CHECK(record->fields.at("content") == "完成报告");
+    CHECK(record->fields.at("submissionStatus") == "已提交");
+}
+
+TEST_CASE("SpocService 单详情提交信息失败时保留详情并降级为 unknown", "[service][spoc][contract][redaction]") {
+    SpocFixtureHttpClient http_client;
+    http_client.submission_body = kSpocSubmissionErrorResponse;
+    UBAANext::MemoryCacheStore cache;
+    auto service = make_spoc_service(http_client, cache);
+
+    auto detail = service.assignment_detail("spoc-1");
+
+    REQUIRE(detail);
+    CHECK(detail->id == "spoc-1");
+    CHECK(detail->status == "unknown");
+    CHECK(detail->submission_status.empty());
+    CHECK(detail->submitted_at.empty());
+    CHECK(detail->content == "完成报告");
+}
+
+TEST_CASE("SpocService 单详情业务错误消息会脱敏", "[service][spoc][security]") {
+    SpocFixtureHttpClient http_client;
+    http_client.detail_body = kSpocDetailErrorResponse;
+    UBAANext::MemoryCacheStore cache;
+    auto service = make_spoc_service(http_client, cache);
+
+    auto detail = service.assignment_detail("spoc-1");
+
+    REQUIRE_FALSE(detail);
+    CHECK(detail.error().code == UBAANext::ErrorCode::NetworkError);
+    CHECK(detail.error().message.find("captcha-secret") == std::string::npos);
+    CHECK(detail.error().message.find("bearer-secret") == std::string::npos);
+    CHECK(detail.error().message.find("C:/secret/spoc-detail.html") == std::string::npos);
+    CHECK(detail.error().message.find("[REDACTED]") != std::string::npos);
+}
+
+TEST_CASE("SpocService 单详情登录页返回 SessionExpired", "[service][spoc][contract]") {
+    SpocFixtureHttpClient http_client;
+    http_client.detail_body = "<html><body>统一身份认证<input name=\"execution\" value=\"login-ticket\"></body></html>";
+    UBAANext::MemoryCacheStore cache;
+    auto service = make_spoc_service(http_client, cache);
+
+    auto detail = service.assignment_detail("spoc-1");
+
+    REQUIRE_FALSE(detail);
+    CHECK(detail.error().code == UBAANext::ErrorCode::SessionExpired);
+}
 
 TEST_CASE("SpocService 按状态过滤待办和过期作业", "[service][spoc]") {
     SpocFixtureHttpClient http_client;

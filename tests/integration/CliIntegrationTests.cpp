@@ -142,6 +142,16 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
     REQUIRE(json["data"].contains("version"));
     REQUIRE(json["data"]["commands"].is_array());
     REQUIRE_FALSE(json["data"]["commands"].empty());
+
+    const auto &commands = json["data"]["commands"];
+    auto has_command = [&](const std::string &name) {
+        return std::any_of(commands.begin(), commands.end(), [&](const auto &command) {
+            return command.contains("name") && command["name"] == name;
+        });
+    };
+    CHECK(has_command("grade all"));
+    CHECK(has_command("todo list"));
+    CHECK(has_command("file upload"));
 }
 
 #if UBAANEXT_ENABLE_MOCKS
@@ -331,6 +341,7 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
         {"app", "version", "--mock", "--json"},
         {"app", "announcement", "--mock", "--json"},
         {"grade", "list", "--mock", "--term", "2025-2026-2", "--json"},
+        {"grade", "list", "--all", "--mock", "--json"},
         {"grade", "all", "--mock", "--json"},
         {"classroom", "query", "--mock", "--campus", "1", "--date", "2026-05-15", "--sections", "1,2", "--json"},
         {"spoc", "assignments", "--mock", "--pending-only", "--include-expired", "--json"},
@@ -342,8 +353,10 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
         {"signin", "today", "--mock", "--json"},
         {"ygdk", "overview", "--mock", "--json"},
         {"ygdk", "records", "--mock", "--json"},
+        {"ygdk", "records", "--mock", "--page", "1", "--limit", "20", "--json"},
         {"evaluation", "list", "--mock", "--json"},
         {"todo", "list", "--mock", "--json"},
+        {"todo", "list", "--mock", "--all", "--json"},
         {"bykc", "profile", "--mock", "--json"},
         {"bykc", "courses", "--mock", "--status", "available", "--category", "通识", "--keyword", "课程", "--json"},
         {"bykc", "chosen", "--mock", "--json"},
@@ -516,6 +529,36 @@ TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integratio
     }
 }
 
+TEST_CASE("CLI Judge details-batch mock 保留 partial failure 记录", "[cli][integration]") {
+    auto result = run_cli({"judge", "assignment", "details-batch", "--mock", "--input", "judge-1,judge-error", "--json"});
+    INFO(result.stdout_output);
+    REQUIRE(result.exit_code == 0);
+
+    auto json = parse_json_output(result.stdout_output);
+    require_success_envelope(json);
+    REQUIRE(json["data"].contains("details"));
+    REQUIRE(json["data"]["details"].is_array());
+    REQUIRE(json["data"]["details"].size() == 2);
+
+    const auto &success = json["data"]["details"][0];
+    require_feature_record(success);
+    CHECK(success["id"] == "judge-1");
+    CHECK(success["status"] == "unsubmitted");
+
+    const auto &failed = json["data"]["details"][1];
+    require_feature_record(failed);
+    CHECK(failed["id"] == "judge-error");
+    CHECK(failed["status"] == "error");
+    REQUIRE(failed["fields"].contains("submissionStatusText"));
+    CHECK(failed["fields"]["submissionStatusText"] == "NetworkError");
+    REQUIRE(failed["fields"].contains("content"));
+    const auto content = failed["fields"]["content"].get<std::string>();
+    CHECK(content.find("captcha-secret") == std::string::npos);
+    CHECK(content.find("bearer-secret") == std::string::npos);
+    CHECK(content.find("C:/secret/judge.html") == std::string::npos);
+    CHECK(content.find("[REDACTED]") != std::string::npos);
+}
+
 TEST_CASE("CLI JSON contract mock smoke", "[cli][integration]") {
     const std::vector<std::pair<std::vector<std::string>, std::string>> list_commands = {
         {{"signin", "today", "--mock", "--json"}, "signin"},
@@ -551,6 +594,31 @@ TEST_CASE("CLI JSON contract mock smoke", "[cli][integration]") {
     auto error_json = parse_json_output(error.stdout_output);
     require_error_envelope(error_json);
     REQUIRE(error_json["error"]["code"] == "InvalidArgument");
+}
+
+TEST_CASE("CLI 保留占位接口稳定返回 NotImplemented", "[cli][integration]") {
+    auto result = run_cli({"file", "upload", "--path", "C:\\tmp\\attachment.jpg", "--confirm", "--json"});
+    REQUIRE(result.exit_code != 0);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "NotImplemented");
+}
+
+TEST_CASE("CLI 占位上传接口仍需要显式确认", "[cli][integration]") {
+    auto result = run_cli({"file", "upload", "--path", "C:\\tmp\\attachment.jpg", "--json"});
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
+}
+
+TEST_CASE("CLI 默认禁写时打卡上传先返回写门控错误", "[cli][integration]") {
+    auto result = run_cli({"ygdk", "submit", "--id", "ygdk-1", "--start-time", "08:00", "--end-time", "09:00", "--place", "操场", "--photo", "C:\\tmp\\missing-ygdk-photo.jpg", "--confirm", "--json"});
+    REQUIRE(result.exit_code != 0);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "UnsupportedPlatform");
+    CHECK(json["error"]["message"] == "ygdk submit 当前平台未启用真实写操作");
 }
 
 #endif
@@ -603,7 +671,6 @@ TEST_CASE("CLI 真实 BYXT/Score 只读命令要求显式 term", "[cli][integrat
         {"week", "list", "--json"},
         {"exam", "list", "--json"},
         {"grade", "list", "--json"},
-        {"grade", "all", "--json"},
     };
 
     for (const auto &command : commands) {
@@ -664,6 +731,7 @@ TEST_CASE("CLI 选项缺值时保留 JSON 错误合同", "[cli][integration]") {
         {"cgyy", "day-info", "--site-id", "--json"},
         {"ygdk", "records", "--page", "--json"},
         {"ygdk", "records", "--limit", "--json"},
+        {"file", "upload", "--path", "--json"},
         {"spoc", "assignments", "--status", "--json"},
         {"spoc", "assignments", "--category", "--json"},
         {"spoc", "assignments", "--sub-category", "--json"},
@@ -688,6 +756,7 @@ TEST_CASE("CLI 选项缺值时保留 JSON 错误合同", "[cli][integration]") {
         {"signin", "do", "--lat", "--json"},
         {"signin", "do", "--lng", "--json"},
         {"signin", "do", "--sign-type", "--json"},
+        {"judge", "assignment", "details-batch", "--input", "--json"},
         {"config", "set", "--base-url", "--json"},
         {"config", "set", "--proxy", "--json"},
     };

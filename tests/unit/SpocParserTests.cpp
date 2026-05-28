@@ -116,6 +116,35 @@ TEST_CASE("parse_spoc_assignment_detail 缺少提交记录时状态为 unknown",
     CHECK(detail.submitted_at.empty());
 }
 
+TEST_CASE("parse_spoc_assignments_page 字段缺失和类型漂移时跳过无 id 记录", "[SpocParser][contract]") {
+    auto records = um::Parser::parse_spoc_assignments_page(
+        nlohmann::json{{"list", nlohmann::json::array({{{"zymc", "无 id 作业"}, {"tjzt", "未做"}}, {{"zyid", 12345}, {"sskcid", 678}, {"zymc", 90}, {"tjzt", nullptr}, {"mf", 100}}})}},
+        {}, "2025-2026-2", "2025-2026学年第二学期");
+
+    REQUIRE(records.size() == 1);
+    CHECK(records[0].id == "12345");
+    CHECK(records[0].course_id == "678");
+    CHECK(records[0].title == "90");
+    CHECK(records[0].status == "unsubmitted");
+    CHECK(records[0].score == "100");
+}
+
+TEST_CASE("parse_spoc_assignments_page 非数组列表稳定返回空结果", "[SpocParser][contract]") {
+    auto records = um::Parser::parse_spoc_assignments_page(nlohmann::json{{"list", "not-array"}}, {}, "2025-2026-2", "2025-2026学年第二学期");
+
+    CHECK(records.empty());
+}
+
+TEST_CASE("parse_spoc_assignment_detail 字段漂移时保留稳定默认值", "[SpocParser][contract]") {
+    auto detail = um::Parser::parse_spoc_assignment_detail(nlohmann::json{{"sskcid", 123}, {"zyfs", nullptr}, {"zynr", nlohmann::json::object({{"unexpected", true}})}}, nullptr, "spoc-missing");
+
+    CHECK(detail.id == "spoc-missing");
+    CHECK(detail.course_id == "123");
+    CHECK(detail.title == "spoc-missing");
+    CHECK(detail.status == "unknown");
+    CHECK(detail.content.empty());
+}
+
 TEST_CASE("parse_spoc_assignment_detail 规范化提交时间和未知状态", "[SpocParser]") {
     auto detail_json = nlohmann::json{{"sskcid", "course-1"}, {"zymc", "实验作业"}, {"zykssj", "2026-03-24T08:00:00.000+00:00"}, {"zyjzsj", "2026-03-31T15:59:59.000+00:00"}, {"zyfs", "满分:98.5"}, {"zynr", "<p>&nbsp;提交报告</p>"}};
     auto submission_json = nlohmann::json{{"tjzt", "9"}, {"tjsj", "2026-03-25T02:30:00.000+00:00"}};

@@ -235,7 +235,7 @@ CliArgs parse_args(int argc, char *argv[]) {
          args.command == "signin" || args.command == "ygdk" ||
          args.command == "evaluation" || args.command == "bykc" ||
          args.command == "cgyy" || args.command == "libbook" ||
-         args.command == "todo") &&
+         args.command == "todo" || args.command == "file") &&
         i < argc && !looks_like_option(argv[i])) {
         args.subcommand = argv[i];
         ++i;
@@ -390,6 +390,8 @@ CliArgs parse_args(int argc, char *argv[]) {
             read_string_option(argc, argv, i, "--place", args.place, args);
         } else if (arg == "--photo") {
             read_string_option(argc, argv, i, "--photo", args.photo_path, args);
+        } else if (arg == "--path") {
+            read_string_option(argc, argv, i, "--path", args.photo_path, args);
         } else if (arg == "--seat-id") {
             read_string_option(argc, argv, i, "--seat-id", args.seat_id, args);
         } else if (arg == "--segment") {
@@ -504,6 +506,7 @@ CliArgs parse_args(int argc, char *argv[]) {
     return get_app_data_dir() / "session.dat";
 }
 
+/** Sensitive local persistence boundary: returns the real cookie file path; exposing it is diagnostic-only. */
 [[nodiscard]] std::filesystem::path get_cookie_file_path() {
     return get_app_data_dir() / "cookies.dat";
 }
@@ -512,6 +515,7 @@ CliArgs parse_args(int argc, char *argv[]) {
     return get_app_data_dir() / "config.json";
 }
 
+/** Upload helper: infers MIME from a local path string without reading the file contents. */
 [[nodiscard]] std::string mime_for_upload_path(const std::filesystem::path &path) {
     auto ext = path.extension().string();
     std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
@@ -521,6 +525,10 @@ CliArgs parse_args(int argc, char *argv[]) {
     return "application/octet-stream";
 }
 
+/**
+ * Sensitive local file read: reads upload bytes only for typed WriteGated operations, never for placeholder file upload.
+ * Local file read: yes. Remote mutation depends on the caller's service gate.
+ */
 [[nodiscard]] um::Result<um::UploadPart> read_upload_part(const std::string &path_text, std::string field_name) {
     auto path = std::filesystem::path(path_text);
     std::ifstream input(path, std::ios::binary);
@@ -682,7 +690,14 @@ nlohmann::json get_help_json() {
     add_cmd("ygdk submit", "提交阳光打卡", confirm_opts);
     add_cmd("evaluation list", "显示评教任务");
     add_cmd("evaluation submit", "提交评教", confirm_opts);
-    add_cmd("todo list", "显示待办聚合");
+    add_cmd("todo list", "显示待办聚合", json{
+        {{"name", "--pending-only"}, {"description", "只显示待处理项目"}, {"required", false}},
+        {{"name", "--all"}, {"description", "包含非待处理项目"}, {"required", false}},
+    });
+    add_cmd("file upload", "保留的文件/附件上传接口，当前稳定返回 NotImplemented", json{
+        {{"name", "--path"}, {"description", "待上传文件路径"}, {"required", true}},
+        {{"name", "--confirm"}, {"description", "确认执行上传类有副作用操作"}, {"required", true}},
+    });
 
     return {{"ok", true}, {"data", {{"commands", commands}, {"version", UBAANEXT_VERSION_STRING}}}, {"error", nullptr}};
 }
@@ -769,6 +784,10 @@ void print_usage() {
     UBAANextCli::Console::println("                                  预约图书馆座位");
     UBAANextCli::Console::println("  libbook cancel --booking-id <id> --confirm");
     UBAANextCli::Console::println("                                  取消图书馆座位预约");
+    UBAANextCli::Console::println("\n作业、待办和占位接口:");
+    UBAANextCli::Console::println("  todo list [--pending-only|--all] 显示待办聚合");
+    UBAANextCli::Console::println("  file upload --path <path> --confirm");
+    UBAANextCli::Console::println("                                  保留接口，当前返回 NotImplemented");
     UBAANextCli::Console::println("\n其他:");
     UBAANextCli::Console::println("  config show                      显示当前配置");
     UBAANextCli::Console::println("  config set --key <key> --value <value>");
@@ -788,6 +807,7 @@ void print_usage() {
 
 // ── 命令处理 ──────────────────────────────────────────────────
 
+/** Sensitive cookie persistence forward declaration: saves platform cookies only after real requests. */
 void save_real_cookies(ServiceFactory &factory);
 
 bool command_requires_session(const CliArgs &args) {
@@ -807,7 +827,7 @@ bool command_requires_session(const CliArgs &args) {
         return !args.term.empty();
     }
     if (args.command == "grade") {
-        return args.subcommand == "list" && !args.term.empty();
+        return args.subcommand == "all" || (args.subcommand == "list" && (args.all || !args.term.empty()));
     }
     if (args.command == "classroom") {
         return args.subcommand == "query" && args.campus > 0 && !args.date.empty();
@@ -867,11 +887,13 @@ bool real_session_persistence_available(const AppContext &ctx) {
     return ctx.mock_mode || ctx.capabilities.secure_store;
 }
 
+/** Sensitive session persistence error: real login must fail closed when secure store is unavailable. */
 um::Error unsupported_session_persistence_error() {
     return {um::ErrorCode::UnsupportedSecureStore,
             "当前平台没有可用安全存储，已拒绝保存真实登录会话；请启用平台安全存储后重试"};
 }
 
+/** Sensitive local mutation: clears platform cookies and local cookie file; does not prove remote logout. */
 void clear_real_cookies(ServiceFactory &factory) {
     UBAANextCli::clear_platform_cookies(factory.context());
     std::error_code ec;
@@ -893,6 +915,7 @@ ExitCode cmd_help(OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
+/** Sensitive input CLI handler: performs login/session persistence; credentials must stay redacted and mock mode is not live proof. */
 ExitCode cmd_login(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out, bool mock) {
     if (args.username.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "login 需要 --username <id>"});
@@ -939,6 +962,7 @@ ExitCode cmd_login(const CliArgs &args, ServiceFactory &factory, OutputFormatter
     return ExitCode::Ok;
 }
 
+/** Sensitive output CLI handler: restores local session identity through redaction-aware output. */
 ExitCode cmd_whoami(ServiceFactory &factory, OutputFormatter &out) {
     auto auth = factory.create_auth_service();
     auto result = auth.restore_session();
@@ -951,6 +975,7 @@ ExitCode cmd_whoami(ServiceFactory &factory, OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
+/** Sensitive local mutation CLI handler: clears local session/cookies only after --confirm/--yes. */
 ExitCode cmd_logout(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "logout 会清除本地会话，必须显式传入 --confirm 或 --yes"});
@@ -982,6 +1007,7 @@ ExitCode map_error_to_exit_code(const um::Error &error) {
     case um::ErrorCode::UnsupportedSecureStore:
     case um::ErrorCode::UnsupportedCrypto:
     case um::ErrorCode::UnsupportedCookiePersistence:
+    case um::ErrorCode::NotImplemented:
     case um::ErrorCode::CryptoError:
     case um::ErrorCode::StorageError:    return ExitCode::General;
     case um::ErrorCode::ParseError:      return ExitCode::Parse;
@@ -989,10 +1015,12 @@ ExitCode map_error_to_exit_code(const um::Error &error) {
     }
 }
 
+/** Sensitive cookie persistence: saves real platform cookies after successful live reads/writes, not in mock-only proof. */
 void save_real_cookies(ServiceFactory &factory) {
     UBAANextCli::save_platform_cookies(factory.context());
 }
 
+/** ReadOnlyCandidate CLI handler: today's course list; CLI success does not prove live BYXT field stability. */
 ExitCode cmd_course_today(const CliArgs & /*args*/, ServiceFactory &factory, OutputFormatter &out) {
     auto service = factory.create_course_service();
     auto result = service.get_today_courses();
@@ -1006,6 +1034,7 @@ ExitCode cmd_course_today(const CliArgs & /*args*/, ServiceFactory &factory, Out
     return ExitCode::Ok;
 }
 
+/** ReadOnlyCandidate CLI handler: date course list with explicit date validation and propagated service errors. */
 ExitCode cmd_course_date(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (args.date.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "course date 需要 --date <yyyy-MM-dd>"});
@@ -1024,6 +1053,7 @@ ExitCode cmd_course_date(const CliArgs &args, ServiceFactory &factory, OutputFor
     return ExitCode::Ok;
 }
 
+/** PartiallyMigrated CLI handler: week course list; real mode requires term_code even when mock accepts week-only. */
 ExitCode cmd_course_week(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (args.week < 1) {
         out.print_error({um::ErrorCode::InvalidArgument, "course week 需要 --week <n> (1-30)"});
@@ -1050,6 +1080,7 @@ ExitCode cmd_course_week(const CliArgs &args, ServiceFactory &factory, OutputFor
     return ExitCode::Ok;
 }
 
+/** Sensitive output CLI handler: exam list requires term in real mode and emits stable JSON/error contract. */
 ExitCode cmd_exam_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if ((factory.context().conn_mode == um::ConnectionMode::Direct || factory.context().conn_mode == um::ConnectionMode::WebVPN) &&
         args.term.empty()) {
@@ -1069,6 +1100,7 @@ ExitCode cmd_exam_list(const CliArgs &args, ServiceFactory &factory, OutputForma
     return ExitCode::Ok;
 }
 
+/** ReadOnlyCandidate CLI handler: classroom availability is volatile and unsupported modes fail explicitly. */
 ExitCode cmd_classroom_query(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (args.campus < 1) {
         out.print_error({um::ErrorCode::InvalidArgument, "classroom query 需要 --campus <id> (1-10)"});
@@ -1103,6 +1135,7 @@ ExitCode cmd_classroom_query(const CliArgs &args, ServiceFactory &factory, Outpu
     return ExitCode::Ok;
 }
 
+/** ReadOnlyCandidate CLI handler: term list through mock or real BYXT path; service errors are not converted to empty lists. */
 ExitCode cmd_term_list(const CliArgs & /*args*/, ServiceFactory &factory, OutputFormatter &out) {
     auto service = factory.create_term_service();
     auto result = service.get_terms();
@@ -1116,6 +1149,7 @@ ExitCode cmd_term_list(const CliArgs & /*args*/, ServiceFactory &factory, Output
     return ExitCode::Ok;
 }
 
+/** ReadOnlyCandidate CLI handler: week list requires explicit term in real mode. */
 ExitCode cmd_week_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if ((factory.context().conn_mode == um::ConnectionMode::Direct || factory.context().conn_mode == um::ConnectionMode::WebVPN) &&
         args.term.empty()) {
@@ -1135,6 +1169,7 @@ ExitCode cmd_week_list(const CliArgs &args, ServiceFactory &factory, OutputForma
     return ExitCode::Ok;
 }
 
+/** Sensitive local config CLI handler: displays redacted config and must not expose proxy credentials. */
 ExitCode cmd_config_show(OutputFormatter &out, const CliConfig &config) {
     const auto proxy = UBAANextCli::redact_proxy_url(config.proxy);
     if (out.is_json()) {
@@ -1172,6 +1207,7 @@ ExitCode save_config_and_report(OutputFormatter &out, const CliConfig &config,
     return ExitCode::Ok;
 }
 
+/** Local config CLI handler: changes default connection mode only after validation; no remote I/O. */
 ExitCode cmd_mode(const CliArgs &args, OutputFormatter &out, CliConfig &config) {
     if (args.subcommand.empty()) {
         if (out.is_json()) {
@@ -1197,6 +1233,7 @@ ExitCode cmd_mode(const CliArgs &args, OutputFormatter &out, CliConfig &config) 
     return save_config_and_report(out, config, "mode", config.mode);
 }
 
+/** Sensitive local mutation CLI handler: writes local config only after --confirm/--yes. */
 ExitCode cmd_config_set(const CliArgs &args, OutputFormatter &out, CliConfig &config) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "config set 会修改本地配置，必须显式传入 --confirm 或 --yes"});
@@ -1239,6 +1276,7 @@ ExitCode cmd_config_set(const CliArgs &args, OutputFormatter &out, CliConfig &co
     return save_config_and_report(out, config, key, value);
 }
 
+/** Sensitive local mutation CLI handler: clears local cache only after --confirm/--yes and performs no remote I/O. */
 ExitCode cmd_cache_clear(const CliArgs &args, ServiceFactory & /*factory*/, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "cache clear 会清除本地缓存，必须显式传入 --confirm 或 --yes"});
@@ -1249,6 +1287,7 @@ ExitCode cmd_cache_clear(const CliArgs &args, ServiceFactory & /*factory*/, Outp
     return ExitCode::Ok;
 }
 
+/** Sensitive output CLI handler: term-specific grades are ReadOnlyCandidate; all-grades real mode remains partially migrated. */
 ExitCode cmd_grade_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.all &&
         (factory.context().conn_mode == um::ConnectionMode::Direct || factory.context().conn_mode == um::ConnectionMode::WebVPN) &&
@@ -1337,6 +1376,7 @@ um::Model::FeatureRecord spoc_detail_to_record(const um::Model::SpocAssignmentDe
     return record;
 }
 
+/** MockOnly compatibility CLI handler: routes legacy FeatureRecord lists and does not prove typed service coverage. */
 ExitCode cmd_feature_list(ServiceFactory &factory, OutputFormatter &out,
                           const std::string &domain, const std::string &operation,
                           const std::string &key) {
@@ -1388,6 +1428,7 @@ std::vector<std::string> parse_judge_batch_input(const std::string &input) {
     return ids;
 }
 
+/** ReadOnlyCandidate CLI handler: SPOC assignments use typed service in real mode and mock FeatureService in mock mode. */
 ExitCode cmd_spoc_assignments(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) {
@@ -1410,6 +1451,7 @@ ExitCode cmd_spoc_assignments(const CliArgs &args, ServiceFactory &factory, Outp
     return ExitCode::Ok;
 }
 
+/** Sensitive output CLI handler: shows one SPOC assignment detail; raw backend JSON is never printed. */
 ExitCode cmd_spoc_assignment_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (args.id.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "spoc assignment show 需要 --id <assignment-id>"});
@@ -1431,6 +1473,7 @@ ExitCode cmd_spoc_assignment_show(const CliArgs &args, ServiceFactory &factory, 
     return ExitCode::Ok;
 }
 
+/** ReadOnlyCandidate CLI handler: XiJi assignments use typed service in real mode and mock FeatureService in mock mode. */
 ExitCode cmd_judge_assignments(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) {
@@ -1454,6 +1497,7 @@ ExitCode cmd_judge_assignments(const CliArgs &args, ServiceFactory &factory, Out
     return ExitCode::Ok;
 }
 
+/** Sensitive output CLI handler: shows XiJi assignment summary/detail through redaction-aware output paths. */
 ExitCode cmd_judge_assignment_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     const auto id = args.assignment_id.empty() ? args.id : args.assignment_id;
     if (id.empty()) {
@@ -1486,6 +1530,7 @@ ExitCode cmd_judge_assignment_show(const CliArgs &args, ServiceFactory &factory,
     return ExitCode::Ok;
 }
 
+/** Sensitive input CLI handler: batch id input may come from --input/@file and detail output remains sensitive. */
 ExitCode cmd_judge_details_batch(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (args.input.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "judge assignment details-batch 需要 --input <json|@file>"});
@@ -1502,6 +1547,16 @@ ExitCode cmd_judge_details_batch(const CliArgs &args, ServiceFactory &factory, O
         for (const auto &id : ids) {
             um::Model::FeatureRecord record;
             record.id = id;
+            if (id == "judge-error") {
+                record.title = "希冀作业详情失败: " + id;
+                record.status = "error";
+                record.fields["source"] = "mock";
+                record.fields["content"] = UBAANextCli::redact_sensitive_text("captcha=captcha-secret&Authorization: bearer-secret&photo_path=C:/secret/judge.html");
+                record.fields["submissionStatus"] = "error";
+                record.fields["submissionStatusText"] = "NetworkError";
+                records.push_back(std::move(record));
+                continue;
+            }
             record.title = "评测任务";
             record.status = "unsubmitted";
             record.fields["source"] = "mock";
@@ -1526,6 +1581,7 @@ ExitCode cmd_judge_details_batch(const CliArgs &args, ServiceFactory &factory, O
     return ExitCode::Ok;
 }
 
+/** MockOnly compatibility CLI handler: legacy FeatureRecord detail route, not a typed service completion signal. */
 ExitCode cmd_feature_show(ServiceFactory &factory, OutputFormatter &out,
                           const std::string &domain, const std::string &operation,
                           const std::string &id, const std::string &key) {
@@ -1540,6 +1596,7 @@ ExitCode cmd_feature_show(ServiceFactory &factory, OutputFormatter &out,
     return ExitCode::Ok;
 }
 
+/** Placeholder write CLI handler: mock may return accepted contract, real mode remains UnsupportedPlatform. */
 ExitCode cmd_feature_mutate(ServiceFactory &factory, OutputFormatter &out,
                             const std::string &domain, const std::string &operation,
                             const std::string &id, bool confirmed) {
@@ -1585,6 +1642,7 @@ ExitCode print_mutation_result(ServiceFactory &factory, OutputFormatter &out, co
     return ExitCode::Ok;
 }
 
+/** ReadOnlyCandidate CLI handler: BYKC profile read; mock mode remains FeatureService compatibility. */
 ExitCode cmd_bykc_profile(ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "bykc", "profile", "profile");
@@ -1593,6 +1651,7 @@ ExitCode cmd_bykc_profile(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "profile", service.profile());
 }
 
+/** ReadOnlyCandidate CLI handler: BYKC course list with page/size/all filters; unsupported filter combos must fail in service. */
 ExitCode cmd_bykc_courses(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "bykc", "courses", "courses");
@@ -1610,6 +1669,7 @@ ExitCode cmd_bykc_courses(const CliArgs &args, ServiceFactory &factory, OutputFo
     return print_records_result(factory, out, "courses", service.courses(query));
 }
 
+/** Sensitive output CLI handler: BYKC chosen courses expose enrollment state through redaction-aware output. */
 ExitCode cmd_bykc_chosen(ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "bykc", "chosen", "courses");
@@ -1618,6 +1678,7 @@ ExitCode cmd_bykc_chosen(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "courses", service.chosen());
 }
 
+/** ReadOnlyCandidate CLI handler: BYKC stats are unverified against live backend field drift. */
 ExitCode cmd_bykc_stats(ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "bykc", "stats", "stats");
@@ -1626,6 +1687,7 @@ ExitCode cmd_bykc_stats(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "stats", service.stats());
 }
 
+/** Sensitive output CLI handler: BYKC course detail may include enrollment metadata. */
 ExitCode cmd_bykc_course_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     const auto id = args.course_id.empty() ? args.id : args.course_id;
     if (id.empty()) {
@@ -1639,6 +1701,7 @@ ExitCode cmd_bykc_course_show(const CliArgs &args, ServiceFactory &factory, Outp
     return print_record_result(factory, out, "course", service.show_course(id));
 }
 
+/** WriteGated CLI handler: BYKC select/unselect are remote mutations requiring --confirm/--yes and write_operations. */
 ExitCode cmd_bykc_select(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out, bool select) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, std::string("bykc ") + (select ? "select" : "unselect") + " 是有副作用操作，必须显式传入 --confirm 或 --yes"});
@@ -1652,10 +1715,11 @@ ExitCode cmd_bykc_select(const CliArgs &args, ServiceFactory &factory, OutputFor
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "bykc", select ? "select" : "unselect", id, args.confirmed);
 #endif
-    auto service = factory.create_bykc_service();
+    auto service = factory.create_bykc_write_service(args.confirmed, select ? "bykc select" : "bykc unselect");
     return print_mutation_result(factory, out, select ? service.select_course(id) : service.unselect_course(id));
 }
 
+/** WriteGated CLI handler: BYKC sign is a remote mutation requiring --confirm/--yes and write_operations. */
 ExitCode cmd_bykc_sign(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 是有副作用操作，必须显式传入 --confirm 或 --yes"});
@@ -1668,10 +1732,11 @@ ExitCode cmd_bykc_sign(const CliArgs &args, ServiceFactory &factory, OutputForma
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "bykc", "sign:" + std::to_string(args.sign_type), args.course_id.empty() ? args.id : args.course_id, args.confirmed);
 #endif
-    auto service = factory.create_bykc_service();
+    auto service = factory.create_bykc_write_service(args.confirmed, "bykc sign");
     return print_mutation_result(factory, out, service.sign_course(args.course_id.empty() ? args.id : args.course_id, args.sign_type));
 }
 
+/** ReadOnlyCandidate CLI handler: venue site list; mock mode remains FeatureService compatibility. */
 ExitCode cmd_cgyy_sites(ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "cgyy", "sites", "sites");
@@ -1680,6 +1745,7 @@ ExitCode cmd_cgyy_sites(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "sites", service.list_sites());
 }
 
+/** ReadOnlyCandidate CLI handler: venue purpose type list with backend enum drift risk. */
 ExitCode cmd_cgyy_purpose_types(ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "cgyy", "purpose-types", "purposeTypes");
@@ -1688,6 +1754,7 @@ ExitCode cmd_cgyy_purpose_types(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "purposeTypes", service.list_purpose_types());
 }
 
+/** Sensitive output CLI handler: venue day availability is volatile and requires explicit site/date. */
 ExitCode cmd_cgyy_day_info(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     auto site_id = args.site_id.empty() ? args.id : args.site_id;
     if (args.date.empty() || site_id.empty()) {
@@ -1701,6 +1768,7 @@ ExitCode cmd_cgyy_day_info(const CliArgs &args, ServiceFactory &factory, OutputF
     return print_records_result(factory, out, "dayInfo", service.day_info(args.date, site_id));
 }
 
+/** Sensitive output CLI handler: venue orders expose booking metadata and use redaction-aware output. */
 ExitCode cmd_cgyy_orders(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "cgyy", "orders", "orders");
@@ -1709,6 +1777,7 @@ ExitCode cmd_cgyy_orders(const CliArgs &args, ServiceFactory &factory, OutputFor
     return print_records_result(factory, out, "orders", service.list_orders(args.page, args.size));
 }
 
+/** Sensitive output CLI handler: venue order detail may expose lock/order state. */
 ExitCode cmd_cgyy_order_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     auto order_id = args.order_id.empty() ? args.id : args.order_id;
     if (order_id.empty()) {
@@ -1722,6 +1791,7 @@ ExitCode cmd_cgyy_order_show(const CliArgs &args, ServiceFactory &factory, Outpu
     return print_record_result(factory, out, "order", service.show_order(order_id));
 }
 
+/** Sensitive output CLI handler: lock code visibility must remain explicit and redaction-aware. */
 ExitCode cmd_cgyy_lock_code(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     (void)args;
 #if UBAANEXT_ENABLE_MOCKS
@@ -1731,6 +1801,7 @@ ExitCode cmd_cgyy_lock_code(const CliArgs &args, ServiceFactory &factory, Output
     return print_record_result(factory, out, "order", service.lock_code());
 }
 
+/** WriteGated CLI handler: venue reservation is a remote mutation with sensitive captcha/token inputs. */
 ExitCode cmd_cgyy_reserve(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 是有副作用操作，必须显式传入 --confirm 或 --yes"});
@@ -1779,10 +1850,11 @@ ExitCode cmd_cgyy_reserve(const CliArgs &args, ServiceFactory &factory, OutputFo
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "cgyy", "reserve", args.id, args.confirmed);
 #endif
-    auto service = factory.create_venue_reservation_service();
+    auto service = factory.create_venue_reservation_write_service(args.confirmed, "cgyy reserve");
     return print_mutation_result(factory, out, service.reserve(args.site_id, args.space_id, args.date, args.id, args.purpose_type, args.theme, args.phone, args.joiners, args.captcha, args.token));
 }
 
+/** WriteGated CLI handler: venue order cancellation is a remote mutation requiring --confirm/--yes and write_operations. */
 ExitCode cmd_cgyy_cancel(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "cgyy order cancel 是有副作用操作，必须显式传入 --confirm 或 --yes"});
@@ -1796,10 +1868,11 @@ ExitCode cmd_cgyy_cancel(const CliArgs &args, ServiceFactory &factory, OutputFor
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "cgyy", "cancel", order_id, args.confirmed);
 #endif
-    auto service = factory.create_venue_reservation_service();
+    auto service = factory.create_venue_reservation_write_service(args.confirmed, "cgyy order cancel");
     return print_mutation_result(factory, out, service.cancel_order(order_id));
 }
 
+/** ReadOnlyCandidate CLI handler: library list read; live availability fields remain volatile. */
 ExitCode cmd_libbook_libraries(ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "libbook", "libraries", "libraries");
@@ -1808,6 +1881,7 @@ ExitCode cmd_libbook_libraries(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "libraries", service.list_libraries(""));
 }
 
+/** ReadOnlyCandidate CLI handler: library area list requires explicit library id and may expose capacity metadata. */
 ExitCode cmd_libbook_areas(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (args.library_id.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "libbook areas 需要 --library-id <id>"});
@@ -1820,6 +1894,7 @@ ExitCode cmd_libbook_areas(const CliArgs &args, ServiceFactory &factory, OutputF
     return print_records_result(factory, out, "areas", service.list_areas(args.library_id, args.date, args.storey_id));
 }
 
+/** Sensitive output CLI handler: seat availability is volatile and must not be treated as cached truth. */
 ExitCode cmd_libbook_seats(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (args.area_id.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "libbook seats 需要 --area-id <id>"});
@@ -1832,6 +1907,7 @@ ExitCode cmd_libbook_seats(const CliArgs &args, ServiceFactory &factory, OutputF
     return print_records_result(factory, out, "seats", service.list_seats(args.area_id, args.date, args.start_time, args.end_time));
 }
 
+/** Sensitive output CLI handler: library reservations expose booking state. */
 ExitCode cmd_libbook_reservations(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "libbook", "reservations", "reservations");
@@ -1840,6 +1916,7 @@ ExitCode cmd_libbook_reservations(const CliArgs &args, ServiceFactory &factory, 
     return print_records_result(factory, out, "reservations", service.list_reservations(args.page, args.size));
 }
 
+/** Sensitive output CLI handler: library area detail may expose capacity and seat metadata. */
 ExitCode cmd_libbook_area_show(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     auto area_id = args.area_id.empty() ? args.id : args.area_id;
     if (area_id.empty()) {
@@ -1853,6 +1930,7 @@ ExitCode cmd_libbook_area_show(const CliArgs &args, ServiceFactory &factory, Out
     return print_record_result(factory, out, "area", service.show_area(area_id));
 }
 
+/** WriteGated CLI handler: library booking is a remote mutation requiring --confirm/--yes and write_operations. */
 ExitCode cmd_libbook_book(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "libbook book 是有副作用操作，必须显式传入 --confirm 或 --yes"});
@@ -1874,10 +1952,11 @@ ExitCode cmd_libbook_book(const CliArgs &args, ServiceFactory &factory, OutputFo
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "libbook", "book", seat_id, args.confirmed);
 #endif
-    auto service = factory.create_library_seat_service();
+    auto service = factory.create_library_seat_write_service(args.confirmed, "libbook book");
     return print_mutation_result(factory, out, service.reserve_seat(seat_id, args.date, args.segment, args.start_time, args.end_time));
 }
 
+/** WriteGated CLI handler: library booking cancellation is a remote mutation requiring --confirm/--yes and write_operations. */
 ExitCode cmd_libbook_cancel(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "libbook cancel 是有副作用操作，必须显式传入 --confirm 或 --yes"});
@@ -1891,10 +1970,11 @@ ExitCode cmd_libbook_cancel(const CliArgs &args, ServiceFactory &factory, Output
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "libbook", "cancel", booking_id, args.confirmed);
 #endif
-    auto service = factory.create_library_seat_service();
+    auto service = factory.create_library_seat_write_service(args.confirmed, "libbook cancel");
     return print_mutation_result(factory, out, service.cancel_booking(booking_id));
 }
 
+/** Sensitive output CLI handler: user info is ReadOnlyCandidate and must remain redaction-aware. */
 ExitCode cmd_user_info(ServiceFactory &factory, OutputFormatter &out) {
     auto service = factory.create_feature_service();
     auto result = service.user_info();
@@ -1907,12 +1987,37 @@ ExitCode cmd_user_info(ServiceFactory &factory, OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
+/**
+ * ReadOnlyCandidate aggregation CLI handler.
+ * Preserves Todo source-level partial failures instead of converting them to an empty success list.
+ */
 ExitCode cmd_todo_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    (void)args;
     auto service = factory.create_todo_service();
-    return print_records_result(factory, out, "todos", service.list_todos());
+    um::TodoQuery query;
+    query.pending_only = !args.all;
+    if (args.pending_only) query.pending_only = true;
+    return print_records_result(factory, out, "todos", service.list_todos(query));
 }
 
+/**
+ * Placeholder CLI handler for future file uploads.
+ * Returns NotImplemented after confirmation and never reads local files or performs network I/O.
+ */
+ExitCode cmd_file_upload_placeholder(const CliArgs &args, OutputFormatter &out) {
+    if (!args.confirmed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "file upload 是有副作用操作，必须显式传入 --confirm 或 --yes"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.photo_path.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "file upload 需要 --path <path>"});
+        return ExitCode::InvalidArgument;
+    }
+    um::Error error{um::ErrorCode::NotImplemented, "file upload 当前仅保留稳定 CLI 接口，真实上传语义尚未实现"};
+    out.print_error(error);
+    return map_error_to_exit_code(error);
+}
+
+/** ReadOnlyCandidate CLI handler: today's sign-in list uses typed service in real mode and mock FeatureService in mock mode. */
 ExitCode cmd_signin_today(ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "signin", "today", "signin");
@@ -1921,6 +2026,10 @@ ExitCode cmd_signin_today(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "signin", service.list_today());
 }
 
+/**
+ * WriteGated CLI handler for real course sign-in.
+ * Remote mutation: yes; requires --confirm/--yes and platform write_operations in real mode.
+ */
 ExitCode cmd_signin_do(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "signin do 是有副作用操作，必须显式传入 --confirm 或 --yes"});
@@ -1934,10 +2043,11 @@ ExitCode cmd_signin_do(const CliArgs &args, ServiceFactory &factory, OutputForma
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "signin", "do", id, args.confirmed);
 #endif
-    auto service = factory.create_signin_service();
+    auto service = factory.create_signin_write_service(args.confirmed, "signin do");
     return print_mutation_result(factory, out, service.perform_signin(id));
 }
 
+/** Sensitive output CLI handler: YGDK overview may expose sports/health context. */
 ExitCode cmd_ygdk_overview(ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "ygdk", "overview", "overview");
@@ -1946,6 +2056,7 @@ ExitCode cmd_ygdk_overview(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "overview", service.overview());
 }
 
+/** Sensitive output CLI handler: YGDK records may include time/location-like fields and use page/size contract. */
 ExitCode cmd_ygdk_records(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "ygdk", "records", "records");
@@ -1954,6 +2065,7 @@ ExitCode cmd_ygdk_records(const CliArgs &args, ServiceFactory &factory, OutputFo
     return print_records_result(factory, out, "records", service.records(args.page, args.size));
 }
 
+/** WriteGated CLI handler: YGDK submit is a remote mutation with sensitive time/place/photo input. */
 ExitCode cmd_ygdk_submit(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "ygdk submit 是有副作用操作，必须显式传入 --confirm 或 --yes"});
@@ -1962,7 +2074,12 @@ ExitCode cmd_ygdk_submit(const CliArgs &args, ServiceFactory &factory, OutputFor
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "ygdk", "submit", args.item_id.empty() ? args.id : args.item_id, args.confirmed);
 #endif
-    auto service = factory.create_ygdk_service();
+    auto service = factory.create_ygdk_write_service(args.confirmed, "ygdk submit");
+    if (!factory.context().capabilities.write_operations) {
+        um::Error error{um::ErrorCode::UnsupportedPlatform, "ygdk submit 当前平台未启用真实写操作"};
+        out.print_error(error);
+        return map_error_to_exit_code(error);
+    }
     auto photo = read_upload_part(args.photo_path, "file");
     if (!photo) {
         out.print_error({photo.error().code, photo.error().message});
@@ -1971,6 +2088,7 @@ ExitCode cmd_ygdk_submit(const CliArgs &args, ServiceFactory &factory, OutputFor
     return print_mutation_result(factory, out, service.submit_clockin(args.item_id.empty() ? args.id : args.item_id, args.start_time, args.end_time, args.place, args.share, *photo));
 }
 
+/** PartiallyMigrated CLI handler: evaluation list is read-only but questionnaire/session drift remains possible. */
 ExitCode cmd_evaluation_list(ServiceFactory &factory, OutputFormatter &out) {
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "evaluation", "list", "evaluations");
@@ -1979,6 +2097,7 @@ ExitCode cmd_evaluation_list(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "evaluations", service.list_evaluations());
 }
 
+/** WriteGated CLI handler: evaluation submit is a remote mutation requiring --confirm/--yes and write_operations. */
 ExitCode cmd_evaluation_submit(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (!args.confirmed) {
         out.print_error({um::ErrorCode::InvalidArgument, "evaluation submit 是有副作用操作，必须显式传入 --confirm 或 --yes"});
@@ -1987,7 +2106,7 @@ ExitCode cmd_evaluation_submit(const CliArgs &args, ServiceFactory &factory, Out
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "evaluation", "submit", args.id, args.confirmed);
 #endif
-    auto service = factory.create_evaluation_service();
+    auto service = factory.create_evaluation_write_service(args.confirmed, "evaluation submit");
     return print_mutation_result(factory, out, service.submit_evaluations(args.id));
 }
 
@@ -2195,6 +2314,12 @@ int main(int argc, char *argv[]) {
         if (args.subcommand == "book") return static_cast<int>(cmd_libbook_book(args, factory, out));
         if (args.subcommand == "cancel") return static_cast<int>(cmd_libbook_cancel(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 libbook 子命令: " + args.subcommand});
+        return static_cast<int>(ExitCode::InvalidArgument);
+    }
+
+    if (args.command == "file") {
+        if (args.subcommand == "upload") return static_cast<int>(cmd_file_upload_placeholder(args, out));
+        out.print_error({um::ErrorCode::InvalidArgument, "未知的 file 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 

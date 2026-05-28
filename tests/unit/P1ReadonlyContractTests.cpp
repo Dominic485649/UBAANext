@@ -100,6 +100,13 @@ public:
     }
 };
 
+class GradeNetworkErrorHttpClient : public UBAANext::IHttpClient {
+public:
+    UBAANext::Result<UBAANext::HttpResponse> send(const UBAANext::HttpRequest &) override {
+        return UBAANext::make_error(UBAANext::ErrorCode::NetworkError, "token=token-secret&Cookie: SID=cookie-secret&photo_path=C:/secret/grade.html");
+    }
+};
+
 } // namespace
 
 TEST_CASE("P1 真实周课表拒绝隐式默认学期", "[p1][real-readonly]") {
@@ -110,6 +117,21 @@ TEST_CASE("P1 真实周课表拒绝隐式默认学期", "[p1][real-readonly]") {
     auto result = service.get_week_courses(8);
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error().code == um::ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("P1 成绩系统网络错误会脱敏", "[p1][real-readonly][redaction]") {
+    GradeNetworkErrorHttpClient http_client;
+    UBAANextMocks::MockCacheStore cache_store;
+    um::GradeService service(http_client, cache_store, um::ConnectionMode::Direct);
+
+    auto result = service.list_grades("2025-2026-2");
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().code == um::ErrorCode::NetworkError);
+    CHECK(result.error().message.find("token-secret") == std::string::npos);
+    CHECK(result.error().message.find("cookie-secret") == std::string::npos);
+    CHECK(result.error().message.find("C:/secret/grade.html") == std::string::npos);
+    CHECK(result.error().message.find("[REDACTED]") != std::string::npos);
 }
 
 TEST_CASE("P1 真实周课表拒绝无效周次", "[p1][real-readonly]") {

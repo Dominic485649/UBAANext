@@ -50,7 +50,7 @@ bool is_sso_or_login_url(const std::string &url) {
     auto lowered = to_lower(url);
     return lowered.find("sso.buaa.edu.cn") != std::string::npos ||
            lowered.find("/login") != std::string::npos ||
-           lowered.find("/cas") != std::string::npos && lowered.find("service=") != std::string::npos;
+           (lowered.find("/cas") != std::string::npos && lowered.find("service=") != std::string::npos);
 }
 
 bool is_html_response(const std::string &body) {

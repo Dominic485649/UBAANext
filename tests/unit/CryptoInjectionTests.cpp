@@ -14,7 +14,7 @@ class RecordingCryptoProvider final : public UBAANext::ICryptoProvider {
 public:
     UBAANext::Result<std::string> md5_hex(const std::string &input) override {
         last_md5_input = input;
-        return "injected-sign";
+        return std::string("injected-sign");
     }
 
     UBAANext::Result<std::vector<unsigned char>> sha1_digest(const std::vector<unsigned char> &) override {

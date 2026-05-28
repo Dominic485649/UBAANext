@@ -1,9 +1,14 @@
 #include <UBAANext/Service/SigninService.hpp>
 
+#include <UBAANext/Base/TimeUtils.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/SigninParser.hpp>
+#include <UBAANext/Protocol/RedirectNavigator.hpp>
 #include <UBAANext/Protocol/SessionGuards.hpp>
 
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <ctime>
 #include <iomanip>
 #include <map>
@@ -26,12 +31,7 @@ bool response_is_sso(const HttpResponse &response) {
 
 std::string today_yyyymmdd() {
     std::time_t now = std::time(nullptr);
-    std::tm local{};
-#ifdef _WIN32
-    localtime_s(&local, &now);
-#else
-    localtime_r(&now, &local);
-#endif
+    auto local = local_time(now);
     std::ostringstream out;
     out << std::put_time(&local, "%Y%m%d");
     return out.str();
@@ -48,6 +48,64 @@ std::string url_encode_form(const std::string &value) {
         }
     }
     return out.str();
+}
+
+std::string url_decode_component(const std::string &value) {
+    std::string out;
+    out.reserve(value.size());
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        if (value[i] == '%' && i + 2 < value.size()) {
+            char hex[] = {value[i + 1], value[i + 2], '\0'};
+            char *end = nullptr;
+            auto decoded = std::strtol(hex, &end, 16);
+            if (end && *end == '\0') {
+                out.push_back(static_cast<char>(decoded));
+                i += 2;
+                continue;
+            }
+        }
+        out.push_back(value[i] == '+' ? ' ' : value[i]);
+    }
+    return out;
+}
+
+std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+std::string extract_signin_login_name(const std::string &url) {
+    auto normalized = VpnCipher::from_vpn_url(url);
+    auto pos = normalized.find_first_of("?#");
+    while (pos != std::string::npos && pos + 1 < normalized.size()) {
+        std::size_t cursor = pos + 1;
+        while (cursor <= normalized.size()) {
+            auto next = normalized.find_first_of("&#", cursor);
+            auto pair = normalized.substr(cursor, next == std::string::npos ? std::string::npos : next - cursor);
+            auto eq = pair.find('=');
+            if (eq != std::string::npos && lower_copy(pair.substr(0, eq)) == "loginname") {
+                return url_decode_component(pair.substr(eq + 1));
+            }
+            if (next == std::string::npos) break;
+            if (normalized[next] == '#') {
+                pos = next;
+                break;
+            }
+            cursor = next + 1;
+        }
+        auto next_hash = normalized.find('#', pos + 1);
+        if (next_hash == std::string::npos || next_hash == pos) break;
+        pos = next_hash;
+    }
+    return {};
+}
+
+std::string signin_header_value(const HttpResponse &response, const std::string &name) {
+    auto value = Protocol::header_value(response, name);
+    auto newline = value.find('\n');
+    return newline == std::string::npos ? value : value.substr(0, newline);
 }
 
 Model::FeatureRecord make_record(std::string id,
@@ -163,11 +221,48 @@ Result<std::string> SigninService::get_student_id() {
     }
 }
 
-Result<std::pair<std::string, std::string>> SigninService::login_iclass(const std::string &student_id) {
+Result<std::string> SigninService::resolve_login_name() {
+    const std::string initial_url = "https://iclass.buaa.edu.cn:8346/?type=jumpMyCenter";
+    if (auto login_name = extract_signin_login_name(initial_url); !login_name.empty()) {
+        return login_name;
+    }
+
+    std::string current_url = initial_url;
+    for (int redirect = 0; redirect <= 8; ++redirect) {
+        HttpRequest request;
+        request.method = HttpMethod::Get;
+        request.url = resolve_for_mode(current_url, m_mode);
+        request.headers["Accept"] = "text/html,application/xhtml+xml,application/json,*/*";
+        request.headers["User-Agent"] = "UBAANext/0.4";
+        Protocol::disable_transport_redirects(request);
+
+        auto response = m_http_client.send(request);
+        if (!response) {
+            return make_error(ErrorCode::NetworkError, "解析签到登录名失败: " + response.error().message);
+        }
+        if (auto login_name = extract_signin_login_name(current_url); !login_name.empty()) {
+            return login_name;
+        }
+        auto location = signin_header_value(*response, "Location");
+        if (auto login_name = extract_signin_login_name(location); !login_name.empty()) {
+            return login_name;
+        }
+        if (response->status_code < 300 || response->status_code >= 400 || location.empty()) {
+            break;
+        }
+        current_url = Protocol::resolve_location(current_url, location);
+        if (auto login_name = extract_signin_login_name(current_url); !login_name.empty()) {
+            return login_name;
+        }
+    }
+    return make_error(ErrorCode::SessionExpired, "签到系统登录名解析失败");
+}
+
+Result<std::pair<std::string, std::string>> SigninService::login_iclass(const std::string &login_name) {
     HttpRequest request;
     request.method = HttpMethod::Get;
     request.url = resolve_for_mode(
-        "https://iclass.buaa.edu.cn:8347/app/user/login.action?password=&phone=" + url_encode_form(student_id) + "&userLevel=1&verificationType=2&verificationUrl=",
+        "https://iclass.buaa.edu.cn:8347/app/user/login.action?password=&phone=" + url_encode_form(login_name) + "&userLevel=1&verificationType=2&verificationUrl=",
         m_mode);
     request.headers["Accept"] = "application/json, text/plain, */*";
     request.headers["User-Agent"] = "UBAANext/0.4";
@@ -207,7 +302,9 @@ Result<std::pair<std::string, std::string>> SigninService::ensure_iclass_session
     }
     auto student_id = get_student_id();
     if (!student_id) return make_error(student_id.error().code, student_id.error().message);
-    auto session = login_iclass(*student_id);
+    auto login_name = resolve_login_name();
+    if (!login_name) login_name = *student_id;
+    auto session = login_iclass(*login_name);
     if (!session) return make_error(session.error().code, session.error().message);
     m_user_id = session->first;
     m_session_id = session->second;
@@ -265,7 +362,13 @@ Result<std::vector<Model::FeatureRecord>> SigninService::list_today() {
 }
 
 Result<Model::MutationResult> SigninService::perform_signin(const std::string &course_id) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     return perform_signin_once(course_id, true);
+}
+
+void SigninService::set_write_operation_gate(WriteOperationGate gate) {
+    m_write_gate = std::move(gate);
 }
 
 Result<Model::MutationResult> SigninService::perform_signin_once(const std::string &course_id, bool allow_retry) {

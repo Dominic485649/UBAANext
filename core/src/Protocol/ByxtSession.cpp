@@ -32,10 +32,6 @@ std::string to_lower_copy(std::string value) {
     return value;
 }
 
-bool contains_case_insensitive(const std::string &text, const std::string &needle) {
-    return to_lower_copy(text).find(to_lower_copy(needle)) != std::string::npos;
-}
-
 Result<void> follow_redirect_chain(IHttpClient &http_client,
                                    ConnectionMode mode,
                                    HttpResponse response,

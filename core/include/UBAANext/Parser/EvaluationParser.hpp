@@ -10,6 +10,7 @@
 namespace UBAANext {
 namespace Parser {
 
+/** PartiallyMigrated parser entry: expands evaluation course/questionnaire JSON; questionnaire/session drift remains possible. */
 std::vector<Model::EvaluationTask> parse_evaluation_required_reviews(
     const nlohmann::json &courses,
     const std::string &task_id,

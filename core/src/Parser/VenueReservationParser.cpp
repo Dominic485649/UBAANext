@@ -133,7 +133,9 @@ std::vector<Model::VenueOrder> parse_venue_orders(const nlohmann::json &data) {
     auto content = data.contains("content") && data["content"].is_array() ? data["content"] : nlohmann::json::array();
     std::vector<Model::VenueOrder> records;
     for (const auto &order : content) {
-        records.push_back(parse_venue_order_detail(order, json_string(order, "id")));
+        auto id = json_string(order, "id");
+        if (id.empty()) continue;
+        records.push_back(parse_venue_order_detail(order, id));
     }
     return records;
 }

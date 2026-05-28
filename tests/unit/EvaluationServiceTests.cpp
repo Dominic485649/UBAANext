@@ -90,6 +90,9 @@ TEST_CASE("EvaluationService 提交携带课程上下文字段", "[service][eval
     EvaluationRedirectFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::EvaluationService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "evaluation submit"));
 
     auto result = service.submit_evaluations("CS101");
 
@@ -109,6 +112,9 @@ TEST_CASE("EvaluationService 提交识别业务失败", "[service][evaluation]")
     http_client.submit_response = R"JSON({"code":500,"msg":"已经评教","data":{}})JSON";
     UBAANext::MemoryCacheStore cache;
     UBAANext::EvaluationService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "evaluation submit"));
 
     auto result = service.submit_evaluations("CS101");
 

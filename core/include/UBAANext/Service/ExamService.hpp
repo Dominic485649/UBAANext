@@ -25,6 +25,7 @@ public:
 #endif
     ExamService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    /** ReadOnlyCandidate: fetches exams for an explicit term; real mode rejects missing term_code and propagates session/parse errors. */
     Result<std::vector<Model::Exam>> get_exams(const std::string &term_code = "");
 
 private:

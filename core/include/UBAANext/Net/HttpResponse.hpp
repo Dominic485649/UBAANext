@@ -45,15 +45,8 @@ namespace UBAANext {
  *   }
  * @endcode
  *
- * 常见 HTTP 状态码参考：
- *   - 200 OK                  : 请求成功
- *   - 201 Created             : 资源创建成功
- *   - 301 Moved Permanently   : 永久重定向
- *   - 400 Bad Request         : 请求参数错误
- *   - 401 Unauthorized        : 未认证（需要登录）
- *   - 403 Forbidden           : 无权限访问
- *   - 404 Not Found           : 资源不存在
- *   - 500 Internal Server Error : 服务器内部错误
+ * Sensitive output：status code、headers 和 body 可能包含 session/cookie/token、HTML 或业务数据。
+ * 调用方必须通过 redaction-aware 错误和输出路径处理，不能直接记录原始响应。
  */
 struct HttpResponse {
     /**
@@ -70,25 +63,12 @@ struct HttpResponse {
     /**
      * @brief 响应头键值对
      *
-     * 以键值对形式存储 HTTP 响应头。常见的响应头包括：
-     *   - "Content-Type"        : 响应体的 MIME 类型（如 application/json）
-     *   - "Content-Length"      : 响应体的字节长度
-     *   - "Set-Cookie"          : 服务器要求客户端设置的 Cookie
-     *   - "Location"            : 重定向目标 URL（配合 3xx 状态码使用）
-     *
-     * 注意：不同 HTTP 客户端实现可能对键名的大小写处理不同，
-     * 建议使用大小写不敏感的方式查找。
+     * Sensitive output：Set-Cookie、Location、Authorization-like headers 不得直接输出。
      */
     std::unordered_map<std::string, std::string> headers;
 
     /**
-     * @brief 响应体内容
-     *
-     * 服务器返回的响应正文。通常为 JSON 字符串（API 接口），
-     * 但也可能是 HTML、纯文本或其他格式。
-     *
-     * 对于非文本响应（如文件下载），此字段可能包含二进制数据
-     * 的字符串表示，但这不是推荐用法——大文件下载应使用流式处理。
+     * @brief Sensitive output：响应正文可能是 JSON、HTML、token 或敏感业务数据，不得原样写入日志。
      */
     std::string body;
 };

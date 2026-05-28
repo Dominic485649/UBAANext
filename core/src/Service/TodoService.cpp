@@ -1,5 +1,6 @@
 #include <UBAANext/Service/TodoService.hpp>
 
+#include <UBAANext/Security/SecurityRedaction.hpp>
 #include <UBAANext/Service/EvaluationService.hpp>
 #include <UBAANext/Service/FeatureService.hpp>
 #include <UBAANext/Service/JudgeService.hpp>
@@ -41,6 +42,21 @@ void append_todo_records(std::vector<Model::FeatureRecord> &todos,
     }
 }
 
+void append_todo_error(std::vector<Model::FeatureRecord> &todos,
+                       const std::string &source,
+                       const Error &error) {
+    Model::FeatureRecord record;
+    record.id = source + "-error";
+    record.title = source + " 待办加载失败";
+    record.status = "error";
+    record.fields["source"] = source;
+    record.fields["type"] = "source-error";
+    record.fields["errorCode"] = std::string(error_code_to_string(error.code));
+    record.fields["errorMessage"] = Security::redact_sensitive_text(error.message);
+    record.fields["submissionStatus"] = "error";
+    todos.push_back(std::move(record));
+}
+
 } // namespace
 
 TodoService::TodoService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
@@ -52,29 +68,45 @@ Result<std::vector<Model::FeatureRecord>> TodoService::list_todos(const TodoQuer
 #if UBAANEXT_ENABLE_MOCKS
     if (m_mode == ConnectionMode::Mock) {
         FeatureService service(m_http_client, m_cache, m_mode);
-        if (auto spoc = service.list("spoc", "assignments")) append_todo_records(todos, "spoc", *spoc, query.pending_only);
-        if (auto judge = service.list("judge", "assignments")) append_todo_records(todos, "judge", *judge, query.pending_only);
-        if (auto signin = service.list("signin", "today")) append_todo_records(todos, "signin", *signin, query.pending_only);
-        if (auto evaluation = service.list("evaluation", "list")) append_todo_records(todos, "evaluation", *evaluation, query.pending_only);
+        auto spoc = service.list("spoc", "assignments");
+        if (spoc) append_todo_records(todos, "spoc", *spoc, query.pending_only);
+        else append_todo_error(todos, "spoc", spoc.error());
+        auto judge = service.list("judge", "assignments");
+        if (judge) append_todo_records(todos, "judge", *judge, query.pending_only);
+        else append_todo_error(todos, "judge", judge.error());
+        auto signin = service.list("signin", "today");
+        if (signin) append_todo_records(todos, "signin", *signin, query.pending_only);
+        else append_todo_error(todos, "signin", signin.error());
+        auto evaluation = service.list("evaluation", "list");
+        if (evaluation) append_todo_records(todos, "evaluation", *evaluation, query.pending_only);
+        else append_todo_error(todos, "evaluation", evaluation.error());
         return todos;
     }
 #endif
 
     {
         SpocService service(m_http_client, m_cache, m_mode);
-        if (auto spoc = service.list_assignments()) append_todo_records(todos, "spoc", *spoc, query.pending_only);
+        auto spoc = service.list_assignments();
+        if (spoc) append_todo_records(todos, "spoc", *spoc, query.pending_only);
+        else append_todo_error(todos, "spoc", spoc.error());
     }
     {
         JudgeService service(m_http_client, m_cache, m_mode);
-        if (auto judge = service.list_assignments(JudgeAssignmentQuery{})) append_todo_records(todos, "judge", *judge, query.pending_only);
+        auto judge = service.list_assignments(JudgeAssignmentQuery{});
+        if (judge) append_todo_records(todos, "judge", *judge, query.pending_only);
+        else append_todo_error(todos, "judge", judge.error());
     }
     {
         SigninService service(m_http_client, m_cache, m_mode);
-        if (auto signin = service.list_today()) append_todo_records(todos, "signin", *signin, query.pending_only);
+        auto signin = service.list_today();
+        if (signin) append_todo_records(todos, "signin", *signin, query.pending_only);
+        else append_todo_error(todos, "signin", signin.error());
     }
     {
         EvaluationService service(m_http_client, m_cache, m_mode);
-        if (auto evaluation = service.list_evaluations()) append_todo_records(todos, "evaluation", *evaluation, query.pending_only);
+        auto evaluation = service.list_evaluations();
+        if (evaluation) append_todo_records(todos, "evaluation", *evaluation, query.pending_only);
+        else append_todo_error(todos, "evaluation", evaluation.error());
     }
 
     return todos;

@@ -1,5 +1,7 @@
 option(UBAANEXT_ENABLE_CPP26_EXPERIMENTS "Enable experimental C++26 features" OFF)
 option(UBAANEXT_BUILD_TESTS "Build UBAA Next test targets" ON)
+option(UBAANEXT_BUILD_CLI "Build the host CLI executable" ON)
+option(UBAANEXT_BUILD_BINDINGS "Build native API binding targets for embedding clients" OFF)
 option(UBAANEXT_BUILD_LIVE_SMOKE "Build live smoke test targets; never enable in default offline validation" OFF)
 option(UBAANEXT_FETCH_DEPS "Download missing third-party dependencies with FetchContent" OFF)
 option(UBAANEXT_ENABLE_LINUX_LIBSECRET "Build the Linux Secret Service secure store adapter" OFF)

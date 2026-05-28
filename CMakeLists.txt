@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
 include(cmake/UBAANextOptions.cmake)
@@ -11,6 +11,9 @@ project(UBAANext
     LANGUAGES CXX
     DESCRIPTION "UBAA Next - C++ native campus service client"
 )
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 set(UBAANEXT_CXX_STANDARD "17" CACHE STRING "C++ standard used by UBAA Next (17 or 20)")
 set_property(CACHE UBAANEXT_CXX_STANDARD PROPERTY STRINGS 17 20)
@@ -42,8 +45,66 @@ add_subdirectory(platform)
 if(UBAANEXT_ENABLE_MOCKS)
     add_subdirectory(mocks)
 endif()
-add_subdirectory(apps/cli)
+if(UBAANEXT_BUILD_BINDINGS)
+    add_subdirectory(bindings)
+endif()
+if(UBAANEXT_BUILD_CLI)
+    add_subdirectory(apps/cli)
+endif()
 
 if(UBAANEXT_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
+
+install(DIRECTORY core/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY ${CMAKE_BINARY_DIR}/generated/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY platform/common/curl/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY platform/common/openssl/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY platform/harmony/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY platform/linux/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY platform/windows/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if(UBAANEXT_BUILD_BINDINGS)
+    install(DIRECTORY bindings/c/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+
+set(UBAANEXT_INSTALL_TARGETS
+    UBAANextCore
+    UBAANextPlatformCurl
+    UBAANextPlatformOpenSSL
+    UBAANextPlatformMock
+    UBAANextPlatformWindows
+    UBAANextPlatformLinux
+    UBAANextPlatformHarmony
+    UBAANextPlatformCurrent
+)
+if(UBAANEXT_BUILD_BINDINGS)
+    list(APPEND UBAANEXT_INSTALL_TARGETS UBAANextBindingsC)
+endif()
+
+install(TARGETS ${UBAANEXT_INSTALL_TARGETS}
+    EXPORT UBAANextTargets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/UBAANextConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/UBAANextConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/UBAANextConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/UBAANext
+)
+
+install(EXPORT UBAANextTargets
+    NAMESPACE UBAANext::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/UBAANext
+)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/UBAANextConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/UBAANextConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/UBAANext
+)

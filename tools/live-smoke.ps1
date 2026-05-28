@@ -15,7 +15,14 @@ function Redact-Text([string]$Text) {
             $redacted = $redacted.Replace($value, '[REDACTED]')
         }
     }
-    $redacted = [regex]::Replace($redacted, '(?i)(password|passwd|pwd|token|cookie|set-cookie|authorization|ticket|captcha|session[_-]?id|session)\s*[:=]\s*[^\s,}]+', '$1=[REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?i)(https?://[^\s''"<>),]+)\?[^\s''"<>),]+', '$1?[REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?i)(password|passwd|pwd|username|account|student[_-]?id|studentId|token|cookie|set-cookie|authorization|cgAuthorization|ticket|captcha|session[_-]?id|session|photo_path|path|filename|file|lock[_-]?code|lockCode|booking[_-]?id|bookingId|place|location)\s*[:=]\s*[^\s,}]+', '$1=[REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?i)(Cookie|Set-Cookie|Authorization|cgAuthorization)\s*:\s*[^\r\n]+', '$1: [REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?i)[A-Z]:[\\/][^\s,}]+', '[REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?i)(/data/|/storage/|/sdcard/)[^\s,}]+', '[REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?is)<!doctype html.*', '[REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?is)<html.*', '[REDACTED]')
+    $redacted = [regex]::Replace($redacted, '(?is)<form.*', '[REDACTED]')
     return $redacted
 }
 
@@ -78,15 +85,21 @@ Invoke-Ubaa @('spoc', 'assignments', '--mode', $Mode, '--json')
 Invoke-Ubaa @('judge', 'assignments', '--mode', $Mode, '--json')
 Invoke-Ubaa @('signin', 'today', '--mode', $Mode, '--json')
 Invoke-Ubaa @('ygdk', 'overview', '--mode', $Mode, '--json')
+Invoke-Ubaa @('ygdk', 'records', '--mode', $Mode, '--page', '1', '--size', '20', '--json')
 Invoke-Ubaa @('bykc', 'profile', '--mode', $Mode, '--json')
 Invoke-Ubaa @('bykc', 'courses', '--mode', $Mode, '--json')
+Invoke-Ubaa @('bykc', 'chosen', '--mode', $Mode, '--json')
+Invoke-Ubaa @('bykc', 'stats', '--mode', $Mode, '--json')
 if ($Mode -eq 'direct') {
     Invoke-Ubaa @('cgyy', 'sites', '--mode', 'direct', '--json')
+    Invoke-Ubaa @('cgyy', 'orders', '--mode', 'direct', '--page', '1', '--size', '20', '--json')
+    Invoke-Ubaa @('cgyy', 'order', 'lock-code', '--mode', 'direct', '--json')
 } else {
-    Write-Host 'ubaa cgyy sites'
+    Write-Host 'ubaa cgyy sites/orders/lock-code'
     Write-Host 'SKIP：CGYY 当前仅支持 direct 模式。'
 }
 Invoke-Ubaa @('libbook', 'libraries', '--mode', $Mode, '--json')
+Invoke-Ubaa @('libbook', 'reservations', '--mode', $Mode, '--json')
 
 if ($Level -eq 'L1') {
     Write-Host 'live smoke L1 完成。'

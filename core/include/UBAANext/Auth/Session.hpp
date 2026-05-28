@@ -17,36 +17,36 @@ namespace UBAANext {
 /**
  * @brief 表示当前活跃的内存登录会话
  *
- * 当 Session 持有 Account（通过 set_account 设置）时会话有效，
- * 通过 clear() 清除。此类非线程安全。
+ * Sensitive session boundary：仅保存进程内 Account，不负责持久化。
+ * 返回的账户字段可能包含身份/session 信息，必须走 redaction-aware 输出路径。
  */
 class Session {
 public:
     Session() = default;
 
     /**
-     * @brief 设置此会话的活跃账户
+     * @brief Sensitive input：设置此会话的活跃账户，可能包含 token/session 字段。
      * @param account 账户数据（将被移动到会话中）
      */
     void set_account(Model::Account account);
 
     /**
-     * @brief 获取当前账户（如有）
+     * @brief Sensitive output：获取当前账户（如有），调用方不得直接写入日志。
      * @return 指向可选账户的常量引用
      */
     [[nodiscard]] const std::optional<Model::Account> &account() const;
 
     /**
-     * @brief 检查会话是否持有活跃账户
+     * @brief Local session state only：不证明远端 session 仍有效。
      * @return 如果已设置账户则返回 true
      */
     [[nodiscard]] bool is_valid() const;
 
-    /** @brief 清除会话，移除已存储的账户 */
+    /** @brief 清除内存会话，不证明远端 logout 已执行 */
     void clear();
 
 private:
-    std::optional<Model::Account> m_account;  ///< 活跃账户（已登录时有值）
+    std::optional<Model::Account> m_account;  ///< Sensitive session/account cache（仅内存）
 };
 
 } // namespace UBAANext

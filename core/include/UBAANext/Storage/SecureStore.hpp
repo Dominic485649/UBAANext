@@ -29,6 +29,7 @@ public:
      * @brief 在给定键下存储字符串值
      * @param key   存储键（例如 "session.access_token"）
      * @param value 要存储的值
+     * @note Sensitive input: implementations must provide platform security or clearly document Unsupported/Fallback behavior.
      */
     virtual void set_string(const std::string &key, const std::string &value) = 0;
 
@@ -36,6 +37,7 @@ public:
      * @brief 检索已存储的字符串值
      * @param key 要查找的存储键
      * @return 已存储的值，如果键不存在则返回 std::nullopt
+     * @note Sensitive output: returned credentials/tokens/cookies must never be logged verbatim.
      */
     [[nodiscard]] virtual std::optional<std::string> get_string(const std::string &key) const = 0;
 
@@ -52,6 +54,7 @@ public:
      * implementations should override this so multi-process CLI flows can observe
      * credentials/cookies saved by a previous command without waiting for object
      * destruction timing.
+     * @note Unsupported/Fallback implementations must not turn volatile or plaintext storage into a claimed secure-store success.
      */
     virtual Result<void> flush() { return {}; }
 

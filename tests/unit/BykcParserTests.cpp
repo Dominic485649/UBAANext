@@ -117,3 +117,50 @@ TEST_CASE("parse_bykc_stats 解析统计数据", "[BykcParser]") {
     CHECK(stats[1].required_count == "2");
     CHECK(stats[1].passed_count == "1");
 }
+
+TEST_CASE("parse_bykc_courses 对空数据和字段漂移稳定降级", "[BykcParser][contract]") {
+    CHECK(um::Parser::parse_bykc_courses(nlohmann::json::object({{"content", "not-array"}})).empty());
+
+    auto courses = um::Parser::parse_bykc_courses(nlohmann::json::array({
+        {{"id", nullptr}, {"courseName", "缺少 id"}},
+        {{"id", nlohmann::json::object({{"unexpected", true}})}, {"courseName", "对象 id"}},
+        {{"id", 42}, {"courseName", nlohmann::json::array({"bad"})}, {"courseCurrentCount", nlohmann::json::object({{"bad", true}})}, {"courseMaxCount", 30}, {"selected", true}},
+    }));
+
+    REQUIRE(courses.size() == 1);
+    CHECK(courses[0].id == "42");
+    CHECK(courses[0].name.empty());
+    CHECK(courses[0].current_count.empty());
+    CHECK(courses[0].max_count == "30");
+    CHECK(courses[0].status == "selected");
+}
+
+TEST_CASE("parse_bykc_chosen_courses 对空数据和无 id 记录稳定处理", "[BykcParser][contract]") {
+    CHECK(um::Parser::parse_bykc_chosen_courses(nlohmann::json::object({{"content", "not-array"}})).empty());
+
+    auto courses = um::Parser::parse_bykc_chosen_courses(nlohmann::json::array({
+        {{"courseId", "course-missing-id"}},
+        {{"id", nlohmann::json::object({{"unexpected", true}})}, {"courseId", "course-object-id"}},
+        {{"id", 7}, {"courseInfo", nlohmann::json{{"id", 9}, {"courseName", nlohmann::json::array({"bad"})}}}, {"score", nlohmann::json::object({{"bad", true}})}, {"pass", false}, {"checkin", true}},
+    }));
+
+    REQUIRE(courses.size() == 1);
+    CHECK(courses[0].id == "7");
+    CHECK(courses[0].course_id == "9");
+    CHECK(courses[0].name.empty());
+    CHECK(courses[0].score.empty());
+    CHECK(courses[0].pass == "false");
+    CHECK(courses[0].checkin == "true");
+}
+
+TEST_CASE("parse_bykc_stats 对统计字段漂移保留 total 记录", "[BykcParser][contract]") {
+    auto empty_stats = um::Parser::parse_bykc_stats(nlohmann::json::object());
+
+    REQUIRE(empty_stats.size() == 1);
+    CHECK(empty_stats[0].id == "total");
+
+    auto stats = um::Parser::parse_bykc_stats(nlohmann::json{{"statistical", "not-object"}});
+
+    REQUIRE(stats.size() == 1);
+    CHECK(stats[0].id == "total");
+}

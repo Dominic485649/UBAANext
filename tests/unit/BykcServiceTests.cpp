@@ -52,6 +52,27 @@ public:
     std::string sign_config = R"JSON("gps")JSON";
 };
 
+class BykcBusinessErrorFixtureHttpClient : public UBAANext::IHttpClient {
+public:
+    UBAANext::Result<UBAANext::HttpResponse> send(const UBAANext::HttpRequest &request) override {
+        ++request_counts[request.url];
+        UBAANext::HttpResponse response;
+        response.status_code = 200;
+        if (request.url == kLoginUrl) {
+            response.status_code = 302;
+            response.headers["Location"] = "/sscv/cas/login?token=token-1";
+        } else if (request.url == kProfileUrl) {
+            response.body = R"JSON({"status":"1","errmsg":"token=token-secret&Cookie: SID=cookie-secret&photo_path=C:/secret/photo.jpg"})JSON";
+        } else {
+            response.status_code = 404;
+            response.body = R"JSON({"status":"1","errmsg":"unexpected request"})JSON";
+        }
+        return response;
+    }
+
+    std::map<std::string, int> request_counts;
+};
+
 } // namespace
 
 TEST_CASE("BykcService 跟随 CAS 多跳重定向获取 token", "[service][bykc]") {
@@ -73,6 +94,9 @@ TEST_CASE("BykcService 签到从课程签到范围生成位置", "[service][bykc
     BykcRedirectFixtureHttpClient http_client(R"JSON({"signPointList":[{"lat":40.1001,"lng":116.3001,"radius":8.0}]})JSON");
     UBAANext::MemoryCacheStore cache;
     UBAANext::BykcService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "bykc sign"));
 
     auto result = service.sign_course("1", 1);
 
@@ -87,6 +111,9 @@ TEST_CASE("BykcService 无签到范围时不提交签到", "[service][bykc]") {
     BykcRedirectFixtureHttpClient http_client(R"JSON({"signPointList":[]})JSON");
     UBAANext::MemoryCacheStore cache;
     UBAANext::BykcService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "bykc sign"));
 
     auto result = service.sign_course("1", 1);
 
@@ -100,6 +127,9 @@ TEST_CASE("BykcService 拒绝非数字业务 ID", "[service][bykc]") {
     BykcRedirectFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::BykcService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "bykc write"));
 
     auto detail = service.show_course("course-x");
     auto select = service.select_course("course-x");
@@ -115,4 +145,20 @@ TEST_CASE("BykcService 拒绝非数字业务 ID", "[service][bykc]") {
     REQUIRE_FALSE(sign);
     CHECK(sign.error().code == UBAANext::ErrorCode::InvalidArgument);
     CHECK(http_client.request_counts.empty());
+}
+
+TEST_CASE("BykcService 业务错误消息会脱敏", "[service][bykc][security]") {
+    BykcBusinessErrorFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::BykcService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.profile();
+
+    REQUIRE_FALSE(result);
+    CHECK(result.error().code == UBAANext::ErrorCode::NetworkError);
+    CHECK(result.error().message.find("token-secret") == std::string::npos);
+    CHECK(result.error().message.find("cookie-secret") == std::string::npos);
+    CHECK(result.error().message.find("C:/secret/photo.jpg") == std::string::npos);
+    CHECK(result.error().message.find("[REDACTED]") != std::string::npos);
+    CHECK(http_client.request_counts[kProfileUrl] == 1);
 }

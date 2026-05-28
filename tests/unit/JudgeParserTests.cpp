@@ -70,6 +70,36 @@ TEST_CASE("parse_judge_assignment_detail_html 解析详情与提交状态", "[Ju
     CHECK(detail->status_text == "进行中(2/3)");
 }
 
+TEST_CASE("parse_judge_courses_html 空页面稳定返回空结果", "[JudgeParser][contract]") {
+    auto courses = um::Parser::parse_judge_courses_html("<html><body>暂无课程</body></html>");
+
+    CHECK(courses.empty());
+}
+
+TEST_CASE("parse_judge_assignments_html 无作业链接稳定返回空结果", "[JudgeParser][contract]") {
+    um::Model::JudgeCourse course{"1001", "程序设计基础"};
+    auto assignments = um::Parser::parse_judge_assignments_html("<html><body><table><tr><td>暂无作业</td></tr></table></body></html>", course);
+
+    CHECK(assignments.empty());
+}
+
+TEST_CASE("parse_judge_assignment_detail_html 字段缺失时返回 unknown 状态", "[JudgeParser][contract]") {
+    um::Model::JudgeAssignmentSummary summary;
+    summary.id = "9004";
+    summary.course_id = "1001";
+    summary.course_name = "程序设计基础";
+    summary.title = "缺字段作业";
+
+    auto detail = um::Parser::parse_judge_assignment_detail_html("<html><body><article>暂无详情</article></body></html>", summary);
+
+    REQUIRE(detail.has_value());
+    CHECK(detail->id == "9004");
+    CHECK(detail->status == "unknown");
+    CHECK(detail->status_text == "未知状态");
+    CHECK(detail->total_problems == 0);
+    CHECK(detail->content == "暂无详情");
+}
+
 TEST_CASE("parse_judge_assignment_detail_html 忽略异常题目总数", "[JudgeParser]") {
     um::Model::JudgeAssignmentSummary summary;
     summary.id = "9001";

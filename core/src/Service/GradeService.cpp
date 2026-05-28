@@ -2,6 +2,7 @@
 
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Protocol/ScoreSession.hpp>
+#include <UBAANext/Security/SecurityRedaction.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -128,7 +129,7 @@ Result<std::vector<Model::Grade>> GradeService::list_grades(const std::string &t
 
     auto session = Protocol::Score::ensure_session(m_http_client, m_mode);
     if (!session) {
-        return make_error(session.error().code, "激活成绩系统失败: " + session.error().message);
+        return make_error(session.error().code, "激活成绩系统失败: " + Security::redact_sensitive_text(session.error().message));
     }
 
     HttpRequest request;
@@ -139,7 +140,7 @@ Result<std::vector<Model::Grade>> GradeService::list_grades(const std::string &t
 
     auto response = m_http_client.send(request);
     if (!response) {
-        return make_error(ErrorCode::NetworkError, "请求成绩失败: " + response.error().message);
+        return make_error(ErrorCode::NetworkError, "请求成绩失败: " + Security::redact_sensitive_text(response.error().message));
     }
     if (Protocol::Score::is_session_expired_response(*response)) {
         return make_error(ErrorCode::SessionExpired, "成绩系统会话已过期");

@@ -25,15 +25,19 @@ public:
 #endif
     ClassroomService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    /** ReadOnlyCandidate: queries classroom availability through mock cache or real AppBuaa session; live field drift remains possible. */
     Result<Model::ClassroomQueryResult> query_classrooms(int campus_id,
                                                          const std::string &date);
+    /** ReadOnlyCandidate: section-filtered classroom query; unsupported connection modes fail with InvalidArgument. */
     Result<Model::ClassroomQueryResult> query_classrooms(int campus_id,
                                                          const std::string &date,
                                                          const std::vector<int> &sections);
+    /** Sensitive input: username/password overload is a compatibility path and must not log credentials. */
     Result<Model::ClassroomQueryResult> query_classrooms(int campus_id,
                                                          const std::string &date,
                                                          const std::string &username,
                                                          const std::string &password);
+    /** Sensitive input: username/password plus section filters; remote read only, with session errors propagated. */
     Result<Model::ClassroomQueryResult> query_classrooms(int campus_id,
                                                          const std::string &date,
                                                          const std::string &username,

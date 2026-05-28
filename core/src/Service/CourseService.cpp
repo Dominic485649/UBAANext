@@ -4,6 +4,7 @@
  */
 
 #include <UBAANext/Service/CourseService.hpp>
+#include <UBAANext/Base/TimeUtils.hpp>
 #include <UBAANext/Parser/JsonParser.hpp>
 #include <UBAANext/Protocol/ByxtSession.hpp>
 #include <UBAANext/Protocol/AuthorizedDownstreamRequestExecutor.hpp>
@@ -109,12 +110,7 @@ Result<std::vector<Model::Course>> CourseService::get_today_courses() {
     // 使用真实日期
     auto now = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
-    std::tm tm{};
-#ifdef _WIN32
-    localtime_s(&tm, &time);
-#else
-    localtime_r(&time, &tm);
-#endif
+    auto tm = local_time(time);
     char buf[11];
     std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
     return get_date_courses(buf);

@@ -60,24 +60,11 @@ public:
     virtual ~IHttpClient() = default;
 
     /**
-     * @brief 执行 HTTP 请求并返回响应
+     * @brief Sensitive transport boundary: 执行 HTTP 请求，可能发起真实远端请求。
      *
-     * 这是 IHttpClient 接口的核心方法。调用方构造一个 HttpRequest 对象，
-     * 传入此方法后获得 HttpResponse 结果。
-     *
-     * 该方法是一个同步阻塞调用——在请求完成（成功或失败）之前，
-     * 调用线程会被阻塞。如果需要异步请求，可在独立线程中调用此方法，
-     * 或使用上层封装的异步接口。
-     *
+     * Mock 实现只验证合同；真实实现必须保持 URL/header/body/cookie/token 的错误脱敏。
      * @param request 完整填充的 HTTP 请求对象，包含方法、URL、请求头和请求体
-     * @return 成功时包含服务器返回的 HTTP 响应；失败时包含 NetworkError 错误
-     *
-     * @note 返回的 HttpResponse 中 status_code 为 0 表示未收到服务器响应
-     *       （如网络超时），此时 body 通常为空。
-     *
-     * @see HttpRequest — 请求参数结构
-     * @see HttpResponse — 响应结果结构
-     * @see Result — 统一错误模型
+     * @return 成功时包含服务器返回的 HTTP 响应；失败时包含稳定错误码
      */
     [[nodiscard]] virtual Result<HttpResponse> send(const HttpRequest &request) = 0;
 };

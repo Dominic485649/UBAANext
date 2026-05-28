@@ -3,7 +3,10 @@
  * @brief UBAANextCore 库的伞形头文件
  *
  * 包含 UBAANextCore 库的所有公共头文件。
- * 为需要广泛访问的消费者提供便捷的单一头文件。
+ * 为需要广泛访问的后续调用方提供便捷的单一头文件。
+ *
+ * @attention 能力状态边界：包含某个 service、parser、platform 或 protocol header 不代表原 UBAA 后端语义已对齐。
+ *   具体能力仍需查看对应 API 的 Aligned/ReadOnlyCandidate/PartiallyMigrated/MockOnly/Placeholder/Unsupported/WriteGated 注释。
  */
 #pragma once
 
@@ -96,4 +99,5 @@
 #include <UBAANext/Service/TermService.hpp>
 #include <UBAANext/Service/TodoService.hpp>
 #include <UBAANext/Service/VenueReservationService.hpp>
+#include <UBAANext/Service/WriteOperationGate.hpp>
 #include <UBAANext/Service/YgdkService.hpp>

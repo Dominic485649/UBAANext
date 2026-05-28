@@ -568,71 +568,7 @@ Result<Model::MutationResult> FeatureService::mutate(const std::string &domain,
     }
 #endif
 
-    if (domain == "signin" && operation == "do") {
-        SigninService service(m_http_client, m_cache, m_mode);
-        return service.perform_signin(id);
-    }
-
-    if (domain == "bykc" && operation == "select") {
-        BykcService service(m_http_client, m_cache, m_mode);
-        return service.select_course(id);
-    }
-    if (domain == "bykc" && operation == "unselect") {
-        BykcService service(m_http_client, m_cache, m_mode);
-        return service.unselect_course(id);
-    }
-    if (domain == "bykc" && operation.rfind("sign:", 0) == 0) {
-        auto first = operation.find(':');
-        if (first == std::string::npos) {
-            return make_error(ErrorCode::InvalidArgument, "bykc sign 需要 --sign-type");
-        }
-        auto sign_type = parse_positive_int(operation.substr(first + 1), "bykc sign type");
-        if (!sign_type) return make_error(sign_type.error().code, sign_type.error().message);
-        BykcService service(m_http_client, m_cache, m_mode);
-        return service.sign_course(id, *sign_type);
-    }
-    if (domain == "evaluation" && operation == "submit") {
-        EvaluationService service(m_http_client, m_cache, m_mode);
-        return service.submit_evaluations(id);
-    }
-    if (domain == "ygdk" && operation.rfind("submit:", 0) == 0) {
-        return make_error(ErrorCode::InvalidArgument, "ygdk submit 需要由 app 层提供上传文件 bytes");
-    }
-    if (domain == "cgyy" && operation.rfind("reserve:", 0) == 0) {
-        auto rest = operation.substr(8);
-        std::vector<std::string> parts;
-        size_t start = 0;
-        while (true) {
-            auto pos = rest.find('\n', start);
-            parts.push_back(pos == std::string::npos ? rest.substr(start) : rest.substr(start, pos - start));
-            if (pos == std::string::npos) break;
-            start = pos + 1;
-        }
-        if (parts.size() < 9) {
-            return make_error(ErrorCode::InvalidArgument, "cgyy reserve 参数不完整");
-        }
-        VenueReservationService service(m_http_client, m_cache, m_mode);
-        return service.reserve(parts[0], parts[1], parts[2], id, parts[3], parts[4], parts[5], parts[6], parts[7], parts[8]);
-    }
-    if (domain == "cgyy" && operation == "cancel") {
-        VenueReservationService service(m_http_client, m_cache, m_mode);
-        return service.cancel_order(id);
-    }
-    if (domain == "libbook" && operation.rfind("book:", 0) == 0) {
-        auto rest = operation.substr(5);
-        auto sep = rest.find('\n');
-        if (sep == std::string::npos) {
-            return make_error(ErrorCode::InvalidArgument, "libbook book 参数不完整");
-        }
-        LibrarySeatService service(m_http_client, m_cache, m_mode);
-        return service.reserve_seat(id, rest.substr(0, sep), rest.substr(sep + 1));
-    }
-    if (domain == "libbook" && operation == "cancel") {
-        LibrarySeatService service(m_http_client, m_cache, m_mode);
-        return service.cancel_booking(id);
-    }
-
-    return make_error(ErrorCode::NotImplemented, domain + " " + operation + " 真实写操作尚未接入");
+    return make_error(ErrorCode::UnsupportedPlatform, domain + " " + operation + " 真实写操作必须通过 typed service 写门控执行");
 }
 
 #if UBAANEXT_ENABLE_MOCKS

@@ -1,12 +1,15 @@
 #include <UBAANext/Service/LibrarySeatService.hpp>
 
+#include <UBAANext/Base/TimeUtils.hpp>
 #include <UBAANext/Crypto/CryptoProvider.hpp>
+#include <UBAANext/Net/HttpHeaders.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/LibrarySeatParser.hpp>
 #include <UBAANext/Protocol/AuthorizedDownstreamRequestExecutor.hpp>
 #include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
 #include <UBAANext/Protocol/RedirectNavigator.hpp>
 #include <UBAANext/Protocol/SessionGuards.hpp>
+#include <UBAANext/Security/SecurityRedaction.hpp>
 
 #include <ctime>
 #include <iomanip>
@@ -51,12 +54,7 @@ std::string extract_cas_token(const std::string &url) {
 
 std::string today_yyyy_mm_dd() {
     std::time_t now = std::time(nullptr);
-    std::tm local{};
-#ifdef _WIN32
-    localtime_s(&local, &now);
-#else
-    localtime_r(&now, &local);
-#endif
+    auto local = local_time(now);
     std::ostringstream out;
     out << std::put_time(&local, "%Y-%m-%d");
     return out.str();
@@ -96,7 +94,7 @@ std::optional<std::pair<std::string, std::string>> parse_time_range(const std::s
 
 void apply_headers(HttpRequest &request) {
     request.headers["Accept"] = "application/json, text/plain, */*";
-    request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
+    request.headers["User-Agent"] = kUserAgent;
     request.headers["X-Requested-With"] = "XMLHttpRequest";
     request.headers["Referer"] = base_url;
     request.headers["Origin"] = base_url;
@@ -308,7 +306,7 @@ Result<nlohmann::json> LibrarySeatService::request_json(const std::string &path,
             return make_error(error.code, Protocol::to_error(error).message);
         }
         if (!libbook_business_success(json)) {
-            return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆接口请求失败" : message);
+            return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆接口请求失败" : Security::redact_sensitive_text(message));
         }
         return json;
     } catch (const std::exception &e) {
@@ -401,11 +399,17 @@ Result<std::vector<Model::FeatureRecord>> LibrarySeatService::list_reservations(
     return to_records(*records);
 }
 
+void LibrarySeatService::set_write_operation_gate(WriteOperationGate gate) {
+    m_write_gate = std::move(gate);
+}
+
 Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string &seat_id,
                                                                const std::string &day,
                                                                const std::string &segment,
                                                                const std::string &start_time,
                                                                const std::string &end_time) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     if (seat_id.empty()) {
         return make_error(ErrorCode::InvalidArgument, "libbook book 需要 --seat-id <id>");
     }
@@ -437,7 +441,7 @@ Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string
     auto message = json_string(*json, "message");
     if (message.empty()) message = json_string(*json, "msg");
     if (!libbook_business_success(*json)) {
-        return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆座位预约失败" : message);
+        return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆座位预约失败" : Security::redact_sensitive_text(message));
     }
     if (message.empty()) message = "预约成功";
 
@@ -449,6 +453,8 @@ Result<Model::MutationResult> LibrarySeatService::reserve_seat(const std::string
 }
 
 Result<Model::MutationResult> LibrarySeatService::cancel_booking(const std::string &booking_id) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     if (booking_id.empty()) {
         return make_error(ErrorCode::InvalidArgument, "libbook cancel 需要 --booking-id <id>");
     }
@@ -463,7 +469,7 @@ Result<Model::MutationResult> LibrarySeatService::cancel_booking(const std::stri
         message = json_string(*json, "msg");
     }
     if (!libbook_business_success(*json)) {
-        return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆预约取消失败" : message);
+        return make_error(ErrorCode::NetworkError, message.empty() ? "图书馆预约取消失败" : Security::redact_sensitive_text(message));
     }
     if (message.empty()) {
         message = "取消成功";

@@ -22,23 +22,22 @@ namespace UBAANext {
 class VpnCipher {
 public:
     /**
-     * @brief 将内网 URL 转换为 WebVPN URL
+     * @brief PartiallyMigrated WebVPN URL converter; output may contain encoded host/path and must keep query strings redacted in diagnostics.
      * @param url 原始内网 URL（如 https://sso.buaa.edu.cn/login）
      * @return WebVPN URL（如 https://d.buaa.edu.cn/https/<enc>/login）
      */
     [[nodiscard]] static std::string to_vpn_url(const std::string &url);
+    [[nodiscard]] static std::string from_vpn_url(const std::string &url);
 
     /**
-     * @brief 检测是否能直连内网
-     *
-     * 尝试 HEAD 请求 byxt.buaa.edu.cn，如果失败则需要 VPN。
+     * @brief Experimental reachability probe; may perform a network check and must not be used as semantic completion proof.
      * @return true 表示可以直连，false 表示需要 VPN
      */
     [[nodiscard]] static bool can_direct_connect();
 
 private:
     /**
-     * @brief AES/CFB 加密主机名
+     * @brief Crypto boundary: AES/CFB encrypts WebVPN host names; UnsupportedCrypto must fail closed.
      * @param host 原始主机名（如 sso.buaa.edu.cn）
      * @return 加密后的十六进制字符串
      */

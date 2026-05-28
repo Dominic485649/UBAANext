@@ -101,6 +101,9 @@ TEST_CASE("YgdkService 默认提交参数对齐 UBAA", "[service][ygdk]") {
     YgdkFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "ygdk submit"));
 
     auto photo = test_photo();
     auto result = service.submit_clockin("", "2026-05-16 20:00", "2026-05-16 21:00", "", false, photo);
@@ -131,6 +134,9 @@ TEST_CASE("YgdkService 接受 ISO 时间输入", "[service][ygdk]") {
     YgdkFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "ygdk submit"));
 
     auto photo = test_photo();
     auto result = service.submit_clockin("", "2026-05-16T20:00:00", "2026-05-16T21:00:00", "", false, photo);
@@ -146,6 +152,9 @@ TEST_CASE("YgdkService 拒绝带时区 ISO 时间", "[service][ygdk]") {
     YgdkFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "ygdk submit"));
 
     auto result = service.submit_clockin("", "2026-05-16T20:00:00Z", "2026-05-16T21:00:00Z", "", false, test_photo());
 
@@ -158,6 +167,9 @@ TEST_CASE("YgdkService 拒绝只提供单侧时间且不发起网络请求", "[s
     YgdkFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "ygdk submit"));
 
     auto result = service.submit_clockin("", "2026-05-16 20:00", "", "", false, test_photo());
 
@@ -170,6 +182,9 @@ TEST_CASE("YgdkService 空时间默认生成一小时时段", "[service][ygdk]")
     YgdkFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "ygdk submit"));
 
     auto result = service.submit_clockin("", "", "", "", false, UBAANext::UploadPart{});
 
@@ -191,10 +206,42 @@ TEST_CASE("YgdkService 历史记录使用体育分类", "[service][ygdk]") {
     CHECK((*records)[0].item_name == "跑步");
 }
 
+TEST_CASE("YgdkService 历史记录业务错误消息会脱敏", "[service][ygdk][security]") {
+    class SensitiveRecordsErrorHttpClient : public YgdkFixtureHttpClient {
+    public:
+        UBAANext::Result<UBAANext::HttpResponse> send(const UBAANext::HttpRequest &request) override {
+            if (request.url == kRecordsUrl) {
+                requested_urls.push_back(request.url);
+                UBAANext::HttpResponse response;
+                response.status_code = 200;
+                response.body = R"JSON({"code":0,"msg":"token=token-secret&Authorization: bearer-secret&photo_path=C:/secret/ygdk-photo.jpg"})JSON";
+                return response;
+            }
+            return YgdkFixtureHttpClient::send(request);
+        }
+    } http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto records = service.records();
+
+    REQUIRE_FALSE(records);
+    CHECK(records.error().code == UBAANext::ErrorCode::NetworkError);
+    CHECK(records.error().message.find("token-secret") == std::string::npos);
+    CHECK(records.error().message.find("bearer-secret") == std::string::npos);
+    CHECK(records.error().message.find("C:/secret/ygdk-photo.jpg") == std::string::npos);
+    CHECK(records.error().message.find("[REDACTED]") != std::string::npos);
+    CHECK(http_client.upload_requests == 0);
+    CHECK(http_client.submit_requests == 0);
+}
+
 TEST_CASE("YgdkService 无效项目不会上传默认图片", "[service][ygdk]") {
     YgdkFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "ygdk submit"));
 
     auto result = service.submit_clockin("missing-item", "2026-05-16 20:00", "2026-05-16 21:00", "", false, test_photo());
 
@@ -220,6 +267,9 @@ TEST_CASE("YgdkService 无跑步项目时选择 sort 最小项目", "[service][y
     } http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::YgdkService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "ygdk submit"));
 
     auto photo = test_photo();
     auto result = service.submit_clockin("", "2026-05-16 20:00", "2026-05-16 21:00", "操场", false, photo);

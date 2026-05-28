@@ -26,7 +26,9 @@ public:
 #endif
     TermService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    /** ReadOnlyCandidate: lists terms through mock cache or real BYXT API; unsupported modes fail explicitly. */
     Result<std::vector<Model::Term>> get_terms();
+    /** ReadOnlyCandidate: lists teaching weeks for an explicit term; missing term_code fails with InvalidArgument. */
     Result<std::vector<Model::Week>> get_weeks(const std::string &term_code);
 
 private:

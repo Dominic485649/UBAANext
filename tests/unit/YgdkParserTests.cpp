@@ -79,3 +79,25 @@ TEST_CASE("parse_ygdk_records 解析打卡记录", "[YgdkParser]") {
     CHECK(records[0].end_time == "2026-03-01 09:00");
     CHECK(records[0].created_at == "2026-03-01 09:05");
 }
+
+TEST_CASE("parse_ygdk_classifies 非数组和缺 id 稳定返回空结果", "[YgdkParser][contract]") {
+    CHECK(um::Parser::parse_ygdk_classifies(nlohmann::json{{"list", "not-array"}}).empty());
+    CHECK(um::Parser::parse_ygdk_classifies(nlohmann::json{{"list", nlohmann::json::array({{{"name", "体育锻炼"}}})}}).empty());
+}
+
+TEST_CASE("select_ygdk_sports_classify 空列表返回空分类", "[YgdkParser][contract]") {
+    auto selected = um::Parser::select_ygdk_sports_classify({});
+
+    CHECK(selected.id.empty());
+    CHECK(selected.name.empty());
+}
+
+TEST_CASE("parse_ygdk_records 字段缺失和类型漂移时跳过无 id 记录", "[YgdkParser][contract]") {
+    auto records = um::Parser::parse_ygdk_records(nlohmann::json{{"list", nlohmann::json::array({{{"item_name", "无 id 记录"}}, {{"record_id", 123}, {"item_name", 456}, {"state", 1}, {"place", nullptr}}})}});
+
+    REQUIRE(records.size() == 1);
+    CHECK(records[0].id == "123");
+    CHECK(records[0].item_name == "456");
+    CHECK(records[0].state == "1");
+    CHECK(records[0].place.empty());
+}

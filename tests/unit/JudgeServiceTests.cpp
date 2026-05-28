@@ -113,6 +113,36 @@ public:
     std::map<std::string, int> request_counts;
 };
 
+class JudgePartialFailureFixtureHttpClient : public UBAANext::IHttpClient {
+public:
+    UBAANext::Result<UBAANext::HttpResponse> send(const UBAANext::HttpRequest &request) override {
+        ++request_counts[request.url];
+        if (request.url == "https://judge.buaa.edu.cn/assignment/index.jsp?assignID=9002") {
+            return UBAANext::make_error(UBAANext::ErrorCode::NetworkError, "token=token-secret&Cookie: SID=cookie-secret&photo_path=C:/secret/judge.html");
+        }
+
+        UBAANext::HttpResponse response;
+        response.status_code = 200;
+        if (request.url == "https://sso.buaa.edu.cn/login?service=http%3A%2F%2Fjudge.buaa.edu.cn%2F") {
+            response.body = "<html>judge</html>";
+        } else if (request.url == "https://judge.buaa.edu.cn/courselist.jsp?courseID=0") {
+            response.body = kJudgeCoursesHtml;
+        } else if (request.url == "https://judge.buaa.edu.cn/courselist.jsp?courseID=1001") {
+            response.body = kJudgeCoursesHtml;
+        } else if (request.url == "https://judge.buaa.edu.cn/assignment/index.jsp") {
+            response.body = kJudgeAssignmentsHtml;
+        } else if (request.url == "https://judge.buaa.edu.cn/assignment/index.jsp?assignID=9001") {
+            response.body = kJudgeDetailUnsubmittedHtml;
+        } else {
+            response.status_code = 404;
+            response.body = "unexpected url";
+        }
+        return response;
+    }
+
+    std::map<std::string, int> request_counts;
+};
+
 } // namespace
 
 TEST_CASE("JudgeService 按 include 参数过滤过期和历史作业", "[service][judge]") {
@@ -172,4 +202,38 @@ TEST_CASE("JudgeService 跟随会话激活和业务页重定向", "[service][jud
     REQUIRE(result->size() == 3);
     CHECK(http_client.request_counts["https://judge.buaa.edu.cn/session/bootstrap"] >= 1);
     CHECK(http_client.request_counts["https://judge.buaa.edu.cn/courselist-selected.jsp?courseID=1001"] >= 1);
+}
+
+TEST_CASE("JudgeService 批量详情保留成功项并返回单项错误记录", "[service][judge][partial][security]") {
+    JudgePartialFailureFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::JudgeService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.assignment_details_batch({"9001", "9002"});
+
+    REQUIRE(result);
+    REQUIRE(result->size() == 2);
+    CHECK((*result)[0].id == "9001");
+    CHECK((*result)[0].status == "unsubmitted");
+    CHECK((*result)[1].id == "9002");
+    CHECK((*result)[1].status == "error");
+    CHECK((*result)[1].status_text == "NetworkError");
+    CHECK((*result)[1].content.find("token-secret") == std::string::npos);
+    CHECK((*result)[1].content.find("cookie-secret") == std::string::npos);
+    CHECK((*result)[1].content.find("C:/secret/judge.html") == std::string::npos);
+    CHECK((*result)[1].content.find("[REDACTED]") != std::string::npos);
+
+    auto records = service.show_assignment_details_batch({"9001", "9002"});
+
+    REQUIRE(records);
+    REQUIRE(records->size() == 2);
+    CHECK((*records)[0].id == "9001");
+    CHECK((*records)[0].status == "unsubmitted");
+    CHECK((*records)[1].id == "9002");
+    CHECK((*records)[1].status == "error");
+    CHECK((*records)[1].fields.at("submissionStatusText") == "NetworkError");
+    CHECK((*records)[1].fields.at("content").find("token-secret") == std::string::npos);
+    CHECK((*records)[1].fields.at("content").find("cookie-secret") == std::string::npos);
+    CHECK((*records)[1].fields.at("content").find("C:/secret/judge.html") == std::string::npos);
+    CHECK((*records)[1].fields.at("content").find("[REDACTED]") != std::string::npos);
 }

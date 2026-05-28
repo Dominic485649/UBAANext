@@ -22,24 +22,22 @@ namespace UBAANext {
 
 /**
  * @brief 连接模式
+ *
+ * MockOnly 仅用于离线合同验证；Direct/WebVPN 会触发真实远端认证与下游请求。
  */
 enum class ConnectionMode {
 #if UBAANEXT_ENABLE_MOCKS
-    Mock,       ///< 模拟数据
+    Mock,       ///< MockOnly：模拟数据，不证明真实 UBAA 语义
 #endif
-    Direct,     ///< 直连内网
-    WebVPN,     ///< 通过 WebVPN 网关
+    Direct,     ///< 真实内网直连，可能触发远端请求
+    WebVPN,     ///< 真实 WebVPN 网关路径，可能触发远端请求
 };
 
 /**
  * @brief 高级认证服务
  *
- * 编排登录/登出流程：
- * - login_mock():       模拟登录
- * - login_real():       真实 CAS 登录（支持内网/VPN）
- * - logout():           从存储和内存中清除会话
- * - restore_session():  从持久存储中重新恢复会话
- * - has_session() / session(): 查询当前会话状态
+ * Sensitive input/session boundary：编排登录、登出、会话恢复和 URL 解析。
+ * 真实登录会触发远端 CAS 请求并保存账户/session 数据；MockOnly 登录只验证离线合同。
  */
 class AuthService {
 public:
@@ -47,36 +45,45 @@ public:
 
 #if UBAANEXT_ENABLE_MOCKS
     /**
-     * @brief 执行模拟登录（无网络调用）
+     * @brief MockOnly 登录入口，不发起网络请求，不证明真实 CAS/session 语义。
+     *
+     * Sensitive input：username/password 仍不得写入日志或 diagnostics。
      */
     Result<Model::Account> login_mock(const std::string &username,
                                       const std::string &password);
 #endif
 
     /**
-     * @brief 执行真实 CAS 登录
-     * @param username 学号
-     * @param password 密码
+     * @brief Sensitive input：执行真实 CAS 登录，会触发远端请求并保存 session/account 数据。
+     * @param username 学号，不得输出到错误、日志或 diagnostics
+     * @param password 密码，不得输出到错误、日志或 diagnostics
      * @param mode     连接模式（Direct 或 WebVPN）
-     * @param captcha  验证码（可选，如果 CAS 要求）
-     * @return 登录成功后的账户信息
+     * @param captcha  验证码（可选，如果 CAS 要求），不得输出到错误、日志或 diagnostics
+     * @return 登录成功后的账户信息；认证、网络、解析或存储失败必须稳定返回错误
      */
     Result<Model::Account> login_real(const std::string &username,
                                       const std::string &password,
                                       ConnectionMode mode,
                                       const std::string &captcha = "");
 
+    /** Sensitive session boundary: clears stored session/account data without proving remote logout. */
     Result<void> logout();
+    /** Sensitive session boundary: true only means local session data is present. */
     [[nodiscard]] bool has_session() const;
+    /** Sensitive output: returned account/session fields must remain redaction-aware. */
     [[nodiscard]] const Session &session() const;
+    /** Sensitive session boundary: exposes persistence manager; callers must not bypass secure-store semantics. */
     [[nodiscard]] SessionManager &session_manager();
+    /** Sensitive output: restores persisted session/account data or returns stable storage/session errors. */
     Result<Model::Account> restore_session();
 
+    /** Sensitive connection boundary: selects how later URLs resolve; does not prove platform capability. */
     void set_connection_mode(ConnectionMode mode) { m_conn_mode = mode; }
+    /** Sensitive connection boundary: exposes current routing mode for downstream requests. */
     [[nodiscard]] ConnectionMode connection_mode() const { return m_conn_mode; }
 
     /**
-     * @brief 将 URL 转换为对应连接模式的 URL（公开供 Service 使用）
+     * @brief PartiallyMigrated URL resolver for Direct/WebVPN service calls; must not log sensitive query strings.
      */
     [[nodiscard]] std::string resolve_url(const std::string &url) const;
 
@@ -92,24 +99,24 @@ private:
     [[nodiscard]] std::string resolve_url(const std::string &url, ConnectionMode mode) const;
 
     /**
-     * @brief 从 HTML 中提取 CAS execution token
+     * @brief Sensitive parser helper: extracts CAS execution token from HTML and must not log raw login pages.
      */
     [[nodiscard]] static std::string extract_execution(const std::string &html);
 
     /**
-     * @brief 构建 CAS 登录表单数据
+     * @brief Sensitive input helper: builds CAS login form containing username/password/captcha.
      */
     [[nodiscard]] static std::string build_login_form(
         const std::string &html, const std::string &username, const std::string &password,
         const std::string &execution, const std::string &captcha);
 
     /**
-     * @brief 从 HTML 中检测错误信息
+     * @brief Sensitive parser helper: detects CAS errors without exposing raw HTML.
      */
     [[nodiscard]] static std::string detect_error(const std::string &html);
 
     /**
-     * @brief 手动跟随重定向并提取 Set-Cookie
+     * @brief PartiallyMigrated redirect helper: follows CAS redirects and extracts cookies with redacted diagnostics.
      */
     Result<HttpResponse> follow_redirects(
         const HttpResponse &response, ConnectionMode mode, int max_redirects = 10,

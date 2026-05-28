@@ -18,6 +18,9 @@
  *   3. 后续请求自动在请求头中附加 Cookie: JSESSIONID=abc123
  *   4. 服务器识别会话并返回正确的用户数据
  *
+ * @attention PartiallyMigrated/Sensitive cookie storage: this jar stores session identifiers in memory and
+ *   does not implement complete RFC 6265 matching. Serialized/header output must never be logged verbatim.
+ *
  * @attention 本版本（v0.2）为简化实现，不支持以下特性：
  *   - Cookie 过期时间（expires / max-age）
  *   - 域名匹配（domain）
@@ -70,6 +73,8 @@ namespace UBAANext {
  *   jar.clear();
  * @endcode
  *
+ * Sensitive output：Cookie header、serialized lines 和 cookie values 可能包含 session/token，必须脱敏。
+ *
  * 线程安全性：
  *   CookieJar 不是线程安全的。如果需要在多线程环境中使用，
  *   调用方应使用 std::mutex 等同步机制保护并发访问。
@@ -77,7 +82,7 @@ namespace UBAANext {
 class CookieJar {
 public:
     /**
-     * @brief 存储或覆盖一个 Cookie
+     * @brief Sensitive input：存储或覆盖一个 Cookie，可能包含 session/token。
      *
      * 将指定名称和值的 Cookie 存入内部映射表。如果同名 Cookie
      * 已存在，则用新值覆盖旧值。
@@ -92,33 +97,39 @@ public:
      *       但空名称的 Cookie 在 HTTP 规范中没有意义。
      */
     void set_cookie(std::string name, std::string value);
+    /** Sensitive input: host-scoped cookie storage is partially migrated and not full RFC 6265 matching. */
     void set_cookie(std::string host, std::string name, std::string value);
+    /** Sensitive input: host/path-scoped cookie storage is partially migrated and not full RFC 6265 matching. */
     void set_cookie(std::string host, std::string path, std::string name, std::string value);
 
     /**
-     * @brief 根据名称检索 Cookie 值
+     * @brief Sensitive output：根据名称检索 Cookie 值，调用方不得记录原值。
      */
     [[nodiscard]] std::optional<std::string> get_cookie(std::string_view name) const;
+    /** Sensitive output: host lookup is partially migrated and returned value must remain redacted. */
     [[nodiscard]] std::optional<std::string> get_cookie(std::string_view host, std::string_view name) const;
 
     /**
-     * @brief 根据名称移除一个 Cookie
+     * @brief Sensitive session boundary：根据名称移除一个 Cookie，不证明远端 session 已失效。
      */
     void remove_cookie(std::string_view name);
     void remove_cookie(std::string_view host, std::string_view name);
 
     /**
-     * @brief 移除所有已存储的 Cookie
+     * @brief Sensitive session boundary：移除所有已存储的 Cookie，不证明远端 logout 已执行。
      */
     void clear();
 
     /**
-     * @brief 将 Cookie 序列化为 HTTP "Cookie:" 请求头值
+     * @brief Sensitive output：将 Cookie 序列化为 HTTP "Cookie:" 请求头值，必须脱敏后才能输出。
      */
     [[nodiscard]] std::string to_header() const;
+    /** Sensitive output: host-scoped Cookie header must not be logged verbatim. */
     [[nodiscard]] std::string to_header(std::string_view host) const;
 
+    /** Sensitive output: serialized cookie lines may contain session identifiers. */
     [[nodiscard]] std::vector<std::string> serialize() const;
+    /** Sensitive input: loads serialized cookie lines from platform persistence. */
     void load_serialized_line(const std::string &line);
 
 private:

@@ -28,6 +28,7 @@ public:
      * @param key   缓存键
      * @param value 要缓存的值（将被移动）
      */
+    /** Sensitive cache boundary: stores opaque values; do not use for credentials, cookies, or tokens. */
     virtual void set(const std::string &key, std::string value) = 0;
 
     /**
@@ -36,6 +37,7 @@ public:
      * @param value       要缓存的值（将被移动）
      * @param ttl_seconds 条目过期前的秒数（必须 > 0，否则等同于 set()）
      */
+    /** Sensitive cache boundary: TTL cache is for non-authoritative data and must not persist credentials/cookies/tokens. */
     virtual void set_with_ttl(const std::string &key, std::string value, int ttl_seconds) = 0;
 
     /**
@@ -43,6 +45,7 @@ public:
      * @param key 要查找的缓存键
      * @return 缓存值，如果不存在或已过期则返回 std::nullopt
      */
+    /** Sensitive cache boundary: returned values may contain cached backend payloads and must not be logged verbatim. */
     [[nodiscard]] virtual std::optional<std::string> get(const std::string &key) const = 0;
 
     /**

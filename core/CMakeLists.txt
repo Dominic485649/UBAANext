@@ -19,6 +19,7 @@ add_library(UBAANextCore STATIC
     src/Service/YgdkService.cpp
     src/Service/BykcService.cpp
     src/Service/FeatureService.cpp
+    src/Service/WriteOperationGate.cpp
     src/Service/ResponseUtils.cpp
     src/Protocol/ByxtSession.cpp
     src/Protocol/AppBuaaSession.cpp
@@ -30,6 +31,8 @@ add_library(UBAANextCore STATIC
     src/Protocol/SessionGuards.cpp
     src/Net/CookieJar.cpp
     src/Net/VpnCipher.cpp
+    src/Base/TimeUtils.cpp
+    src/Security/SecurityRedaction.cpp
     src/Crypto/CryptoProvider.cpp
     src/Storage/SecureStoreAdapter.cpp
     src/Storage/MemoryCacheStore.cpp

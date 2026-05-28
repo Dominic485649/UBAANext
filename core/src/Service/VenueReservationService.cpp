@@ -1,6 +1,7 @@
 #include <UBAANext/Service/VenueReservationService.hpp>
 
 #include <UBAANext/Crypto/CryptoProvider.hpp>
+#include <UBAANext/Net/HttpHeaders.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/VenueReservationParser.hpp>
 #include <UBAANext/Protocol/AppBuaaSession.hpp>
@@ -8,6 +9,7 @@
 #include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
 #include <UBAANext/Protocol/RedirectNavigator.hpp>
 #include <UBAANext/Protocol/SessionGuards.hpp>
+#include <UBAANext/Security/SecurityRedaction.hpp>
 
 #include <algorithm>
 #include <charconv>
@@ -281,7 +283,7 @@ Result<void> VenueReservationService::ensure_login(bool force_refresh) {
         auto sync = Protocol::AppBuaa::ensure_session(m_http_client,
                                                       m_mode,
                                                       "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fcgyy.buaa.edu.cn%2Fvenue-zhjs-server%2Fsso%2FmanageLogin",
-                                                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4");
+                                                      kUserAgent);
         if (!sync) return make_error(sync.error().code, sync.error().message);
         sso_token = acquire_sso_token(m_http_client, m_cookie_store, m_mode);
         if (!sso_token) return make_error(sso_token.error().code, sso_token.error().message);
@@ -362,7 +364,7 @@ Result<nlohmann::json> VenueReservationService::request_json(HttpMethod method,
     if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "研讨室请求返回: " + std::to_string(response->status_code));
     auto json = nlohmann::json::parse(response->body, nullptr, false);
     if (json.is_discarded()) return make_error(ErrorCode::ParseError, "解析研讨室 JSON 失败");
-    if (json.value("code", 200) != 200) return make_error(ErrorCode::NetworkError, json.value("message", std::string("研讨室请求失败")));
+    if (json.value("code", 200) != 200) return make_error(ErrorCode::NetworkError, Security::redact_sensitive_text(json.value("message", std::string("研讨室请求失败"))));
     if (json.contains("data")) return json["data"];
     return json;
 }
@@ -446,6 +448,10 @@ Result<Model::FeatureRecord> VenueReservationService::lock_code() {
     return make_record("lock-code", "研讨室门锁码", "available", {{"raw", data->dump()}});
 }
 
+void VenueReservationService::set_write_operation_gate(WriteOperationGate gate) {
+    m_write_gate = std::move(gate);
+}
+
 Result<Model::MutationResult> VenueReservationService::reserve(const std::string &site_id,
                                                                   const std::string &space_id,
                                                                   const std::string &date,
@@ -456,6 +462,8 @@ Result<Model::MutationResult> VenueReservationService::reserve(const std::string
                                                                   const std::string &joiners,
                                                                   const std::string &captcha,
                                                                   const std::string &token) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     if (site_id.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy reserve 需要 --site-id <id>");
     if (space_id.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy reserve 需要 --space-id <id>");
     if (date.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy reserve 需要 --date <yyyy-MM-dd>");
@@ -510,6 +518,8 @@ Result<Model::MutationResult> VenueReservationService::reserve(const std::string
 }
 
 Result<Model::MutationResult> VenueReservationService::cancel_order(const std::string &order_id) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     if (order_id.empty()) return make_error(ErrorCode::InvalidArgument, "cgyy order cancel 需要 --order-id");
     auto parsed_order_id = parse_numeric_id(order_id, "--order-id <id>");
     if (!parsed_order_id) return make_error(parsed_order_id.error().code, parsed_order_id.error().message);

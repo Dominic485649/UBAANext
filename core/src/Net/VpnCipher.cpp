@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -31,6 +32,26 @@ static std::string to_hex(const unsigned char *data, size_t len) {
         result += hex_chars[data[i] & 0x0F];
     }
     return result;
+}
+
+static int hex_value(char ch) {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
+static std::vector<std::uint8_t> from_hex(const std::string &hex) {
+    if (hex.size() % 2 != 0) return {};
+    std::vector<std::uint8_t> out;
+    out.reserve(hex.size() / 2);
+    for (std::size_t i = 0; i < hex.size(); i += 2) {
+        const auto hi = hex_value(hex[i]);
+        const auto lo = hex_value(hex[i + 1]);
+        if (hi < 0 || lo < 0) return {};
+        out.push_back(static_cast<std::uint8_t>((hi << 4) | lo));
+    }
+    return out;
 }
 
 namespace {
@@ -181,6 +202,44 @@ std::string aes_cfb128_encrypt(std::string plaintext, const unsigned char *key, 
     return encrypted;
 }
 
+std::string aes_cfb128_decrypt(const std::vector<std::uint8_t> &ciphertext,
+                               const std::vector<std::uint8_t> &iv,
+                               const unsigned char *key) {
+    if (ciphertext.empty() || iv.size() != 16) return {};
+
+    const auto round_keys = expand_key(key);
+    std::array<std::uint8_t, 16> feedback{};
+    std::copy_n(iv.begin(), 16, feedback.begin());
+
+    std::string plaintext(ciphertext.size(), '\0');
+    for (std::size_t offset = 0; offset < ciphertext.size(); offset += 16) {
+        auto stream = aes_encrypt_block(feedback, round_keys);
+        const auto block_size = std::min<std::size_t>(16, ciphertext.size() - offset);
+        for (std::size_t i = 0; i < block_size; ++i) {
+            plaintext[offset + i] = static_cast<char>(ciphertext[offset + i] ^ stream[i]);
+            feedback[i] = ciphertext[offset + i];
+        }
+    }
+    return plaintext;
+}
+
+std::string decrypt_host(const std::string &encrypted_host) {
+    auto bytes = from_hex(encrypted_host);
+    if (bytes.size() <= 16) return {};
+    std::vector<std::uint8_t> iv(bytes.begin(), bytes.begin() + 16);
+    std::vector<std::uint8_t> ciphertext(bytes.begin() + 16, bytes.end());
+    unsigned char key[16];
+    memcpy(key, VPN_KEY, 16);
+    return aes_cfb128_decrypt(ciphertext, iv, key);
+}
+
+std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
 } // namespace
 
 std::string VpnCipher::to_vpn_url(const std::string &url) {
@@ -228,6 +287,36 @@ std::string VpnCipher::to_vpn_url(const std::string &url) {
     }
 
     return "https://" + std::string(VPN_GATEWAY) + "/" + proto + "/" + enc_host + rest;
+}
+
+std::string VpnCipher::from_vpn_url(const std::string &url) {
+    const std::string prefix = "https://" + std::string(VPN_GATEWAY) + "/";
+    if (url.rfind(prefix, 0) != 0) return url;
+
+    auto proto_start = prefix.size();
+    auto proto_end = url.find('/', proto_start);
+    if (proto_end == std::string::npos) return url;
+    auto host_start = proto_end + 1;
+    auto host_end = url.find('/', host_start);
+    std::string proto = url.substr(proto_start, proto_end - proto_start);
+    std::string encrypted_host = host_end == std::string::npos ? url.substr(host_start) : url.substr(host_start, host_end - host_start);
+    if (proto.empty() || encrypted_host.empty()) return url;
+
+    std::string port;
+    auto dash = proto.find('-');
+    if (dash != std::string::npos) {
+        port = proto.substr(dash + 1);
+        proto = proto.substr(0, dash);
+    }
+    proto = lower_copy(proto);
+    if (proto != "http" && proto != "https") return url;
+
+    auto host = decrypt_host(encrypted_host);
+    if (host.empty()) return url;
+    if (!port.empty()) host += ":" + port;
+
+    auto rest = host_end == std::string::npos ? std::string{"/"} : url.substr(host_end);
+    return proto + "://" + host + rest;
 }
 
 std::string VpnCipher::encrypt_host(const std::string &host) {

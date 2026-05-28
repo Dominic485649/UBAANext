@@ -167,7 +167,7 @@ TEST_CASE("FeatureService 泛化 CGYY 订单保留零基页码", "[service][feat
     CHECK((*result)[0].id == "order-1");
 }
 
-TEST_CASE("FeatureService 泛化签到拒绝非数字类型", "[service][feature]") {
+TEST_CASE("FeatureService 真实写兼容层不执行 typed service 写操作", "[service][feature]") {
     FeatureFixtureHttpClient http_client;
     UBAANext::MemoryCacheStore cache;
     UBAANext::FeatureService service(http_client, cache, UBAANext::ConnectionMode::Direct);
@@ -175,6 +175,21 @@ TEST_CASE("FeatureService 泛化签到拒绝非数字类型", "[service][feature
     auto result = service.mutate("bykc", "sign:x", "1", true);
 
     REQUIRE_FALSE(result);
-    CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
+    CHECK(result.error().code == UBAANext::ErrorCode::UnsupportedPlatform);
     CHECK(http_client.request_counts.empty());
+}
+
+TEST_CASE("FeatureService mock 写兼容层保留安全门", "[service][feature]") {
+    UBAANextMocks::MockHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::FeatureService service(http_client, cache, UBAANext::ConnectionMode::Mock);
+
+    auto blocked = service.mutate("signin", "do", "course-1", false);
+    auto accepted = service.mutate("signin", "do", "course-1", true);
+
+    REQUIRE_FALSE(blocked);
+    CHECK(blocked.error().code == UBAANext::ErrorCode::InvalidArgument);
+    REQUIRE(accepted);
+    CHECK(accepted->accepted);
+    CHECK(accepted->summary.id == "course-1");
 }

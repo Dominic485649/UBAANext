@@ -5,6 +5,8 @@
 
 #include "ServiceFactory.hpp"
 
+#include <UBAANext/Service/WriteOperationGate.hpp>
+
 #include <utility>
 
 namespace UBAANextCli {
@@ -60,24 +62,60 @@ UBAANext::SigninService ServiceFactory::create_signin_service() {
     return UBAANext::SigninService(http_client(), *m_ctx.cache, m_ctx.conn_mode, std::move(student_id));
 }
 
+UBAANext::SigninService ServiceFactory::create_signin_write_service(bool confirmed, const std::string &operation) {
+    auto service = create_signin_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
+}
+
 UBAANext::YgdkService ServiceFactory::create_ygdk_service() {
     return UBAANext::YgdkService(http_client(), *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::YgdkService ServiceFactory::create_ygdk_write_service(bool confirmed, const std::string &operation) {
+    auto service = create_ygdk_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
 }
 
 UBAANext::EvaluationService ServiceFactory::create_evaluation_service() {
     return UBAANext::EvaluationService(http_client(), *m_ctx.cache, m_ctx.conn_mode);
 }
 
+UBAANext::EvaluationService ServiceFactory::create_evaluation_write_service(bool confirmed, const std::string &operation) {
+    auto service = create_evaluation_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
+}
+
 UBAANext::BykcService ServiceFactory::create_bykc_service() {
     return UBAANext::BykcService(http_client(), *m_ctx.cache, m_ctx.conn_mode, crypto_provider());
+}
+
+UBAANext::BykcService ServiceFactory::create_bykc_write_service(bool confirmed, const std::string &operation) {
+    auto service = create_bykc_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
 }
 
 UBAANext::VenueReservationService ServiceFactory::create_venue_reservation_service() {
     return UBAANext::VenueReservationService(http_client(), m_ctx.network_stack ? &m_ctx.network_stack->cookie_store() : nullptr, *m_ctx.cache, m_ctx.conn_mode, crypto_provider());
 }
 
+UBAANext::VenueReservationService ServiceFactory::create_venue_reservation_write_service(bool confirmed, const std::string &operation) {
+    auto service = create_venue_reservation_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
+}
+
 UBAANext::LibrarySeatService ServiceFactory::create_library_seat_service() {
     return UBAANext::LibrarySeatService(http_client(), *m_ctx.cache, m_ctx.conn_mode, crypto_provider());
+}
+
+UBAANext::LibrarySeatService ServiceFactory::create_library_seat_write_service(bool confirmed, const std::string &operation) {
+    auto service = create_library_seat_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
 }
 
 UBAANext::TodoService ServiceFactory::create_todo_service() {

@@ -32,3 +32,30 @@ TEST_CASE("CLI redaction keeps non-sensitive photo field", "[security][redaction
     CHECK(redacted.find("photo=avatar.png") != std::string::npos);
     CHECK(redacted.find("C:/secret/avatar.png") == std::string::npos);
 }
+
+TEST_CASE("CLI redaction removes diagnostics URL paths HTML and business secrets", "[security][redaction]") {
+    const std::string text =
+        "GET https://example.edu/api/orders?ticket=ticket-secret&grade=99&lock_code=LOCK-123#frag\n"
+        "Location: https://example.edu/callback?token=token-secret&session=session-secret\n"
+        "path=C:/secret/grade.html filename=score.csv file=/data/local/tmp/upload.jpg\n"
+        "bookingId=seat-booking-1 place=操场 location=北区 lockCode=LOCK-456\n"
+        "<html><body>raw score=99 token=html-secret</body></html>";
+
+    auto redacted = UBAANextCli::redact_sensitive_text(text);
+
+    CHECK(redacted.find("ticket-secret") == std::string::npos);
+    CHECK(redacted.find("grade=99") == std::string::npos);
+    CHECK(redacted.find("LOCK-123") == std::string::npos);
+    CHECK(redacted.find("token-secret") == std::string::npos);
+    CHECK(redacted.find("session-secret") == std::string::npos);
+    CHECK(redacted.find("C:/secret/grade.html") == std::string::npos);
+    CHECK(redacted.find("score.csv") == std::string::npos);
+    CHECK(redacted.find("/data/local/tmp/upload.jpg") == std::string::npos);
+    CHECK(redacted.find("seat-booking-1") == std::string::npos);
+    CHECK(redacted.find("操场") == std::string::npos);
+    CHECK(redacted.find("北区") == std::string::npos);
+    CHECK(redacted.find("LOCK-456") == std::string::npos);
+    CHECK(redacted.find("raw score=99") == std::string::npos);
+    CHECK(redacted.find("html-secret") == std::string::npos);
+    CHECK(redacted.find("[REDACTED]") != std::string::npos);
+}

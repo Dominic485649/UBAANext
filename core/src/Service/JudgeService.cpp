@@ -1,10 +1,12 @@
 #include <UBAANext/Service/JudgeService.hpp>
 
+#include <UBAANext/Net/HttpHeaders.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/JudgeParser.hpp>
 #include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
 #include <UBAANext/Protocol/RedirectNavigator.hpp>
 #include <UBAANext/Protocol/SessionGuards.hpp>
+#include <UBAANext/Security/SecurityRedaction.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -50,7 +52,7 @@ Model::FeatureRecord make_record(std::string id,
 void apply_judge_headers(HttpRequest &request) {
     request.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
     request.headers["Accept-Language"] = "zh-CN,zh;q=0.9";
-    request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
+    request.headers["User-Agent"] = kUserAgent;
 }
 
 Model::FeatureRecord assignment_to_record(const Model::JudgeAssignmentSummary &assignment, std::map<std::string, std::string> fields = {}) {
@@ -82,6 +84,16 @@ Model::FeatureRecord detail_to_record(const Model::JudgeAssignmentDetail &detail
         {"submissionStatusText", detail.status_text},
     };
     return make_record(detail.id, detail.title, detail.status, std::move(fields));
+}
+
+Model::JudgeAssignmentDetail make_detail_error_record(const std::string &assignment_id, const Error &error) {
+    Model::JudgeAssignmentDetail detail;
+    detail.id = assignment_id;
+    detail.title = assignment_id.empty() ? "希冀作业详情失败" : "希冀作业详情失败: " + assignment_id;
+    detail.status = "error";
+    detail.content = Security::redact_sensitive_text(error.message);
+    detail.status_text = std::string(error_code_to_string(error.code));
+    return detail;
 }
 
 } // namespace
@@ -283,7 +295,10 @@ Result<std::vector<Model::JudgeAssignmentDetail>> JudgeService::assignment_detai
     std::vector<Model::JudgeAssignmentDetail> records;
     for (const auto &assignment_id : assignment_ids) {
         auto detail = assignment_detail(assignment_id);
-        if (!detail) return make_error(detail.error().code, detail.error().message);
+        if (!detail) {
+            records.push_back(make_detail_error_record(assignment_id, detail.error()));
+            continue;
+        }
         records.push_back(std::move(*detail));
     }
     return records;

@@ -1,12 +1,15 @@
 #include <UBAANext/Service/YgdkService.hpp>
 
+#include <UBAANext/Base/TimeUtils.hpp>
 #include <UBAANext/Crypto/CryptoProvider.hpp>
+#include <UBAANext/Net/HttpHeaders.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/YgdkParser.hpp>
 #include <UBAANext/Protocol/AppBuaaSession.hpp>
 #include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
 #include <UBAANext/Protocol/RedirectNavigator.hpp>
 #include <UBAANext/Protocol/SessionGuards.hpp>
+#include <UBAANext/Security/SecurityRedaction.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -117,7 +120,7 @@ nlohmann::json unwrap_response(const std::string &body) {
         return nlohmann::json::object();
     }
     if (code == -98) return nlohmann::json{{"__session_expired", true}};
-    return nlohmann::json{{"__error", payload.value("msg", std::string("阳光打卡请求失败"))}};
+    return nlohmann::json{{"__error", Security::redact_sensitive_text(payload.value("msg", std::string("阳光打卡请求失败")))}};
 }
 
 Model::FeatureRecord make_record(std::string id, std::string title, std::string status, std::map<std::string, std::string> fields = {}) {
@@ -169,13 +172,7 @@ struct ClockinTimeRange {
 constexpr long long shanghai_offset_seconds = 8 * 60 * 60;
 
 std::tm utc_tm(std::time_t value) {
-    std::tm utc{};
-#ifdef _WIN32
-    gmtime_s(&utc, &value);
-#else
-    gmtime_r(&value, &utc);
-#endif
-    return utc;
+    return utc_time(value);
 }
 
 std::tm shanghai_tm(std::time_t value) {
@@ -345,10 +342,10 @@ Result<std::string> YgdkService::fetch_oauth_code() {
         request.method = HttpMethod::Get;
         request.url = resolve_for_mode(current_url, m_mode);
         request.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
-        request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
+        request.headers["User-Agent"] = kUserAgent;
         Protocol::disable_transport_redirects(request);
         auto response = m_http_client.send(request);
-        if (!response) return make_error(ErrorCode::NetworkError, "获取阳光打卡 OAuth code 失败: " + response.error().message);
+        if (!response) return make_error(ErrorCode::NetworkError, "获取阳光打卡 OAuth code 失败: " + Security::redact_sensitive_text(response.error().message));
 
         auto request_code = extract_oauth_code(request.url);
         if (!request_code.empty()) return url_decode(request_code);
@@ -384,7 +381,7 @@ Result<void> YgdkService::ensure_session(bool force_refresh) {
         auto app_session = Protocol::AppBuaa::ensure_session(m_http_client,
                                                              m_mode,
                                                              "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fapp.buaa.edu.cn%2Fa_buaa%2Fapi%2Fcas%2Findex%3Fredirect%3Dhttps%253A%252F%252Fapp.buaa.edu.cn%252Fuc%252Fapi%252Foauth%252Findex%26from%3Dwap%26login_from%3D&noAutoRedirect=1",
-                                                             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4");
+                                                             kUserAgent);
         if (!app_session) return make_error(app_session.error().code, app_session.error().message);
     }
     auto code = fetch_oauth_code();
@@ -396,7 +393,7 @@ Result<void> YgdkService::ensure_session(bool force_refresh) {
     request.headers["Accept"] = "application/json, text/plain, */*";
     request.headers["X-Requested-With"] = "XMLHttpRequest";
     auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "阳光打卡登录失败: " + response.error().message);
+    if (!response) return make_error(ErrorCode::NetworkError, "阳光打卡登录失败: " + Security::redact_sensitive_text(response.error().message));
     if (response_is_login(*response, "https://ygdk.buaa.edu.cn/api/Front/Clockin/User/campusAppLogin")) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
     auto data = unwrap_response(response->body);
     if (data.contains("__session_expired")) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
@@ -422,7 +419,7 @@ Result<nlohmann::json> YgdkService::post_form(const std::string &url, const std:
     request.headers["X-Requested-With"] = "XMLHttpRequest";
     request.body = form_encode(all_form);
     auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "请求阳光打卡失败: " + response.error().message);
+    if (!response) return make_error(ErrorCode::NetworkError, "请求阳光打卡失败: " + Security::redact_sensitive_text(response.error().message));
     auto data = unwrap_response(response->body);
     if (data.contains("__session_expired")) {
         m_uid.clear();
@@ -479,12 +476,19 @@ Result<std::vector<Model::FeatureRecord>> YgdkService::records(int page, int siz
     return records;
 }
 
+void YgdkService::set_write_operation_gate(WriteOperationGate gate) {
+    m_write_gate = std::move(gate);
+}
+
 Result<Model::MutationResult> YgdkService::submit_clockin(const std::string &item_id,
                                                           const std::string &start_time,
                                                           const std::string &end_time,
                                                           const std::string &place,
                                                           bool share_to_square,
                                                           const UploadPart &photo) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
+
     if (photo.field_name.empty() || photo.filename.empty() || photo.content_type.empty() || photo.bytes.empty()) {
         return make_error(ErrorCode::InvalidArgument, "ygdk submit 真实提交需要提供有效图片 bytes");
     }
@@ -522,7 +526,7 @@ Result<Model::MutationResult> YgdkService::submit_clockin(const std::string &ite
     upload.headers["X-Requested-With"] = "XMLHttpRequest";
     upload.body = std::move(upload_body);
     auto upload_response = m_http_client.send(upload);
-    if (!upload_response) return make_error(ErrorCode::NetworkError, "上传阳光打卡图片失败: " + upload_response.error().message);
+    if (!upload_response) return make_error(ErrorCode::NetworkError, "上传阳光打卡图片失败: " + Security::redact_sensitive_text(upload_response.error().message));
     auto upload_data = unwrap_response(upload_response->body);
     if (upload_data.contains("__session_expired")) return make_error(ErrorCode::SessionExpired, "阳光打卡会话已过期，请重新登录");
     if (upload_data.contains("__error")) return make_error(ErrorCode::NetworkError, upload_data["__error"].get<std::string>());

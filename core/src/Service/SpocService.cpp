@@ -1,10 +1,12 @@
 #include <UBAANext/Service/SpocService.hpp>
 
+#include <UBAANext/Net/HttpHeaders.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/SpocParser.hpp>
 #include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
 #include <UBAANext/Protocol/RedirectNavigator.hpp>
 #include <UBAANext/Protocol/SessionGuards.hpp>
+#include <UBAANext/Security/SecurityRedaction.hpp>
 
 #include <algorithm>
 #include <array>
@@ -52,7 +54,7 @@ bool response_is_login(const HttpResponse &response) {
 void apply_spoc_headers(HttpRequest &request) {
     request.headers["Accept"] = "application/json, text/plain, */*";
     request.headers["Accept-Language"] = "zh-CN,zh;q=0.9";
-    request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
+    request.headers["User-Agent"] = kUserAgent;
     request.headers["X-Requested-With"] = "XMLHttpRequest";
 }
 
@@ -249,7 +251,7 @@ Result<std::string> SpocService::fetch_login_token() {
                 current_url = "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fspoc.buaa.edu.cn%2Fspocnewht%2FcasLogin";
                 continue;
             }
-            return make_error(ErrorCode::NetworkError, "获取 SPOC 登录 token 失败: " + response.error().message);
+            return make_error(ErrorCode::NetworkError, "获取 SPOC 登录 token 失败: " + Security::redact_sensitive_text(response.error().message));
         }
 
         auto current_token = extract_spoc_token(current_url);
@@ -294,7 +296,7 @@ Result<void> SpocService::perform_cas_login(const std::string &token) {
     request.body = nlohmann::json{{"token", token}}.dump();
 
     auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "SPOC CAS 登录失败: " + response.error().message);
+    if (!response) return make_error(ErrorCode::NetworkError, "SPOC CAS 登录失败: " + Security::redact_sensitive_text(response.error().message));
     if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "SPOC 会话已过期，请重新登录");
     if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "SPOC CAS 登录返回: " + std::to_string(response->status_code));
 
@@ -335,7 +337,7 @@ Result<nlohmann::json> SpocService::unwrap_envelope(const nlohmann::json &envelo
     if (text.find("登录") != std::string::npos || text.find("token") != std::string::npos || text.find("未认证") != std::string::npos || text.find("未登录") != std::string::npos || text.find("权限") != std::string::npos) {
         return make_error(ErrorCode::SessionExpired, "SPOC 会话已过期，请重新登录");
     }
-    return make_error(ErrorCode::NetworkError, message);
+    return make_error(ErrorCode::NetworkError, Security::redact_sensitive_text(message));
 }
 
 Result<nlohmann::json> SpocService::get_envelope_once(const std::string &url) {
@@ -346,7 +348,7 @@ Result<nlohmann::json> SpocService::get_envelope_once(const std::string &url) {
     request.headers["Token"] = "Inco-" + m_token;
     request.headers["RoleCode"] = m_role_code;
     auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "请求 SPOC 失败: " + response.error().message);
+    if (!response) return make_error(ErrorCode::NetworkError, "请求 SPOC 失败: " + Security::redact_sensitive_text(response.error().message));
     if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "SPOC 会话已过期，请重新登录");
     if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "SPOC 请求返回: " + std::to_string(response->status_code));
     auto json = nlohmann::json::parse(response->body, nullptr, false);
@@ -364,7 +366,7 @@ Result<nlohmann::json> SpocService::post_envelope_once(const std::string &url, c
     request.headers["RoleCode"] = m_role_code;
     request.body = body.dump();
     auto response = m_http_client.send(request);
-    if (!response) return make_error(ErrorCode::NetworkError, "请求 SPOC 失败: " + response.error().message);
+    if (!response) return make_error(ErrorCode::NetworkError, "请求 SPOC 失败: " + Security::redact_sensitive_text(response.error().message));
     if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "SPOC 会话已过期，请重新登录");
     if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "SPOC 请求返回: " + std::to_string(response->status_code));
     auto json = nlohmann::json::parse(response->body, nullptr, false);

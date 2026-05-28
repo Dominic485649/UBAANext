@@ -36,12 +36,14 @@ public:
     /**
      * @brief 将 Account 的字段持久化到存储中
      * @param account 要保存的账户对象
+     * @note Sensitive input: account tokens require a real secure-store implementation, not volatile fallback storage.
      */
     void save_account(const Model::Account &account);
 
     /**
      * @brief 从存储中加载 Account
      * @return 反序列化后的账户对象，如果存储中无账户则返回 std::nullopt
+     * @note Sensitive output: loaded account fields must remain redaction-aware.
      */
     [[nodiscard]] std::optional<Model::Account> load_account() const;
 

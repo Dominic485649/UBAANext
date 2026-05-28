@@ -107,3 +107,71 @@ TEST_CASE("parse_library_reservations 接受 snake_case 字段别名", "[Library
     CHECK(reservations[0].end_time == "12:00");
     CHECK(reservations[0].status_name == "已结束");
 }
+
+TEST_CASE("parse_library_infos 对空数据和字段漂移稳定降级", "[LibrarySeatParser][contract]") {
+    CHECK(um::Parser::parse_library_infos(nlohmann::json::object({{"content", "not-array"}})).empty());
+
+    auto libraries = um::Parser::parse_library_infos(nlohmann::json::array({
+        {{"id", nullptr}, {"name", "缺少 id"}},
+        {{"id", nlohmann::json::object({{"bad", true}})}, {"name", "对象 id"}},
+        {{"id", 3}, {"name", nlohmann::json::array({"bad"})}, {"freeNum", 8}, {"totalNum", nlohmann::json::object({{"bad", true}})}},
+    }));
+
+    REQUIRE(libraries.size() == 1);
+    CHECK(libraries[0].id == "3");
+    CHECK(libraries[0].name == "图书馆");
+    CHECK(libraries[0].free_num == "8");
+    CHECK(libraries[0].total_num.empty());
+}
+
+TEST_CASE("parse_library_areas 对空数据和无 id 记录稳定处理", "[LibrarySeatParser][contract]") {
+    CHECK(um::Parser::parse_library_areas(nlohmann::json::object({{"content", "not-array"}})).empty());
+
+    auto areas = um::Parser::parse_library_areas(nlohmann::json::array({
+        {{"id", nullptr}, {"name", "缺少 id"}},
+        {{"id", nlohmann::json::array({"bad"})}, {"name", "数组 id"}},
+        {{"id", 4}, {"name", nlohmann::json::object({{"bad", true}})}, {"premises_id", 3}, {"storey_id", nlohmann::json::array({"bad"})}, {"free_num", 6}},
+    }));
+
+    REQUIRE(areas.size() == 1);
+    CHECK(areas[0].id == "4");
+    CHECK(areas[0].name == "图书馆区域");
+    CHECK(areas[0].premises_id == "3");
+    CHECK(areas[0].storey_id.empty());
+    CHECK(areas[0].free_num == "6");
+}
+
+TEST_CASE("parse_library_area_detail 对字段漂移保留 fallback", "[LibrarySeatParser][contract]") {
+    auto area = um::Parser::parse_library_area_detail(nlohmann::json{{"id", nlohmann::json::array({"bad"})}, {"name", nlohmann::json::object({{"bad", true}})}, {"openDates", "not-array"}}, "fallback-area");
+
+    CHECK(area.id == "fallback-area");
+    CHECK(area.name == "图书馆区域");
+    CHECK(area.available_dates == "0");
+}
+
+TEST_CASE("parse_library_seats 和 reservations 跳过无 id 敏感记录", "[LibrarySeatParser][contract]") {
+    auto seats = um::Parser::parse_library_seats(nlohmann::json::array({
+        {{"id", nullptr}, {"seatNo", "A001"}},
+        {{"id", nlohmann::json::object({{"bad", true}})}, {"seatNo", "A002"}},
+        {{"id", 5}, {"seatNo", nlohmann::json::array({"bad"})}, {"status", 1}, {"statusName", nlohmann::json::object({{"bad", true}})}},
+    }));
+
+    REQUIRE(seats.size() == 1);
+    CHECK(seats[0].id == "5");
+    CHECK(seats[0].title == "座位");
+    CHECK(seats[0].raw_status == "1");
+    CHECK(seats[0].status_name.empty());
+
+    auto reservations = um::Parser::parse_library_reservations(nlohmann::json::array({
+        {{"id", nullptr}, {"seatNo", "A001"}},
+        {{"id", nlohmann::json::array({"bad"})}, {"seatNo", "A002"}},
+        {{"id", 6}, {"seatNo", nlohmann::json::object({{"bad", true}})}, {"status", 2}, {"date", 20260515}, {"areaName", nlohmann::json::array({"bad"})}},
+    }));
+
+    REQUIRE(reservations.size() == 1);
+    CHECK(reservations[0].id == "6");
+    CHECK(reservations[0].title == "图书馆预约");
+    CHECK(reservations[0].status == "2");
+    CHECK(reservations[0].day == "20260515");
+    CHECK(reservations[0].area_name.empty());
+}

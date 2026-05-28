@@ -47,11 +47,17 @@ public:
     [[nodiscard]] UBAANext::JudgeService create_judge_service();
     [[nodiscard]] UBAANext::SpocService create_spoc_service();
     [[nodiscard]] UBAANext::SigninService create_signin_service();
+    [[nodiscard]] UBAANext::SigninService create_signin_write_service(bool confirmed, const std::string &operation);
     [[nodiscard]] UBAANext::YgdkService create_ygdk_service();
+    [[nodiscard]] UBAANext::YgdkService create_ygdk_write_service(bool confirmed, const std::string &operation);
     [[nodiscard]] UBAANext::EvaluationService create_evaluation_service();
+    [[nodiscard]] UBAANext::EvaluationService create_evaluation_write_service(bool confirmed, const std::string &operation);
     [[nodiscard]] UBAANext::BykcService create_bykc_service();
+    [[nodiscard]] UBAANext::BykcService create_bykc_write_service(bool confirmed, const std::string &operation);
     [[nodiscard]] UBAANext::VenueReservationService create_venue_reservation_service();
+    [[nodiscard]] UBAANext::VenueReservationService create_venue_reservation_write_service(bool confirmed, const std::string &operation);
     [[nodiscard]] UBAANext::LibrarySeatService create_library_seat_service();
+    [[nodiscard]] UBAANext::LibrarySeatService create_library_seat_write_service(bool confirmed, const std::string &operation);
     [[nodiscard]] UBAANext::TodoService create_todo_service();
     [[nodiscard]] UBAANext::FeatureService create_feature_service();
 

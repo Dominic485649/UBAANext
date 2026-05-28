@@ -23,6 +23,7 @@ namespace UBAANext::Parser {
  * @brief 从 JSON 响应体中解析课程列表
  * @param json 来自 API 的原始 JSON 字符串（JSON 数组）
  * @return 课程列表，或 ParseError
+ * @note Unverified parser entry: fixtures cover known fields, but live BYXT schedule drift remains possible.
  */
 Result<std::vector<Model::Course>> parse_courses(const std::string &json);
 
@@ -30,6 +31,7 @@ Result<std::vector<Model::Course>> parse_courses(const std::string &json);
  * @brief 从 JSON 响应体中解析考试列表
  * @param json 来自 API 的原始 JSON 字符串（JSON 数组）
  * @return 考试列表，或 ParseError
+ * @note Sensitive output: exam time/location fields must stay behind redaction-aware output paths.
  */
 Result<std::vector<Model::Exam>> parse_exams(const std::string &json);
 
@@ -37,6 +39,7 @@ Result<std::vector<Model::Exam>> parse_exams(const std::string &json);
  * @brief 从 JSON 响应体中解析教室可用性
  * @param json 来自 API 的原始 JSON 字符串（JSON 对象，含 buildings 字段）
  * @return 教室可用性数据，或 ParseError
+ * @note ReadOnlyCandidate parser entry: availability semantics are volatile and must not be cached as truth.
  */
 Result<Model::ClassroomQueryResult> parse_classrooms(const std::string &json);
 
@@ -44,6 +47,7 @@ Result<Model::ClassroomQueryResult> parse_classrooms(const std::string &json);
  * @brief 从 JSON 响应体中解析学期列表
  * @param json 来自 API 的原始 JSON 字符串（JSON 数组）
  * @return 学期列表，或 ParseError
+ * @note Unverified parser entry: backend term naming/code variants may drift.
  */
 Result<std::vector<Model::Term>> parse_terms(const std::string &json);
 
@@ -51,6 +55,7 @@ Result<std::vector<Model::Term>> parse_terms(const std::string &json);
  * @brief 从 JSON 响应体中解析教学周列表
  * @param json 来自 API 的原始 JSON 字符串（JSON 数组）
  * @return 教学周列表，或 ParseError
+ * @note Unverified parser entry: teaching-week boundaries require live validation per term.
  */
 Result<std::vector<Model::Week>> parse_weeks(const std::string &json);
 

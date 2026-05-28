@@ -65,7 +65,7 @@ Model::LibraryArea parse_library_area_detail(const nlohmann::json &data, const s
     auto area = data.contains("area") && data["area"].is_object() ? data["area"] : nlohmann::json::object();
     Model::LibraryArea record;
     record.id = json_string(area, "id").empty() ? area_id : json_string(area, "id");
-    record.name = json_string(area, "name");
+    record.name = title_or(json_string(area, "name"), "图书馆区域");
     if (data.contains("date") && data["date"].is_object() && data["date"].contains("list") && data["date"]["list"].is_array()) {
         record.available_dates = std::to_string(data["date"]["list"].size());
     } else {
@@ -82,7 +82,7 @@ std::vector<Model::LibrarySeat> parse_library_seats(const nlohmann::json &list) 
         Model::LibrarySeat record;
         record.id = json_string(raw, "id");
         auto no = json_string_any(raw, {"no", "seat_no", "seatNo"});
-        record.title = no.empty() ? json_string(raw, "name") : no;
+        record.title = title_or(no.empty() ? json_string(raw, "name") : no, "座位");
         record.name = json_string(raw, "name");
         record.raw_status = json_string(raw, "status");
         record.status = record.raw_status == "1" ? "available" : "unavailable";

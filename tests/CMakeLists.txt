@@ -33,6 +33,7 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/EvaluationServiceTests.cpp
         unit/SigninParserTests.cpp
         unit/SigninServiceTests.cpp
+        unit/WriteOperationGateTests.cpp
         unit/JudgeServiceTests.cpp
         unit/YgdkParserTests.cpp
         unit/YgdkServiceTests.cpp

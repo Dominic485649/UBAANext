@@ -37,6 +37,9 @@ TEST_CASE("SigninService 写请求失败不重试", "[service][signin]") {
     http_client.set_http_error(submit_url, 500, "{}");
 
     UBAANext::SigninService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "signin do"));
     auto result = service.perform_signin("course-1");
 
     REQUIRE_FALSE(result);
@@ -55,6 +58,9 @@ TEST_CASE("SigninService 接受字符串形式状态码", "[service][signin]") {
     http_client.set_mock_response(submit_url, R"({"STATUS":"0","result":{"stuSignStatus":"1"},"ERRMSG":"签到成功"})");
 
     UBAANext::SigninService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "signin do"));
     auto result = service.perform_signin("course-1");
 
     REQUIRE(result);
@@ -104,6 +110,9 @@ TEST_CASE("SigninService 提交识别业务失败", "[service][signin]") {
     http_client.set_mock_response(submit_url, R"({"STATUS":"400","result":{"stuSignStatus":"0"},"ERRMSG":"签到未开始"})");
 
     UBAANext::SigninService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "signin do"));
     auto result = service.perform_signin("course-1");
 
     REQUIRE_FALSE(result);

@@ -16,9 +16,29 @@ class FeatureService {
 public:
     FeatureService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    /**
+     * ReadOnlyCandidate: returns the current cached/authenticated user summary.
+     * Sensitive output: account identity fields must stay behind the normal redaction path.
+     */
     Result<Model::FeatureRecord> user_info();
+
+    /**
+     * MockOnly/compatibility read router for legacy feature records.
+     * Real UBAA semantics are not guaranteed for arbitrary domain/operation pairs.
+     */
     Result<std::vector<Model::FeatureRecord>> list(const std::string &domain, const std::string &operation);
+
+    /**
+     * MockOnly/compatibility detail router for legacy feature records.
+     * Unverified domain/operation pairs must not be treated as typed service coverage.
+     */
     Result<Model::FeatureRecord> show(const std::string &domain, const std::string &operation, const std::string &id);
+
+    /**
+     * Placeholder write router: mock mode can return a contract result after confirmation;
+     * real mode is UnsupportedPlatform and must not be used as a remote mutation entry.
+     * Remote mutation: no in real mode.
+     */
     Result<Model::MutationResult> mutate(const std::string &domain,
                                          const std::string &operation,
                                          const std::string &id,

@@ -1,12 +1,14 @@
 #include <UBAANext/Service/BykcService.hpp>
 
 #include <UBAANext/Crypto/CryptoProvider.hpp>
+#include <UBAANext/Net/HttpHeaders.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
 #include <UBAANext/Parser/BykcParser.hpp>
 #include <UBAANext/Protocol/AuthorizedDownstreamRequestExecutor.hpp>
 #include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
 #include <UBAANext/Protocol/RedirectNavigator.hpp>
 #include <UBAANext/Protocol/SessionGuards.hpp>
+#include <UBAANext/Security/SecurityRedaction.hpp>
 
 #include <charconv>
 #include <chrono>
@@ -56,7 +58,7 @@ Result<long long> parse_positive_id(const std::string &value, const std::string 
 
 void apply_bykc_login_headers(HttpRequest &request) {
     request.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
-    request.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) UBAANext/0.4";
+    request.headers["User-Agent"] = kUserAgent;
 }
 
 bool response_is_login(const HttpResponse &response) {
@@ -430,7 +432,7 @@ Result<nlohmann::json> BykcService::call_api_data(const std::string &api_name, c
         auto message = json_string(json, "errmsg");
         if (message.empty()) message = json_string(json, "msg");
         if (message.empty()) message = fallback_message;
-        return make_error(ErrorCode::NetworkError, message);
+        return make_error(ErrorCode::NetworkError, Security::redact_sensitive_text(message));
     }
     return json["data"];
 }
@@ -545,7 +547,13 @@ Result<std::vector<Model::FeatureRecord>> BykcService::stats() {
     return records;
 }
 
+void BykcService::set_write_operation_gate(WriteOperationGate gate) {
+    m_write_gate = std::move(gate);
+}
+
 Result<Model::MutationResult> BykcService::select_course(const std::string &course_id) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     auto id = parse_positive_id(course_id, "bykc course id");
     if (!id) return make_error(id.error().code, id.error().message);
     auto data = call_api_data("choseCourse", nlohmann::json{{"courseId", *id}}, "选课失败");
@@ -558,6 +566,8 @@ Result<Model::MutationResult> BykcService::select_course(const std::string &cour
 }
 
 Result<Model::MutationResult> BykcService::unselect_course(const std::string &course_id) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     auto id = parse_positive_id(course_id, "bykc chosen id");
     if (!id) return make_error(id.error().code, id.error().message);
     auto data = call_api_data("delChosenCourse", nlohmann::json{{"id", *id}}, "退选失败");
@@ -570,6 +580,8 @@ Result<Model::MutationResult> BykcService::unselect_course(const std::string &co
 }
 
 Result<Model::MutationResult> BykcService::sign_course(const std::string &course_id, int sign_type) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     auto id = parse_positive_id(course_id, "bykc course id");
     if (!id) return make_error(id.error().code, id.error().message);
     if (sign_type != 1 && sign_type != 2) return make_error(ErrorCode::InvalidArgument, "bykc sign 需要 --sign-type 1 或 2");

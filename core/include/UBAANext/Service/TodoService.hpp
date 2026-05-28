@@ -19,6 +19,10 @@ class TodoService {
 public:
     TodoService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    /**
+     * ReadOnlyCandidate aggregation: successful sources remain in the result while failed sources
+     * are represented as status=error FeatureRecord entries with redacted source-error fields.
+     */
     Result<std::vector<Model::FeatureRecord>> list_todos(const TodoQuery &query = {});
 
 private:

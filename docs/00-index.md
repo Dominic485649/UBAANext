@@ -5,6 +5,11 @@
 - [项目概览](01-project-overview.md)
 - [路线图](02-roadmap.md)
 - [术语表](03-glossary.md)
+- [Core 跨平台性与保守清理报告](reports/core-portability-and-cleanup-report.md)
+- [原 UBAA 后端差异报告](reports/original-ubaa-backend-feature-matrix.md)
+- [CLI 命令 API](api/cli-command-api.md)
+- [测试策略](testing/test-strategy.md)
+- [集成测试计划](testing/integration-tests-plan.md)
 
 ## 架构
 

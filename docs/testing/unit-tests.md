@@ -3,7 +3,7 @@
 ## 概述
 
 UBAA Next 使用 [Catch2](https://github.com/catchorg/Catch2) v3 作为单元测试框架，
-通过 CMake FetchContent 引入。
+通过 vcpkg manifest 或受控 FetchContent fallback 引入。
 
 ## 测试文件
 
@@ -15,26 +15,30 @@ UBAA Next 使用 [Catch2](https://github.com/catchorg/Catch2) v3 作为单元测
 | `ExamServiceTests.cpp` | 考试查询、缓存行为 |
 | `ClassroomServiceTests.cpp` | 教室查询、缓存行为 |
 | `TermServiceTests.cpp` | 学期/周次查询、缓存行为 |
+| `P1ReadonlyContractTests.cpp` | 真实只读契约、显式参数、session expired、redaction、redirect 行为 |
+| `SessionGuardsTests.cpp` | SSO/login/session 失效识别 |
+| `SecurityRedactionTests.cpp` | 敏感信息脱敏 |
 | `JsonParserTests.cpp` | JSON 解析正确/错误/边界用例 |
 | `SessionManagerTests.cpp` | 会话管理 |
 | `CookieJarTests.cpp` | Cookie 管理 |
 | `SecureStoreAdapterTests.cpp` | 安全存储适配 |
 | `CacheStoreTests.cpp` | 缓存 TTL、惰性清除 |
+| `*ParserTests.cpp` / `*ServiceTests.cpp` | 各业务域 parser/service 的离线协议边界 |
 
 ## 运行方式
 
 ```powershell
 # 配置
-cmake --preset windows-msvc-debug
+cmake --preset windows-ninja-msvc-debug
 
 # 构建
-cmake --build --preset windows-msvc-debug
+cmake --build --preset windows-ninja-msvc-debug
 
 # 运行所有测试
-ctest --preset windows-msvc-debug
+ctest --preset windows-ninja-msvc-debug
 
 # 运行指定标签的测试
-.\build\windows-msvc-debug\tests\Debug\UBAANextTests.exe "[JsonParser]"
+.\build\windows-ninja-msvc-debug\tests\UBAANextTests.exe "[p1][real-readonly]"
 ```
 
 ## Fixture 文件

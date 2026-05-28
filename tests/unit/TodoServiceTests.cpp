@@ -1,5 +1,6 @@
 #include <UBAANext/Service/TodoService.hpp>
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
+#include <UBAANext/Net/HttpRequest.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -141,7 +142,12 @@ public:
         } else if (url == kEvaluationReviseUrl) {
             response.body = R"JSON({"code":1,"data":{}})JSON";
         } else if (url == kEvaluationPendingCoursesUrl) {
-            response.body = R"JSON({"code":1,"data":[{"kcdm":"CS101","kcmc":"程序设计","bpdm":"teacher-1","bpmc":"陈老师","ypjcs":0,"xypjcs":1}]})JSON";
+            if (fail_evaluation) {
+                response.status_code = evaluation_error_status;
+                response.body = evaluation_error_body;
+            } else {
+                response.body = R"JSON({"code":1,"data":[{"kcdm":"CS101","kcmc":"程序设计","bpdm":"teacher-1","bpmc":"陈老师","ypjcs":0,"xypjcs":1}]})JSON";
+            }
         } else if (url == kEvaluationEvaluatedCoursesUrl) {
             response.body = R"JSON({"code":1,"data":[{"kcdm":"CS102","kcmc":"已评课程","bpdm":"teacher-2","bpmc":"王老师","ypjcs":1,"xypjcs":1}]})JSON";
         } else {
@@ -152,6 +158,9 @@ public:
     }
 
     std::map<std::string, int> request_counts;
+    bool fail_evaluation = false;
+    int evaluation_error_status = 500;
+    std::string evaluation_error_body = R"JSON({"code":500,"msg":"evaluation unavailable"})JSON";
 };
 
 } // namespace
@@ -174,6 +183,47 @@ TEST_CASE("TodoService 聚合 Core 待办并规范字段", "[service][todo]") {
     CHECK(records["spoc:spoc-1"].status == "unsubmitted");
     CHECK(records["judge:9001"].fields.at("submissionStatus") == "unsubmitted");
     CHECK(records["signin:signin-1"].fields.at("type") == "signin");
+}
+
+TEST_CASE("TodoService 保留来源级失败记录", "[service][todo]") {
+    TodoFixtureHttpClient http_client;
+    http_client.fail_evaluation = true;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::TodoService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.list_todos();
+
+    REQUIRE(result);
+    std::map<std::string, UBAANext::Model::FeatureRecord> records;
+    for (const auto &record : *result) records[record.fields.at("source") + ":" + record.id] = record;
+    REQUIRE(records.count("spoc:spoc-1") == 1);
+    REQUIRE(records.count("judge:9001") == 1);
+    REQUIRE(records.count("signin:signin-1") == 1);
+    REQUIRE(records.count("evaluation:evaluation-error") == 1);
+    CHECK(records["evaluation:evaluation-error"].status == "error");
+    CHECK(records["evaluation:evaluation-error"].fields.at("type") == "source-error");
+    CHECK(records["evaluation:evaluation-error"].fields.at("errorCode") == "NetworkError");
+}
+
+TEST_CASE("TodoService 来源级失败记录会脱敏错误消息", "[service][todo][security]") {
+    TodoFixtureHttpClient http_client;
+    http_client.fail_evaluation = true;
+    http_client.evaluation_error_status = 200;
+    http_client.evaluation_error_body = R"JSON({"code":500,"msg":"token=token-secret&Cookie: SID=cookie-secret&photo_path=C:/secret/photo.jpg"})JSON";
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::TodoService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.list_todos();
+
+    REQUIRE(result);
+    std::map<std::string, UBAANext::Model::FeatureRecord> records;
+    for (const auto &record : *result) records[record.fields.at("source") + ":" + record.id] = record;
+    REQUIRE(records.count("evaluation:evaluation-error") == 1);
+    const auto &message = records["evaluation:evaluation-error"].fields.at("errorMessage");
+    CHECK(message.find("token-secret") == std::string::npos);
+    CHECK(message.find("cookie-secret") == std::string::npos);
+    CHECK(message.find("C:/secret/photo.jpg") == std::string::npos);
+    CHECK(message.find("[REDACTED]") != std::string::npos);
 }
 
 TEST_CASE("TodoService 可返回非待办聚合记录", "[service][todo]") {
