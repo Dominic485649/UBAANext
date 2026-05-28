@@ -1,6 +1,8 @@
 # Build directories
 build/
 cmake-build-*/
+vcpkg_installed/
+vcpkg-manifest-install.log
 
 # IDE
 .vs/
@@ -39,6 +41,10 @@ desktop.ini
 .env
 .env.local
 
-# Claude local workspace
+# Claude/local agent workspaces
 .claude/
 .mcp.json
+.antigravitycli/
+
+# Local reference snapshots
+reference/buaa-api/
