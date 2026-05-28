@@ -1,5 +1,7 @@
 # GitHub Release 发布前验证与自动化检查清单
 
+> 当前仓库版本阶段为 `v0.3.0`，但尚未形成正式 tag 发布序列。本清单用于未来从当前路线图基线发起正式发布；示例版本号应在发布时替换为实际 tag。
+
 本文档为 UBAA Next 项目发布新版本（Tag Release）时的标准操作程序（SOP）。旨在通过严格的静态分析、单元测试、线上冒烟测试（Live Smoke）及隐私脱敏审计，确保每一个对外发布的包体都具备工业级稳定性和极高的信息安全防护水平。
 
 ---
@@ -71,7 +73,7 @@ $env:UBAANEXT_CONNECTION_MODE = "direct"              # 可选：direct（直连
 .\tools\live-smoke.ps1 -Level L1
 ```
 * **L1 行为**：拉取用户个人主页（Whoami）、学期列表、课程表、考试安排、成绩清单、聚合待办列表、阳光打卡历史记录以及图书馆座位预约情况。
-* **合格标准**：脚本无未处理异常抛出，返回 `live smoke L1 完成。`，退出码为 `0`。
+* **合格标准**：脚本无未处理异常；所有未显式 skip 的读取命令必须通过，否则 runner 必须以非 0 退出。全部读取命令通过时，脚本退出码为 `0`。
 
 ### 3.3 L2/L3 级写入操作验证
 涉及远程状态改变的真实写操作命令（如今日打卡提交、图书馆座位真实锁定等）：
@@ -110,8 +112,8 @@ $env:UBAANEXT_CONNECTION_MODE = "direct"              # 可选：direct（直连
 2. **Git 标记（Tagging）**：
    在本地主分支创建包含注释的 Git 标签，并将其推送到 GitHub：
    ```bash
-   git tag -a v0.3.0 -m "Release UBAA Next v0.3.0"
-   git push origin v0.3.0
+   git tag -a vX.Y.Z -m "Release UBAA Next vX.Y.Z"
+   git push origin vX.Y.Z
    ```
 3. **Release 包体构建**：
    运行静态 Windows Release 预设以产生最终要交付的 `ubaa.exe`：
@@ -125,9 +127,9 @@ $env:UBAANEXT_CONNECTION_MODE = "direct"              # 可选：direct（直连
    Get-FileHash -Algorithm SHA256 .\build\windows-ninja-msvc-release\apps\cli\ubaa.exe
    ```
 5. **在 GitHub 上创建发布**：
-   * 选择新推送的 Tag `v0.3.0`。
-   * 发布标题格式为 `UBAA Next v0.3.0`。
+   * 选择新推送的 Tag `vX.Y.Z`。
+   * 发布标题格式为 `UBAA Next vX.Y.Z`。
    * 复制 `CHANGELOG.md` 中对应当前版本的最新更新日志内容至发布说明框内。
    * 在下方粘贴二进制可执行文件的 SHA-256 散列校验值。
-   * 上传打包好的 `ubaa.exe` 二进制文件（若后续有图形界面，上传 `ubaa-gui-v0.3.0.zip`）。
+   * 上传打包好的 `ubaa.exe` 二进制文件（若后续有图形界面，上传 `ubaa-gui-vX.Y.Z.zip`）。
    * 点击 **Publish release** 按钮，发布完成。

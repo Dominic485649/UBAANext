@@ -1,5 +1,7 @@
 # NAPI API 计划
 
+> 当前仓库版本阶段为 `v0.3.0`。NAPI 属于路线图 `v0.6 — HarmonyOS NAPI` 后续计划，本页是边界设计草案，不代表 v0.3 当前稳定 API。
+
 ## 目标
 
 NAPI 层是 Harmony ArkUI 调用 UBAANext Core 的边界，不重新实现校园系统协议，不直接处理 cookie/session/token 持久化，也不绕过 Core 的 capability gate 和错误脱敏。真实只读 UI 进入前，必须先冻结本文件中的 API 合同。

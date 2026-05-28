@@ -1,5 +1,7 @@
 # 原 UBAA 非 UI 后端差异报告
 
+> 当前仓库版本阶段为 `v0.3.0`。本报告是早前提交 `83b2626` 的历史差异快照，记录 v0.5+/Harmony 非 UI 接入方向的阶段性审计结果；其中 C ABI、真实协议和 Harmony 对接内容不代表 v0.3 当前稳定承诺。
+
 ## 结论
 
 截至提交 `83b2626`，`D:\Code\Cpp\UBAANext` 的 C++ core 已经完成本轮 Harmony 非 UI 接入所需的主要代码对齐：稳定 C ABI 已从 version/capabilities smoke 扩展到 context、session、Auth、Term、Course、Grade、Exam、Todo、Signin、YGDK 等核心入口；Signin loginName 跳转解析、WebVPN URL 反解、写操作门控、错误脱敏、Direct/WebVPN/Mock 运行时分桶和 C bindings 构建导出均已落地。

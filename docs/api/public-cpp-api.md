@@ -1,5 +1,7 @@
 # 公共 C++ API
 
+> 当前仓库版本阶段为 `v0.3.0`。公共 C++ API 以 v0.3 的 typed model、parser、service 和 cache 合同为稳定基线；NAPI、真实登录、真实写与平台持久化能力属于后续阶段或受 capability gate 保护的实验路径。
+
 ## 范围
 
 公共 C++ API 以 Core typed service 为主，是 CLI、未来 NAPI 和后续上层客户端共用的非 UI 后端边界。CLI 暴露不等于语义完成；service 类存在也不等于真实协议完整。所有 `NotImplemented`、`Unsupported`、`Fallback`、`WriteGated`、`Unverified` 能力必须在 API 注释、测试和文档中保持可见。

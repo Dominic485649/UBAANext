@@ -10,7 +10,7 @@ UBAA Next 需要一个原生 Windows GUI 选项。
 
 ## 决策
 
-使用 **Slint** 作为未来 Windows GUI 框架（v0.7）。
+使用 **Slint** 作为未来 Windows GUI 框架（v0.8）。
 
 ## 理由
 
@@ -21,5 +21,5 @@ UBAA Next 需要一个原生 Windows GUI 选项。
 
 ## 影响
 
-- v0.7：Slint UI + C++ ViewModel
+- v0.8：Slint UI + C++ ViewModel
 - 需要处理 Slint 许可证（GPLv3 或商业）

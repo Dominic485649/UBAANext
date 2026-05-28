@@ -1,5 +1,7 @@
 # 测试策略
 
+> 当前仓库版本阶段为 `v0.3.0`。默认测试策略以路线图 v0.3 的 parser、service、cache 和 mock/offline 回归为稳定基线；真实协议、live smoke 和写操作验证属于后续阶段或显式 opt-in 专项。
+
 ## 测试层级
 
 | 层级 | 框架/入口 | 范围 |
@@ -52,7 +54,7 @@ $env:UBAANEXT_PASSWORD = '<password>'
 .\tools\live-smoke.ps1 -Level L1
 ```
 
-L1 只运行读取类命令，当前 runner 覆盖 term/week/course/exam/grade/app/todo/SPOC/Judge/signin/YGDK、BYKC `profile/courses/chosen/stats`、direct-only CGYY `sites/orders/order lock-code`、LibrarySeat `libraries/reservations`。L2/L3 写操作需要额外环境变量和用户手动指定具体命令；runner 不自动执行真实写操作。
+L1 只运行读取类命令；任何未标记为跳过的读取命令失败都必须使 runner 失败，不能作为“已知失败”静默通过。当前 runner 覆盖 term/week/course/exam/grade/app/todo/SPOC/Judge/signin/YGDK、BYKC `profile/courses/chosen/stats`、direct-only CGYY `sites/orders/order lock-code`、LibrarySeat `libraries/reservations`。L2/L3 写操作需要额外环境变量和用户手动指定具体命令；runner 不自动执行真实写操作。
 
 ## Mock 策略
 

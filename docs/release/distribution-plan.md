@@ -1,5 +1,7 @@
 # UBAA Next 多平台分发与交付计划
 
+> 当前仓库版本阶段为 `v0.3.0`。本页是 v0.4+ 到 v1.0 的分发目标形态规划；v0.3 当前基线不承诺已具备正式 GitHub Release、Windows GUI 或 HarmonyOS HAP 分发能力。
+
 本文档详细规划了 UBAA Next 项目在 Windows（命令行客户端与未来 Slint 图形界面）和 HarmonyOS（鸿蒙 Stage 模型应用）平台上的编译输出、打包封装、分发渠道及安全校验策略，确保软件分发过程合规、高效且具备高抗风险能力。
 
 ---

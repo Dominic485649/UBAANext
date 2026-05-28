@@ -2,6 +2,8 @@
 
 UBAA Next 是 UBAA（智慧北航 Remake）的 C++ 原生重写版本。
 
+当前仓库版本号为 **0.3.0**，以 [路线图](02-roadmap.md) 的 `v0.3 — 数据解析与缓存` 为当前基线。文档中涉及 v0.4+ 的真实 HTTP、CLI 工程化、C ABI、NAPI、HarmonyOS、Slint、打包发布等内容，除非特别说明，均属于后续阶段或实验性设计。
+
 ## 文档分区
 
 - [文档索引](00-index.md)

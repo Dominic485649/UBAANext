@@ -1,5 +1,7 @@
 # CLI 命令 API
 
+> 当前仓库版本阶段为 `v0.3.0`。本页列出 CLI 的目标合同和已预留命令面；v0.3 稳定基线只承诺 mock/offline 下的 parser、service、cache 与基础 CLI 验收，真实登录、真实写和完整命令工程化属于 v0.4+ / v0.5+ 后续阶段。
+
 所有命令支持 `--json`，JSON 输出统一为 `{"ok": true, "data": {...}, "error": null}` 或 `{"ok": false, "data": null, "error": {...}}`。列表类命令统一使用 `--page <n>` / `--size <n>`，兼容旧 `--limit <n>` 映射到 `--size <n>`；保留接口不代表真实语义完成，未实现能力必须稳定返回错误。
 
 ## 能力状态与安全边界

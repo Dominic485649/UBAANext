@@ -1,5 +1,7 @@
 # 集成测试计划
 
+> 当前仓库版本阶段为 `v0.3.0`。本计划同时记录 v0.3 稳定基线和 v0.4+ 后续集成方向；默认集成测试以 mock/offline CLI、parser/service/cache 契约为准，live smoke 与 OpenHarmony/binding 验证属于显式 opt-in 或后续阶段。
+
 ## 目标
 
 集成测试用于验证 CLI 层到 core service 的端到端契约，包括参数校验、JSON envelope、exit code、mock/offline 行为、写操作确认门和 live smoke gate。默认集成测试不得依赖真实账号、密码、校园网络或在线写操作。
@@ -31,7 +33,7 @@
 
 - 默认跳过：必须设置 `UBAANEXT_LIVE=1`。
 - 需要真实凭据时，必须通过环境变量传入，且输出要经过脱敏。
-- L1 只允许读取类命令。
+- L1 只允许读取类命令；除显式 skip 的命令外，读取失败必须让 runner 返回失败退出码。
 - L2/L3 即使启用，也不由 runner 自动执行真实写操作；用户必须手动指定具体命令并确认风险。
 - CGYY 当前保持 direct-only 约束；非 direct 模式下应显式跳过 `sites/orders/order lock-code`，而不是隐式改路由。
 

@@ -1,8 +1,10 @@
 # Harmony ArkUI 设计
 
+> 当前仓库版本阶段为 `v0.3.0`。Harmony ArkUI 属于路线图 `v0.7` 后续计划；本页描述目标边界和进入条件，不代表 v0.3 已完成 ArkUI 或 HAP 交付。
+
 ## 当前范围
 
-当前阶段验证 `UBAANextCore` 与 CLI 逻辑在 OpenHarmony Native 工具链下可编译，并冻结 ArkUI 进入前的能力边界。可以开始 UI skeleton / mock-offline 页面规划；真实只读 UI 已经具备了完整的 C ABI 接口合同支撑；真实登录 UI 仍受限于 Harmony 平台的 secure store、cookie persistence 与 `live_login` 真实能力；真实写 UI 本阶段不进入。
+当前阶段验证 `UBAANextCore` 与 CLI 逻辑在 OpenHarmony Native 工具链下可编译，并冻结 ArkUI 进入前的能力边界。可以开始 UI skeleton / mock-offline 页面规划；真实只读 UI 需要等待 v0.6 C ABI/NAPI 合同完成并通过离线回归；真实登录 UI 仍受限于 Harmony 平台的 secure store、cookie persistence 与 `live_login` 真实能力；真实写 UI 本阶段不进入。
 
 工程分工固定为双项目：`D:\Code\Cpp\UBAANext` 是跨平台 native 真源和 SDK/package 输出方，`D:\Code\OpenHarmony\UBAANext` 是 DevEco/HAP/ArkTS/ArkUI 工程壳。鸿蒙项目必须复用当前项目的 native package、exported target 或受控源码子构建，不复制校园系统协议和 service/parser/protocol。
 
@@ -26,9 +28,9 @@ cmake --build "build\\openharmony-clang-debug" --config Debug
 ## ArkUI 迁移建议
 
 - 第一批只做 UI skeleton / mock-offline 页面：首页、课表、考试、空教室、Todo、SPOC/Judge 只读列表与详情、BYKC、CGYY、LibrarySeat、YGDK。
-- 真实只读 UI 已经具备了完整的 C ABI 合同支撑（包括 22 个核心函数），明确了 typed service 映射、C ABI 返回的 JSON Envelope 外壳结构、错误码映射、安全脱敏（redaction）、运行时 capability 查询和局部失败的容错机制。
+- 真实只读 UI 需要先完成并冻结 C ABI/NAPI 合同，明确 typed service 映射、C ABI 返回的 JSON Envelope 外壳结构、错误码映射、安全脱敏（redaction）、运行时 capability 查询和局部失败的容错机制。
 - 登录状态、Cookie、缓存由 Native/Platform 侧通过隔离运行时桶统一管理，ArkUI 只展示状态和触发动作；由于 Harmony 平台尚未真正实现 secure store 与 `live_login=true`（仍由 C ABI 内的内存级 VolatileSecureStore 缓存），在平台底座就绪前，真实登录与会话持久化在冷启动后仍是临时的。
 - 真实写 UI 本阶段不进入；后续必须继续通过 typed write service、ArkUI 二次确认、`write_operations=true`、Core `WriteOperationGate` 和 live 写操作专项安全确认。
 - 当前 Harmony capability 实际值为 `real_network=true`、`redirect_control=true`、`openssl_crypto=true`、`app_data_path=true`、`upload_bytes=true`，但 `secure_store=false`、`cookie_persistence=false`、`secure_cookie_persistence=false`、`live_login=false`、`write_operations=false`。
 - 真实网络和加密能力完成平台抽象前，Harmony 端优先使用 mock/offline 与只读兼容性验证。
-- 当前 native SDK 侧已建立了完整的 C ABI target `UBAANextBindingsC` / `ubaanext_c`，暴露了涵盖 Auth、Course、Grade、Exam、Todo、Signin 和 YGDK 等核心业务域的 22 个符号。这为上层 DevEco/NAPI 开发提供了完整的业务接口保障，而不再局限于第一阶段的简单 smoke 级别。需要注意的是，.so 可加载及 HAP 可构建不代表线上各级业务真实语义已彻底完成上线验证。
+- 后续 native SDK 侧应建立受控 C ABI target `UBAANextBindingsC` / `ubaanext_c`，逐步暴露 Auth、Course、Grade、Exam、Todo、Signin、YGDK 等核心业务域符号。这可为上层 DevEco/NAPI 开发提供业务接口保障，但 .so 可加载及 HAP 可构建不代表线上各级业务真实语义已彻底完成上线验证。

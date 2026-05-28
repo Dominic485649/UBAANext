@@ -20,5 +20,5 @@ UBAA Next 需要一个 HarmonyOS 的 UI 框架。
 
 ## 影响
 
-- v0.5：C API 边界 + NAPI 绑定
-- v0.6：ArkUI 页面
+- v0.6：C API 边界 + NAPI 绑定
+- v0.7：ArkUI 页面

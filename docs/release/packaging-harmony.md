@@ -1,5 +1,7 @@
 # Harmony 打包
 
+> 当前仓库版本阶段为 `v0.3.0`。Harmony 打包属于路线图 v0.6/v0.7 之后的后续阶段；本页是 native SDK/package 复用方案，不代表 v0.3 已可交付 HAP。
+
 ## 双项目分工
 
 当前项目 `D:\Code\Cpp\UBAANext` 是跨平台 native 真源，负责 Core、service、parser、protocol、platform adapter、CLI、测试、redaction、write gate 和 native SDK/package 输出。

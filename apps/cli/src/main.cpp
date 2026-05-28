@@ -41,6 +41,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>

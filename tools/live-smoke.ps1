@@ -37,9 +37,8 @@ function Get-SafeCommandLabel([string[]]$CommandArgs) {
 }
 
 $LiveSmokeFailures = @()
-$LiveSmokeKnownFailures = @()
 
-function Invoke-Ubaa([string[]]$CommandArgs, [switch]$AllowFailure) {
+function Invoke-Ubaa([string[]]$CommandArgs) {
     $safeCommand = "ubaa $(Get-SafeCommandLabel $CommandArgs)"
     Write-Host $safeCommand
     $output = & $CliPath @CommandArgs 2>&1 | Out-String
@@ -48,13 +47,8 @@ function Invoke-Ubaa([string[]]$CommandArgs, [switch]$AllowFailure) {
     if ($exit -ne 0) {
         if (-not [string]::IsNullOrWhiteSpace($safe)) { Write-Host $safe.TrimEnd() }
         $failure = "命令失败，退出码 ${exit}: $safeCommand"
-        if ($AllowFailure) {
-            Write-Host "KNOWN-FAIL：$failure"
-            $script:LiveSmokeKnownFailures += $failure
-        } else {
-            Write-Host "FAIL：$failure"
-            $script:LiveSmokeFailures += $failure
-        }
+        Write-Host "FAIL：$failure"
+        $script:LiveSmokeFailures += $failure
         return
     }
     Write-Host 'OK'
@@ -92,11 +86,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:UBAANEXT_TERM)) {
 Invoke-Ubaa @('app', 'version', '--mode', $Mode, '--json')
 Invoke-Ubaa @('app', 'announcement', '--mode', $Mode, '--json')
 Invoke-Ubaa @('todo', 'list', '--mode', $Mode, '--json')
-if ($Mode -eq 'direct') {
-    Invoke-Ubaa @('spoc', 'assignments', '--mode', $Mode, '--json') -AllowFailure
-} else {
-    Invoke-Ubaa @('spoc', 'assignments', '--mode', $Mode, '--json')
-}
+Invoke-Ubaa @('spoc', 'assignments', '--mode', $Mode, '--json')
 Invoke-Ubaa @('judge', 'assignments', '--mode', $Mode, '--json')
 Invoke-Ubaa @('signin', 'today', '--mode', $Mode, '--json')
 Invoke-Ubaa @('ygdk', 'overview', '--mode', $Mode, '--json')
@@ -115,13 +105,6 @@ if ($Mode -eq 'direct') {
 }
 Invoke-Ubaa @('libbook', 'libraries', '--mode', $Mode, '--json')
 Invoke-Ubaa @('libbook', 'reservations', '--mode', $Mode, '--json')
-
-if ($LiveSmokeKnownFailures.Count -gt 0) {
-    Write-Host 'live smoke 已知失败项：'
-    foreach ($failure in $LiveSmokeKnownFailures) {
-        Write-Host "- $failure"
-    }
-}
 
 if ($LiveSmokeFailures.Count -gt 0) {
     Write-Host 'live smoke 失败项：'

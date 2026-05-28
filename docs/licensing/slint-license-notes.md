@@ -1,16 +1,18 @@
-# Slint v0.7 桌面端双重/多重许可规范与集成策略
+# Slint GUI 许可规范与集成策略 (v0.8 计划)
 
-本文档深入解析了 UBAA Next 项目在未来引入 **Slint v0.7** 作为原生 Windows GUI（图形界面）框架时的双重许可机制（GPLv3 / 商业许可 / Royalty-Free 免费桌面许可），并详细规划了在保障核心库 MIT 许可纯净性的前提下，实现 GUI 外壳集成的法律与技术策略。
+> 当前仓库版本阶段为 `v0.3.0`。Slint GUI 属于路线图 `v0.8 — Windows Slint GUI` 后续计划，本页是未来引入 Slint 时的许可与合规说明，不代表 v0.3 当前已交付 GUI。
+
+本文档解析 UBAA Next 项目在未来引入 **Slint** 作为原生 Windows GUI（图形界面）框架时的双重/多重许可机制（GPLv3 / 商业许可 / Royalty-Free 免费桌面许可），并规划在保障核心库 MIT 许可纯净性的前提下，实现 GUI 外壳集成的法律与技术策略。
 
 ---
 
-## 1. Slint v0.7 许可机制深度解析
+## 1. Slint 许可机制深度解析
 
-Slint（前身为 SixtyFPS）是一款采用 Rust 编写、原生支持 C++ 绑定的声明式现代化 UI 框架。针对 v0.7 版本，Slint 官方采用了以下三种并行授权模式：
+Slint（前身为 SixtyFPS）是一款采用 Rust 编写、原生支持 C++ 绑定的声明式现代化 UI 框架。正式引入前必须以实际选定版本的官方许可文本为准；本文按当前规划关注以下三种常见授权模式：
 
 ```mermaid
 graph TD
-    A[Slint v0.7 授权模式] --> B(GNU GPLv3 许可证)
+    A[Slint 授权模式] --> B(GNU GPLv3 许可证)
     A --> C(Slint 免费桌面许可 Royalty-Free)
     A --> D(商业付费授权 Commercial)
     
@@ -68,7 +70,7 @@ graph TD
 
 ## 3. 集成合规操作指南
 
-在版本演进至 v0.7/v0.8 并正式交付 Slint 桌面图形客户端时，发布团队必须无条件履行以下合规步骤：
+在版本演进至 v0.8 并正式交付 Slint 桌面图形客户端时，发布团队必须无条件履行以下合规步骤：
 
 ### 3.1 若选择 GPLv3 模式发布 GUI
 1. **源码声明**：在 `apps/windows-slint-gui/` 目录下添加 `LICENSE.GPLv3` 文件，并在所有 GUI 源码文件头部声明受 GPLv3 约束。

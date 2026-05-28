@@ -1,6 +1,8 @@
-# Windows Slint 图形界面集成与编译指南 (v0.7/v0.8)
+# Windows Slint 图形界面集成与编译指南 (v0.8 计划)
 
-UBAA Next 的 Windows 桌面图形界面（GUI）采用声明式现代 UI 框架 **Slint (v0.7+)** 进行集成开发。遵循“**C++ 核心 + 平台外壳**”的设计架构，GUI 部分作为一个轻量级的视图表现层，通过 `ViewModel` 模式调用稳定的 `UBAANextCore` 库。这种解耦方式保证了核心业务逻辑的纯净，也极大地简化了 GUI 层的构建和打包过程。
+> 当前仓库版本阶段为 `v0.3.0`，Slint GUI 属于路线图 `v0.8 — Windows Slint GUI` 后续计划。本页是设计与编译方案草案，不代表 v0.3 当前可交付能力。
+
+UBAA Next 的 Windows 桌面图形界面（GUI）计划采用声明式现代 UI 框架 **Slint** 进行集成开发。遵循“**C++ 核心 + 平台外壳**”的设计架构，GUI 部分作为一个轻量级的视图表现层，通过 `ViewModel` 模式调用稳定的 `UBAANextCore` 库。这种解耦方式保证了核心业务逻辑的纯净，也极大地简化了 GUI 层的构建和打包过程。
 
 ---
 

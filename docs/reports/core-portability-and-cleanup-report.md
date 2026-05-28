@@ -1,5 +1,7 @@
 # Core 跨平台性与保守清理报告
 
+> 当前仓库版本阶段为 `v0.3.0`。本报告包含 v0.4+/v0.5 真实协议与平台适配方向的历史审查结论；当前稳定基线仍以 mock/offline parser、service、cache 和基础 CLI 验收为准。
+
 ## 结论
 
 `UBAANextCore` 在构建依赖和模块边界上基本跨平台：核心 target 只直接依赖 `nlohmann-json`，真实网络、加密、安全存储、Cookie 持久化和系统路径能力由 `platform/common/*` 与 `platform/<os>/*` 适配层承担。当前没有证据表明应删除 `curl`、`OpenSSL`、`Catch2` 或 `nlohmann-json`；这些依赖分别支撑真实协议、加密、测试和 JSON 协议解析。

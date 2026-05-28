@@ -1,5 +1,7 @@
 # UBAA Next v0.5 阶段 1-5 平台适配边界设计
 
+> 当前仓库版本阶段为 `v0.3.0`。本文件是 v0.5 平台适配方向的历史设计草案，不代表 v0.3 当前稳定承诺；执行前应重新对照 `docs/02-roadmap.md` 和当前代码状态。
+
 ## 背景
 
 v0.5 阶段 1-5 的目标是先完成 Core 与平台能力的硬边界，而不是继续推进真实校园协议。当前 Core 仍包含 WinHTTP、平台 Crypto、SecureStore、Cookie/Redirect、用户文件读取和平台链接项。继续在这些边界未清理前扩展真实协议，会扩大 Windows-only 依赖、HarmonyOS/Linux 迁移成本，以及凭据、Cookie、session、token 泄漏风险。

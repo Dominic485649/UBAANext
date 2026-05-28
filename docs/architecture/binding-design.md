@@ -1,6 +1,8 @@
 # 绑定设计 (Bindings Design)
 
-本篇文档详述 `UBAANext` 原生核心库对外提供的稳定 C ABI 接口设计，以及为 HarmonyOS NAPI 集成所制定的核心合同规范。
+> 当前仓库版本阶段为 `v0.3.0`。C ABI / NAPI 绑定属于路线图 `v0.6 — HarmonyOS NAPI` 后续计划；本页描述 ABI 目标合同和实验性桥接设计，不代表 v0.3 当前稳定 API。
+
+本篇文档详述 `UBAANext` 原生核心库对外提供 C ABI 接口的目标设计，以及为 HarmonyOS NAPI 集成所制定的核心合同规范。
 
 ## 1. 设计目标与边界原则
 
@@ -19,7 +21,7 @@
 
 客户端的会话、Cookie 和缓存均绑定在唯一的 `UbaaNextContext` 上。C ABI 提供了以下三个基础函数进行管理：
 
-*   `ubaanext_context_create()`：在 C++ 动态堆中分配并构造一个新的 `UbaaNextContext` 实例。初始化时，该函数会隐式安装 OpenSSL 的 Crypto Provider，以确保 WebVPN 等模块所需的加密引擎就绪。如果分配失败，安全返回 `nullptr`。
+*   `ubaanext_context_create()`：在 C++ 动态堆中分配并构造一个新的 `UbaaNextContext` 实例。后续真实协议阶段可在初始化时安装 OpenSSL Crypto Provider，以确保 WebVPN 等模块所需的加密引擎就绪。如果分配失败，安全返回 `nullptr`。
 *   `ubaanext_context_release(context)`：销毁 Context 实例，释放其内部持有的所有服务、网络栈和缓存，防止内存泄漏。
 *   `ubaanext_context_set_connection_mode(context, mode)`：切换当前 Context 的连接模式。支持的值包括 `"direct"`（直连学校内网）、`"vpn"`/`"webvpn"`（通过北航 WebVPN 代理）以及在调试状态下启用的 `"mock"`（离线桩模式）。
 
@@ -106,20 +108,20 @@ C ABI 对外输出的 JSON 字符串统一采用包装盒（Envelope）模式，
 
 ## 5. Volatile 缓存与存储保护
 
-由于部分平台（例如当前阶段的 OpenHarmony 平台适配层）尚未真正落地持久化的安全凭据存储（即 `HarmonyPlatformCapabilities` 声明 `secure_store = false`），底层在尝试调用平台原生安全存储写入凭据时会通过 `UnsupportedSecureStore` 强行抛出异常，防止以明文形式向不可信磁盘回退。
+由于部分平台（例如当前阶段的 OpenHarmony 平台适配层）尚未真正落地持久化的安全凭据存储（即 `HarmonyPlatformCapabilities` 声明 `secure_store = false`），底层在尝试调用平台原生安全存储写入凭据时必须通过 `UnsupportedSecureStore` fail-closed，防止以明文形式向不可信磁盘回退。
 
-为了规避这种在 Harmony 桥接早期可能导致的崩溃问题，C ABI 采取了**运行时隔离兜底设计**：
+为了规避这种在 Harmony 桥接早期可能导致的崩溃问题，C ABI 设计采用**运行时隔离兜底设计**：
 *   在 `UbaaNextContext` 的隔离运行时桶内，我们强制实例化了在内存中运行的 `VolatileSecureStore`。
-*   这使得 Context 在整个生命周期内能够正常维持登录状态、Cookie 存储与 WebVPN 密钥加解密，**彻底规避了因 UnsupportedSecureStore 写调用导致的运行时 Crash**。
+*   这使得 Context 在整个生命周期内能够正常维持临时登录状态、Cookie 存储与 WebVPN 密钥加解密，但不构成跨冷启动的真实持久化能力。
 *   **副作用提示**：由于此存储属于纯内存性质，一旦客户端 Context 销毁（如 App 进程被杀或被冷启动），所有的登录会话凭据将被立即清除，下一次启动时用户必须重新执行真实登录。这也是 HarmonyOS 后续接入持久化方案时需重点攻克的方向。
 
 ---
 
-## 6. 已导出的 22 个符号清单与业务映射
+## 6. 后续 C ABI 符号清单与业务映射
 
 | 符号名称 | 对应核心服务 / 作用 | 输入参数说明 | 输出 JSON 节点含义 |
 | :--- | :--- | :--- | :--- |
-| **`ubaanext_version`** | 获取原生 SDK 内部硬编码的版本号（无 IO 损耗） | `void` | 返回 `"0.4"` 等硬编码版本字符串 |
+| **`ubaanext_version`** | 获取原生 SDK 内部硬编码的版本号（无 IO 损耗） | `void` | 返回当前包版本字符串 |
 | **`ubaanext_get_capabilities`** | 获取当前操作系统物理适配层的能力清单 | `UbaaNextCapabilities*` 接收指针 | 写入真实的网络、存储、写门控等状态布尔值 |
 | **`ubaanext_context_create`** | 堆中构建 Context 实例，加载加密 Provider | `void` | 返回 `UbaaNextContext` 结构体指针 |
 | **`ubaanext_context_release`** | 销毁 Context 实例，彻底释放内存 | `UbaaNextContext*` | `void` |

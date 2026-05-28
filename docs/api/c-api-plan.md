@@ -1,5 +1,7 @@
 # C API 计划
 
+> 当前仓库版本阶段为 `v0.3.0`。C API 属于路线图 `v0.6 — HarmonyOS NAPI` 的前置工作和实验性 ABI 设计，不属于 v0.3 当前稳定基线。
+
 ## 目标
 
 C API 是 DevEco/OpenHarmony NAPI wrapper 之前的稳定 native ABI 层。它只暴露可长期维护的窄接口，不把 C++ service 内部类型、session、cookie、token、write gate 或 parser 实现泄露给 ArkTS/DevEco 项目。
