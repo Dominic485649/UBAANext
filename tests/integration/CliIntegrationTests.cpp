@@ -10,6 +10,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -133,10 +134,74 @@ TEST_CASE("CLI version 命令", "[cli][integration]") {
 }
 
 TEST_CASE("CLI help 命令", "[cli][integration]") {
-    auto result = run_cli({"help", "--json"});
-    REQUIRE(result.exit_code == 0);
+    const std::vector<std::string> expected_commands = {
+        "version",
+        "help",
+        "login",
+        "mode",
+        "mode direct",
+        "mode vpn",
+        "whoami",
+        "logout",
+        "course today",
+        "course date",
+        "course week",
+        "exam list",
+        "classroom query",
+        "term list",
+        "week list",
+        "grade list",
+        "grade all",
+        "user info",
+        "app version",
+        "app announcement",
+        "spoc assignments",
+        "spoc assignment show",
+        "judge assignments",
+        "judge assignment show",
+        "judge assignment details",
+        "judge assignment details-batch",
+        "signin today",
+        "signin do",
+        "ygdk overview",
+        "ygdk records",
+        "ygdk submit",
+        "evaluation list",
+        "evaluation submit",
+        "bykc profile",
+        "bykc courses",
+        "bykc chosen",
+        "bykc stats",
+        "bykc course show",
+        "bykc select",
+        "bykc unselect",
+        "bykc sign",
+        "cgyy sites",
+        "cgyy purpose-types",
+        "cgyy day-info",
+        "cgyy orders",
+        "cgyy order show",
+        "cgyy order lock-code",
+        "cgyy reserve",
+        "cgyy order cancel",
+        "libbook libraries",
+        "libbook areas",
+        "libbook seats",
+        "libbook reservations",
+        "libbook area show",
+        "libbook book",
+        "libbook cancel",
+        "todo list",
+        "file upload",
+        "config show",
+        "config set",
+        "cache clear",
+    };
 
-    auto json = parse_json_output(result.stdout_output);
+    auto json_result = run_cli({"help", "--json"});
+    REQUIRE(json_result.exit_code == 0);
+
+    auto json = parse_json_output(json_result.stdout_output);
     REQUIRE(json["ok"] == true);
     REQUIRE(json["data"].contains("commands"));
     REQUIRE(json["data"].contains("version"));
@@ -149,9 +214,17 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
             return command.contains("name") && command["name"] == name;
         });
     };
-    CHECK(has_command("grade all"));
-    CHECK(has_command("todo list"));
-    CHECK(has_command("file upload"));
+    for (const auto &expected_command : expected_commands) {
+        INFO("缺失 JSON help 命令: " << expected_command);
+        CHECK(has_command(expected_command));
+    }
+
+    auto text_result = run_cli({"help"});
+    REQUIRE(text_result.exit_code == 0);
+    for (const auto &expected_command : expected_commands) {
+        INFO("缺失普通 help 命令: " << expected_command);
+        CHECK(text_result.stdout_output.find(expected_command) != std::string::npos);
+    }
 }
 
 #if UBAANEXT_ENABLE_MOCKS

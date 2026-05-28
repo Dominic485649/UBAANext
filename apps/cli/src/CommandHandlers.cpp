@@ -121,36 +121,140 @@ nlohmann::json get_help_json() {
     add_command(commands, "user info", "显示用户信息");
     add_command(commands, "app version", "显示应用版本信息");
     add_command(commands, "app announcement", "显示公告");
-    add_command(commands, "grade list", "显示指定学期成绩");
+    json grade_list_options = {
+        {{"name", "--term"}, {"description", "学期代码"}, {"required", false}},
+        {{"name", "--all"}, {"description", "显示全部成绩"}, {"required", false}},
+    };
+    add_command(commands, "grade list", "显示指定学期成绩", grade_list_options);
     add_command(commands, "grade all", "显示全部成绩");
-    add_command(commands, "spoc assignments", "显示 SPOC 作业");
-    add_command(commands, "spoc assignment show", "显示 SPOC 作业详情");
-    add_command(commands, "judge assignments", "显示希冀作业");
-    add_command(commands, "judge assignment show", "显示希冀作业概要");
-    add_command(commands, "judge assignment details", "显示希冀作业详情");
-    add_command(commands, "judge assignment details-batch", "批量显示希冀作业详情");
-    add_command(commands, "signin today", "显示今日签到");
-    add_command(commands, "signin do", "执行签到", confirm_options);
+    add_command(commands, "spoc assignments", "显示 SPOC 作业", json{
+        {{"name", "--pending-only"}, {"description", "只显示待处理作业"}, {"required", false}},
+        {{"name", "--include-expired"}, {"description", "包含已过期作业"}, {"required", false}},
+    });
+    add_command(commands, "spoc assignment show", "显示 SPOC 作业详情", json{
+        {{"name", "--id"}, {"description", "SPOC 作业 ID"}, {"required", true}},
+    });
+    add_command(commands, "judge assignments", "显示希冀作业", json{
+        {{"name", "--course-id"}, {"description", "课程 ID"}, {"required", false}},
+        {{"name", "--include-expired"}, {"description", "包含已过期作业"}, {"required", false}},
+        {{"name", "--include-history"}, {"description", "包含历史作业"}, {"required", false}},
+    });
+    add_command(commands, "judge assignment show", "显示希冀作业概要", json{
+        {{"name", "--assignment-id"}, {"description", "希冀作业 ID"}, {"required", true}},
+    });
+    add_command(commands, "judge assignment details", "显示希冀作业详情", json{
+        {{"name", "--assignment-id"}, {"description", "希冀作业 ID"}, {"required", true}},
+    });
+    add_command(commands, "judge assignment details-batch", "批量显示希冀作业详情", json{
+        {{"name", "--input"}, {"description", "JSON、@file 或逗号分隔作业 ID"}, {"required", true}},
+    });
+    add_command(commands, "signin today", "显示今日课程签到");
+    add_command(commands, "signin do", "执行课程签到", json{
+        {{"name", "--id"}, {"description", "签到任务 ID"}, {"required", false}},
+        {{"name", "--course-id"}, {"description", "课程 ID"}, {"required", false}},
+        {{"name", "--confirm"}, {"description", "确认执行签到"}, {"required", true}},
+    });
     add_command(commands, "bykc profile", "显示博雅资料");
     add_command(commands, "bykc courses", "显示博雅课程");
     add_command(commands, "bykc chosen", "显示已选博雅课程");
     add_command(commands, "bykc stats", "显示博雅统计");
-    add_command(commands, "bykc select", "选择博雅课程", confirm_options);
-    add_command(commands, "bykc unselect", "退选博雅课程", confirm_options);
-    add_command(commands, "bykc sign", "博雅签到/签退", confirm_options);
+    add_command(commands, "bykc course show", "显示博雅课程详情", json{
+        {{"name", "--course-id"}, {"description", "博雅课程 ID"}, {"required", true}},
+    });
+    add_command(commands, "bykc select", "选择博雅课程", json{
+        {{"name", "--course-id"}, {"description", "博雅课程 ID"}, {"required", true}},
+        {{"name", "--confirm"}, {"description", "确认选择"}, {"required", true}},
+    });
+    add_command(commands, "bykc unselect", "退选博雅课程", json{
+        {{"name", "--course-id"}, {"description", "博雅课程 ID"}, {"required", true}},
+        {{"name", "--confirm"}, {"description", "确认退选"}, {"required", true}},
+    });
+    add_command(commands, "bykc sign", "博雅签到/签退", json{
+        {{"name", "--course-id"}, {"description", "博雅课程 ID"}, {"required", true}},
+        {{"name", "--sign-type"}, {"description", "签到类型"}, {"required", true}},
+        {{"name", "--confirm"}, {"description", "确认执行签到/签退"}, {"required", true}},
+    });
     add_command(commands, "cgyy sites", "显示场馆列表");
-    add_command(commands, "cgyy day-info", "显示场馆日期可预约信息");
-    add_command(commands, "cgyy reserve", "预约场馆", confirm_options);
-    add_command(commands, "cgyy order cancel", "取消场馆预约", confirm_options);
+    add_command(commands, "cgyy purpose-types", "显示场馆预约用途类型");
+    add_command(commands, "cgyy day-info", "显示场馆日期可预约信息", json{
+        {{"name", "--site-id"}, {"description", "场馆 ID"}, {"required", true}},
+        {{"name", "--date"}, {"description", "日期 (yyyy-MM-dd)"}, {"required", true}},
+    });
+    add_command(commands, "cgyy orders", "显示场馆预约订单");
+    add_command(commands, "cgyy order show", "显示场馆预约订单详情", json{
+        {{"name", "--order-id"}, {"description", "订单 ID"}, {"required", true}},
+    });
+    add_command(commands, "cgyy order lock-code", "显示场馆预约锁码", json{
+        {{"name", "--order-id"}, {"description", "订单 ID"}, {"required", false}},
+    });
+    add_command(commands, "cgyy reserve", "预约场馆", json{
+        {{"name", "--site-id"}, {"description", "场馆 ID"}, {"required", true}},
+        {{"name", "--space-id"}, {"description", "场地 ID"}, {"required", true}},
+        {{"name", "--date"}, {"description", "日期 (yyyy-MM-dd)"}, {"required", true}},
+        {{"name", "--id"}, {"description", "预约时段 ID"}, {"required", true}},
+        {{"name", "--purpose-type"}, {"description", "用途类型 ID"}, {"required", true}},
+        {{"name", "--theme"}, {"description", "预约主题"}, {"required", true}},
+        {{"name", "--phone"}, {"description", "联系电话"}, {"required", true}},
+        {{"name", "--joiners"}, {"description", "参与人"}, {"required", true}},
+        {{"name", "--captcha"}, {"description", "验证码"}, {"required", true}},
+        {{"name", "--token"}, {"description", "预约上下文 token"}, {"required", true}},
+        {{"name", "--confirm"}, {"description", "确认预约"}, {"required", true}},
+    });
+    add_command(commands, "cgyy order cancel", "取消场馆预约", json{
+        {{"name", "--order-id"}, {"description", "订单 ID"}, {"required", true}},
+        {{"name", "--confirm"}, {"description", "确认取消"}, {"required", true}},
+    });
     add_command(commands, "libbook libraries", "显示图书馆列表");
-    add_command(commands, "libbook seats", "显示座位列表");
-    add_command(commands, "libbook book", "预约图书馆座位", confirm_options);
-    add_command(commands, "libbook cancel", "取消图书馆座位预约", confirm_options);
+    add_command(commands, "libbook areas", "显示图书馆区域列表", json{
+        {{"name", "--library-id"}, {"description", "图书馆 ID"}, {"required", true}},
+        {{"name", "--day"}, {"description", "日期"}, {"required", false}},
+        {{"name", "--storey-id"}, {"description", "楼层 ID"}, {"required", false}},
+    });
+    add_command(commands, "libbook seats", "显示座位列表", json{
+        {{"name", "--area-id"}, {"description", "区域 ID"}, {"required", true}},
+        {{"name", "--day"}, {"description", "日期"}, {"required", false}},
+        {{"name", "--start-time"}, {"description", "开始时间"}, {"required", false}},
+        {{"name", "--end-time"}, {"description", "结束时间"}, {"required", false}},
+    });
+    add_command(commands, "libbook reservations", "显示图书馆座位预约记录", json{
+        {{"name", "--page"}, {"description", "页码"}, {"required", false}},
+        {{"name", "--size"}, {"description", "每页数量"}, {"required", false}},
+    });
+    add_command(commands, "libbook area show", "显示图书馆区域详情", json{
+        {{"name", "--area-id"}, {"description", "区域 ID"}, {"required", true}},
+    });
+    add_command(commands, "libbook book", "预约图书馆座位", json{
+        {{"name", "--seat-id"}, {"description", "座位 ID"}, {"required", true}},
+        {{"name", "--date"}, {"description", "日期 (yyyy-MM-dd)"}, {"required", true}},
+        {{"name", "--segment"}, {"description", "预约时段"}, {"required", false}},
+        {{"name", "--start-time"}, {"description", "开始时间"}, {"required", false}},
+        {{"name", "--end-time"}, {"description", "结束时间"}, {"required", false}},
+        {{"name", "--confirm"}, {"description", "确认预约"}, {"required", true}},
+    });
+    add_command(commands, "libbook cancel", "取消图书馆座位预约", json{
+        {{"name", "--booking-id"}, {"description", "预约 ID"}, {"required", true}},
+        {{"name", "--confirm"}, {"description", "确认取消"}, {"required", true}},
+    });
     add_command(commands, "ygdk overview", "显示阳光打卡概览");
-    add_command(commands, "ygdk records", "显示阳光打卡记录");
-    add_command(commands, "ygdk submit", "提交阳光打卡", confirm_options);
+    add_command(commands, "ygdk records", "显示阳光打卡记录", json{
+        {{"name", "--page"}, {"description", "页码"}, {"required", false}},
+        {{"name", "--size"}, {"description", "每页数量"}, {"required", false}},
+    });
+    add_command(commands, "ygdk submit", "提交阳光打卡", json{
+        {{"name", "--id"}, {"description", "打卡项目 ID"}, {"required", false}},
+        {{"name", "--item-id"}, {"description", "打卡项目 ID"}, {"required", false}},
+        {{"name", "--start-time"}, {"description", "开始时间"}, {"required", true}},
+        {{"name", "--end-time"}, {"description", "结束时间"}, {"required", true}},
+        {{"name", "--place"}, {"description", "地点"}, {"required", true}},
+        {{"name", "--photo"}, {"description", "照片路径"}, {"required", true}},
+        {{"name", "--share"}, {"description", "同步共享"}, {"required", false}},
+        {{"name", "--confirm"}, {"description", "确认提交"}, {"required", true}},
+    });
     add_command(commands, "evaluation list", "显示评教任务");
-    add_command(commands, "evaluation submit", "提交评教", confirm_options);
+    add_command(commands, "evaluation submit", "提交评教", json{
+        {{"name", "--id"}, {"description", "评教任务 ID"}, {"required", false}},
+        {{"name", "--confirm"}, {"description", "确认提交评教"}, {"required", true}},
+    });
     add_command(commands, "todo list", "显示待办聚合", json{
         {{"name", "--pending-only"}, {"description", "只显示待处理项目"}, {"required", false}},
         {{"name", "--all"}, {"description", "包含非待处理项目"}, {"required", false}},
@@ -208,6 +312,37 @@ void print_usage() {
     Console::println("  term list                        显示学期列表");
     Console::println("  week list                        显示教学周列表");
 #endif
+    Console::println("\n用户、应用与教学基础:");
+    Console::println("  user info                        显示用户信息");
+    Console::println("  app version                      显示应用版本信息");
+    Console::println("  app announcement                 显示公告");
+    Console::println("  grade list [--term <term>] [--all]");
+    Console::println("                                   显示指定学期成绩");
+    Console::println("  grade all                        显示全部成绩");
+    Console::println("\n作业与课程签到:");
+    Console::println("  spoc assignments [--pending-only] [--include-expired]");
+    Console::println("                                   显示 SPOC 作业");
+    Console::println("  spoc assignment show --id <id>   显示 SPOC 作业详情");
+    Console::println("  judge assignments [--course-id <id>] [--include-expired] [--include-history]");
+    Console::println("                                   显示希冀作业");
+    Console::println("  judge assignment show --assignment-id <id>");
+    Console::println("                                   显示希冀作业概要");
+    Console::println("  judge assignment details --assignment-id <id>");
+    Console::println("                                   显示希冀作业详情");
+    Console::println("  judge assignment details-batch --input <json|@file|ids>");
+    Console::println("                                   批量显示希冀作业详情");
+    Console::println("  signin today                     显示今日课程签到");
+    Console::println("  signin do [--id <id>|--course-id <id>] --confirm");
+    Console::println("                                   执行课程签到");
+    Console::println("\n阳光打卡与评教:");
+    Console::println("  ygdk overview                    显示阳光打卡概览");
+    Console::println("  ygdk records [--page <n>] [--size <n>]");
+    Console::println("                                   显示阳光打卡记录");
+    Console::println("  ygdk submit --start-time <time> --end-time <time> --place <place> --photo <path> --confirm");
+    Console::println("                                   提交阳光打卡");
+    Console::println("  evaluation list                  显示评教任务");
+    Console::println("  evaluation submit [--id <id>] --confirm");
+    Console::println("                                   提交评教");
     Console::println("\n博雅课程 (bykc):");
     Console::println("  bykc profile                     显示博雅课程档案");
     Console::println("  bykc courses [--page <n>] [--size <n>] [--keyword <kw>]");
@@ -245,7 +380,7 @@ void print_usage() {
     Console::println("                                   预约图书馆座位");
     Console::println("  libbook cancel --booking-id <id> --confirm");
     Console::println("                                   取消图书馆座位预约");
-    Console::println("\n作业、待办和占位接口:");
+    Console::println("\n待办和占位接口:");
     Console::println("  todo list [--pending-only|--all] 显示待办聚合");
     Console::println("  file upload --path <path> --confirm");
     Console::println("                                   保留接口，当前返回 NotImplemented");
