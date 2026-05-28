@@ -1,6 +1,6 @@
 # GitHub Release 发布前验证与自动化检查清单
 
-> 当前仓库版本阶段为 `v0.4.0`，但尚未形成正式 tag 发布序列。本清单用于未来从当前路线图基线发起正式发布；示例版本号应在发布时替换为实际 tag。
+> 当前仓库版本阶段为 `v0.4.0`，但尚未形成正式 tag 发布序列。本清单用于未来从当前路线图基线发起正式发布；v0.4 当前只执行 Release 编译验证并把二进制输出到 `bin\x64\Release\`，不创建 GitHub Release 页面。
 
 本文档为 UBAA Next 项目发布新版本（Tag Release）时的标准操作程序（SOP）。旨在通过严格的静态分析、单元测试、线上冒烟测试（Live Smoke）及隐私脱敏审计，确保每一个对外发布的包体都具备工业级稳定性和极高的信息安全防护水平。
 
@@ -63,7 +63,7 @@ graph TD
 $env:UBAANEXT_LIVE = "1"                              # 显式启用线上冒烟测试
 $env:UBAANEXT_USERNAME = "你的北航学号"               # 真实测试账号
 $env:UBAANEXT_PASSWORD = "你的教务密码"               # 真实测试密码
-$env:UBAANEXT_CLI_PATH = ".\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe" # 待测试 CLI 二进制路径
+$env:UBAANEXT_CLI_PATH = ".\bin\x64\Debug\ubaa.exe" # 待测试 CLI 二进制路径
 $env:UBAANEXT_CONNECTION_MODE = "direct"              # 可选：direct（直连）或 vpn（WebVPN）
 ```
 
@@ -116,17 +116,23 @@ $env:UBAANEXT_CONNECTION_MODE = "direct"              # 可选：direct（直连
    git push origin vX.Y.Z
    ```
 3. **Release 包体构建**：
-   运行静态 Windows Release 预设以产生最终要交付的 `ubaa.exe`：
+   运行静态 Windows Release 预设以产生本地 `ubaa.exe`：
    ```powershell
    cmake --fresh --preset windows-ninja-msvc-release
    cmake --build --preset windows-ninja-msvc-release --target ubaa
    ```
+   v0.4 本地输出位置固定为：
+   ```text
+   bin\x64\Release\ubaa.exe
+   bin\x64\Release\ubaa.exe.sha256
+   ```
 4. **生成 Hash 校验和**：
-   在打包目录下生成交付物的 SHA-256：
+   CMake 构建会在同目录自动生成 `ubaa.exe.sha256`；如需人工复核，可运行：
    ```powershell
-   Get-FileHash -Algorithm SHA256 .\build\windows-ninja-msvc-release\apps\cli\ubaa.exe
+   Get-FileHash -Algorithm SHA256 .\bin\x64\Release\ubaa.exe
    ```
 5. **在 GitHub 上创建发布**：
+   当前 v0.4 不执行此步骤；未来正式发布时再执行以下操作：
    * 选择新推送的 Tag `vX.Y.Z`。
    * 发布标题格式为 `UBAA Next vX.Y.Z`。
    * 复制 `CHANGELOG.md` 中对应当前版本的最新更新日志内容至发布说明框内。

@@ -1,6 +1,6 @@
 # Windows 静态二进制打包与 vcpkg 集成编译指南
 
-> 当前仓库版本阶段为 `v0.4.0`。本页描述 v0.5+ / v1.0 发布前的 Windows 打包目标形态；v0.4 当前基线已具备 CLI 工程化入口，但不承诺已经具备正式静态 Release 分发包。
+> 当前仓库版本阶段为 `v0.4.0`。本页描述 Windows CLI 的 Release 编译与后续正式打包目标；v0.4 当前基线要求完成本地 Release 二进制输出与校验文件生成，但不创建 GitHub Release 页面。
 
 本文档详尽论述了 UBAA Next 项目在 Windows 平台上的编译构建系统、vcpkg 依赖管理系统的集成方式，以及通过静态链接（Static Linking）机制输出独立绿色版命令行客户端 `ubaa.exe` 的完整技术方案。
 
@@ -87,16 +87,21 @@ ctest --preset windows-ninja-msvc-debug
 
 ### 4.2 Release 静态独立包发布编译
 ```powershell
-# 1. 配置静态 Release 预设（指定使用静态 triplet 覆盖默认动态链接）
-cmake -S . -B build/windows-static-release `
-  -G "Ninja" `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DVCPKG_TARGET_TRIPLET=x64-windows-static `
-  -DCMAKE_TOOLCHAIN_FILE="D:\Code\vcpkg\scripts\buildsystems\vcpkg.cmake" # 请替换为实际本地 vcpkg 路径
+# 1. 配置 v0.4 Release 预设
+cmake --fresh --preset windows-ninja-msvc-release
 
-# 2. 构建最终独立二进制
-cmake --build build/windows-static-release --target ubaa --config Release
+# 2. 构建最终 CLI 二进制
+cmake --build --preset windows-ninja-msvc-release --target ubaa
 ```
+
+构建完成后，CLI 产物会复制到仓库根目录下固定的查找位置：
+
+```text
+bin\x64\Release\ubaa.exe
+bin\x64\Release\ubaa.exe.sha256
+```
+
+`ubaa.exe.sha256` 与 `ubaa.exe` 同目录生成，供本地校验或后续正式发布复用。v0.4 当前流程只要求完成本地 Release 编译验证，不创建 GitHub Release。
 
 ---
 
@@ -107,7 +112,7 @@ cmake --build build/windows-static-release --target ubaa --config Release
 ### 5.1 使用 `dumpbin` 查看依赖
 在 Developer Command Prompt 中对生成的 `ubaa.exe` 执行以下命令：
 ```powershell
-dumpbin /dependents .\build\windows-static-release\apps\cli\ubaa.exe
+dumpbin /dependents .\bin\x64\Release\ubaa.exe
 ```
 
 ### 5.2 预期输出指标（绿灯通过状态）

@@ -100,6 +100,8 @@ add_executable(UBAANextCliTests
     ${UBAANEXT_CLI_TEST_SOURCES}
 )
 
+add_dependencies(UBAANextCliTests ubaa)
+
 target_link_libraries(UBAANextCliTests
     PRIVATE Catch2::Catch2WithMain
     PRIVATE nlohmann_json::nlohmann_json

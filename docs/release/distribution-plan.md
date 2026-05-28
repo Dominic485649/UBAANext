@@ -72,7 +72,7 @@ graph TD
 * 在 GitHub Releases 发布任何 Windows 二进制文件（`ubaa.exe` 或 GUI 压缩包）时，必须在发布日志中同时公布该二进制文件的 **SHA-256 校验和**。
 * **自动化生成脚本**：在 CI 发布流水线中，通过 PowerShell 自动生成散列列表：
   ```powershell
-  Get-FileHash -Algorithm SHA256 .\build\windows-ninja-msvc-release\apps\cli\ubaa.exe
+  Get-FileHash -Algorithm SHA256 .\bin\x64\Release\ubaa.exe
   ```
 
 ### 3.2 数字签名（Digital Signing）

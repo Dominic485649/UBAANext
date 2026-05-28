@@ -3,6 +3,8 @@ build/
 cmake-build-*/
 vcpkg_installed/
 vcpkg-manifest-install.log
+/bin/*/*/*.pdb
+/bin/*/*/*.sha256
 
 # IDE
 .vs/

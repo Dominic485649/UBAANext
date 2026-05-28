@@ -552,7 +552,7 @@ Result<Model::FeatureRecord> FeatureService::show(const std::string &domain,
 
 Result<Model::MutationResult> FeatureService::mutate(const std::string &domain,
                                                      const std::string &operation,
-                                                     const std::string &id,
+                                                     [[maybe_unused]] const std::string &id,
                                                      bool confirmed) {
     if (!confirmed) {
         return make_error(ErrorCode::InvalidArgument, domain + " " + operation + " 是有副作用操作，必须显式传入 --confirm 或 --yes");

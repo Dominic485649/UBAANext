@@ -1,0 +1,15 @@
+if(DEFINED CONFIG AND NOT CONFIG STREQUAL "Release")
+    return()
+endif()
+
+if(NOT DEFINED INPUT_FILE)
+    message(FATAL_ERROR "INPUT_FILE is required")
+endif()
+
+if(NOT DEFINED OUTPUT_FILE)
+    message(FATAL_ERROR "OUTPUT_FILE is required")
+endif()
+
+file(SHA256 "${INPUT_FILE}" UBAANEXT_FILE_SHA256)
+get_filename_component(UBAANEXT_FILE_NAME "${INPUT_FILE}" NAME)
+file(WRITE "${OUTPUT_FILE}" "${UBAANEXT_FILE_SHA256}  ${UBAANEXT_FILE_NAME}\n")

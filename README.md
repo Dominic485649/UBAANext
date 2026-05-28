@@ -53,6 +53,15 @@ cmake --fresh --preset windows-ninja-msvc-release
 cmake --build --preset windows-ninja-msvc-release --target ubaa
 ```
 
+Release 可执行文件会输出到固定目录，便于直接查找：
+
+```text
+bin\x64\Release\ubaa.exe
+bin\x64\Release\ubaa.exe.sha256
+```
+
+当前 `v0.4.0` 只要求完成 Release 编译验证和本地二进制输出，不创建 GitHub Release 页面。
+
 如果本地已配置好构建目录，重复编译可直接运行：
 
 ```powershell
@@ -64,15 +73,15 @@ cmake --build --preset windows-ninja-msvc-debug --target ubaa
 以下示例以 v0.4 基线能力为主，优先使用 mock/offline 路径：
 
 ```powershell
-.\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe version --json
-.\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe login --mock --username 20260000 --password test --json
-.\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe whoami --json
-.\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe course today --mock --json
-.\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe course week --mock --week 8 --json
-.\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe exam list --mock --json
-.\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe classroom query --mock --campus 1 --date 2026-05-13 --json
-.\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe term list --mock --json
-.\build\windows-ninja-msvc-debug\apps\cli\ubaa.exe week list --mock --json
+.\bin\x64\Debug\ubaa.exe version --json
+.\bin\x64\Debug\ubaa.exe login --mock --username 20260000 --password test --json
+.\bin\x64\Debug\ubaa.exe whoami --json
+.\bin\x64\Debug\ubaa.exe course today --mock --json
+.\bin\x64\Debug\ubaa.exe course week --mock --week 8 --json
+.\bin\x64\Debug\ubaa.exe exam list --mock --json
+.\bin\x64\Debug\ubaa.exe classroom query --mock --campus 1 --date 2026-05-13 --json
+.\bin\x64\Debug\ubaa.exe term list --mock --json
+.\bin\x64\Debug\ubaa.exe week list --mock --json
 ```
 
 真实 HTTP、CAS 登录、live smoke 写操作、C ABI、NAPI、HarmonyOS 和 Slint 相关内容属于后续阶段或实验路径。运行涉及真实账号、远端服务或写操作的命令前，请先阅读对应文档并显式 opt-in。
