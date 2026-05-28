@@ -62,6 +62,12 @@ bin\x64\Release\ubaa.exe.sha256
 
 当前 `v0.4.0` 只要求完成 Release 编译验证和本地二进制输出，不创建 GitHub Release 页面。
 
+清理本地可再生构建产物可使用项目专用目标；该目标会保留 `vcpkg_installed` 外部依赖缓存：
+
+```powershell
+cmake --build --preset windows-ninja-msvc-debug --target ubaanext-clean-local
+```
+
 如果本地已配置好构建目录，重复编译可直接运行：
 
 ```powershell
@@ -74,7 +80,7 @@ cmake --build --preset windows-ninja-msvc-debug --target ubaa
 
 ```powershell
 .\bin\x64\Debug\ubaa.exe version --json
-.\bin\x64\Debug\ubaa.exe login --mock --username 20260000 --password test --json
+.\bin\x64\Debug\ubaa.exe login --mock 20260000 test --json
 .\bin\x64\Debug\ubaa.exe whoami --json
 .\bin\x64\Debug\ubaa.exe course today --mock --json
 .\bin\x64\Debug\ubaa.exe course week --mock --week 8 --json

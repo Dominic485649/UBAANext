@@ -5,7 +5,7 @@
  * 命令树：
  *   version [--json]
  *   help [--json]
- *   login [--mock] --username <id> --password <pw> [--mode vpn|direct]
+ *   login [--mock] <id> <pw> [--mode vpn|direct]
  *   mode [vpn|direct] [--json]
  *   whoami [--json]
  *   logout [--json]
@@ -442,6 +442,10 @@ CliArgs parse_args(int argc, char *argv[]) {
         } else if (arg.rfind("--", 0) == 0) {
             args.error_message = UBAANextCli::Console::format("未知选项: '{}'", arg);
             args.parse_error = true;
+        } else if (args.command == "login" && args.username.empty()) {
+            args.username = arg;
+        } else if (args.command == "login" && args.password.empty()) {
+            args.password = arg;
         } else {
             args.error_message = UBAANextCli::Console::format("未知参数: '{}'", arg);
             args.parse_error = true;
@@ -653,11 +657,11 @@ ExitCode cmd_help(OutputFormatter &out) {
 /** Sensitive input CLI handler: performs login/session persistence; credentials must stay redacted and mock mode is not live proof. */
 ExitCode cmd_login(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out, bool mock) {
     if (args.username.empty()) {
-        out.print_error({um::ErrorCode::InvalidArgument, "login 需要 --username <id>"});
+        out.print_error({um::ErrorCode::InvalidArgument, "login 需要账号: ubaa login <账号> <密码>"});
         return ExitCode::InvalidArgument;
     }
     if (args.password.empty()) {
-        out.print_error({um::ErrorCode::InvalidArgument, "login 需要 --password <pw>"});
+        out.print_error({um::ErrorCode::InvalidArgument, "login 需要密码: ubaa login <账号> <密码>"});
         return ExitCode::InvalidArgument;
     }
 

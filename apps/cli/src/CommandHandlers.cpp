@@ -34,8 +34,10 @@ nlohmann::json get_help_json() {
     add_command(commands, "help", "显示帮助信息");
 
     json login_options = {
-        {{"name", "--username"}, {"description", "学号"}, {"required", true}},
-        {{"name", "--password"}, {"description", "密码"}, {"required", true}},
+        {{"name", "account"}, {"description", "账号/学号位置参数"}, {"required", true}},
+        {{"name", "password"}, {"description", "密码位置参数"}, {"required", true}},
+        {{"name", "--username"}, {"description", "兼容旧写法：学号"}, {"required", false}},
+        {{"name", "--password"}, {"description", "兼容旧写法：密码"}, {"required", false}},
 #if UBAANEXT_ENABLE_MOCKS
         {{"name", "--mock"}, {"description", "使用模拟数据"}, {"required", false}},
 #endif
@@ -166,10 +168,10 @@ void print_usage() {
     Console::println("命令:");
     Console::println("  version                          显示版本");
     Console::println("  help                             显示帮助");
-    Console::println("  login --username <id> --password <pw>");
-    Console::println("                                   登录（默认 VPN 模式）");
+    Console::println("  login <id> <pw>");
+    Console::println("                                   登录（默认 VPN 模式，兼容 --username/--password）");
 #if UBAANEXT_ENABLE_MOCKS
-    Console::println("  login --mock --username <id> --password <pw>");
+    Console::println("  login --mock <id> <pw>");
     Console::println("                                   模拟登录");
 #endif
     Console::println("  mode                             显示当前连接模式");

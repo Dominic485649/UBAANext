@@ -26,7 +26,7 @@ namespace UBAANextCli {
  * @brief 输出格式化器
  *
  * 根据 json_mode 标志选择人类可读或 JSON 输出格式。
- * JSON 输出格式遵循 target.txt 规范：
+ * JSON 输出格式遵循 CLI 命令 API 合同：
  *   成功: {"ok": true, "data": {...}, "error": null}
  *   失败: {"ok": false, "data": null, "error": {"code": "...", "message": "..."}}
  */

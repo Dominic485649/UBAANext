@@ -156,7 +156,7 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
 
 #if UBAANEXT_ENABLE_MOCKS
 TEST_CASE("CLI login mock 命令", "[cli][integration]") {
-    auto result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--json"});
+    auto result = run_cli({"login", "--mock", "20260000", "test", "--json"});
     REQUIRE(result.exit_code == 0);
 
     // 登录命令输出两个 JSON 对象（多行），检查包含关键字段
@@ -164,6 +164,15 @@ TEST_CASE("CLI login mock 命令", "[cli][integration]") {
     REQUIRE(result.stdout_output.find("\"studentId\"") != std::string::npos);
     REQUIRE(result.stdout_output.find("20260000") != std::string::npos);
     REQUIRE(result.stdout_output.find("登录成功") != std::string::npos);
+}
+
+TEST_CASE("CLI login mock 兼容旧参数", "[cli][integration]") {
+    auto result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--json"});
+    REQUIRE(result.exit_code == 0);
+
+    REQUIRE(result.stdout_output.find("\"ok\": true") != std::string::npos);
+    REQUIRE(result.stdout_output.find("\"studentId\"") != std::string::npos);
+    REQUIRE(result.stdout_output.find("20260000") != std::string::npos);
 }
 
 TEST_CASE("CLI whoami 命令", "[cli][integration]") {

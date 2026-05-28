@@ -34,6 +34,14 @@ configure_file(
 
 include(cmake/UBAANextWarnings.cmake)
 
+add_custom_target(ubaanext-clean-local
+    COMMAND ${CMAKE_COMMAND}
+        -DUBAANEXT_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+        -P ${PROJECT_SOURCE_DIR}/cmake/CleanLocalArtifacts.cmake
+    COMMENT "Clean UBAA Next local build artifacts while keeping external dependency caches"
+    VERBATIM
+)
+
 include(cmake/Dependencies.cmake)
 
 if(UBAANEXT_BUILD_TESTS)

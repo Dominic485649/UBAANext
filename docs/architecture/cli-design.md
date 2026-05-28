@@ -10,7 +10,7 @@
 UBAA Next 0.1.0
 ```
 
-### `ubaa login --mock --username <id> --password <pw>`
+### `ubaa login --mock <id> <pw>`
 
 执行 Mock 登录。
 

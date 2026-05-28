@@ -2,7 +2,7 @@
  * @file ExitCodes.hpp
  * @brief CLI 统一退出码定义
  *
- * 按 target.txt 规范定义进程退出码，
+ * 按 CLI 命令 API 合同定义进程退出码，
  * 所有命令处理函数返回 ExitCode 枚举，
  * 由 main() 映射为进程退出码。
  */
