@@ -41,7 +41,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
-#include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -2112,7 +2112,7 @@ ExitCode cmd_evaluation_submit(const CliArgs &args, ServiceFactory &factory, Out
 
 // ── 主入口 ──────────────────────────────────────────────────
 
-int main(int argc, char *argv[]) {
+int run_cli(int argc, char *argv[]) {
     CliArgs args = parse_args(argc, argv);
 
     OutputFormatter out(args.json_output);
@@ -2325,4 +2325,29 @@ int main(int argc, char *argv[]) {
 
     out.print_error({um::ErrorCode::InvalidArgument, "未知命令: " + args.command});
     return static_cast<int>(ExitCode::InvalidArgument);
+}
+
+namespace {
+
+bool cli_has_flag(int argc, char *argv[], std::string_view flag) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::string_view(argv[i]) == flag) return true;
+    }
+    return false;
+}
+
+} // namespace
+
+int main(int argc, char *argv[]) {
+    try {
+        return run_cli(argc, argv);
+    } catch (const std::exception &ex) {
+        OutputFormatter out(cli_has_flag(argc, argv, "--json"));
+        out.print_error({um::ErrorCode::Unknown, UBAANextCli::redact_sensitive_text(ex.what())});
+        return static_cast<int>(ExitCode::General);
+    } catch (...) {
+        OutputFormatter out(cli_has_flag(argc, argv, "--json"));
+        out.print_error({um::ErrorCode::Unknown, "CLI 执行失败"});
+        return static_cast<int>(ExitCode::General);
+    }
 }
