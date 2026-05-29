@@ -46,6 +46,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <set>
 #include <string>
@@ -431,7 +432,7 @@ CliArgs parse_args(int argc, char *argv[]) {
                 args.error_message = UBAANextCli::Console::format("--sign-type 值无效 '{}'", value);
                 args.parse_error = true;
             }
-        } else if (arg == "--confirm" || arg == "--yes") {
+        } else if (arg == "--confirm" || arg == "--yes" || arg == "-y") {
             args.confirmed = true;
         } else if (arg == "--base-url") {
             args.config_key = "base-url";
@@ -453,6 +454,31 @@ CliArgs parse_args(int argc, char *argv[]) {
     }
 
     return args;
+}
+
+bool confirm_sensitive_operation(CliArgs &args, OutputFormatter &out, const std::string &operation) {
+    if (args.confirmed) return true;
+    const auto message = operation + " 是有副作用操作，必须通过 --confirm、--yes、-y 或交互输入 y 确认";
+    if (args.json_output) {
+        out.print_error({um::ErrorCode::InvalidArgument, message});
+        return false;
+    }
+    UBAANextCli::Console::print("{}，是否继续？[y/N] ", operation);
+    std::string answer;
+    if (!std::getline(std::cin, answer)) {
+        out.print_error({um::ErrorCode::InvalidArgument, message});
+        return false;
+    }
+    if (answer == "y" || answer == "Y" || answer == "yes" || answer == "YES" || answer == "Yes") {
+        args.confirmed = true;
+        return true;
+    }
+    out.print_error({um::ErrorCode::InvalidArgument, operation + " 已取消；如需跳过交互确认，请显式传入 --confirm、--yes 或 -y"});
+    return false;
+}
+
+ExitCode confirm_sensitive_operation_or_exit(CliArgs &args, OutputFormatter &out, const std::string &operation) {
+    return confirm_sensitive_operation(args, out, operation) ? ExitCode::Ok : ExitCode::InvalidArgument;
 }
 
 // ── 路径工具 ──────────────────────────────────────────────────
@@ -714,12 +740,9 @@ ExitCode cmd_whoami(ServiceFactory &factory, OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
-/** Sensitive local mutation CLI handler: clears local session/cookies only after --confirm/--yes. */
-ExitCode cmd_logout(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "logout 会清除本地会话，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+/** Sensitive local mutation CLI handler: clears local session/cookies only after --confirm/--yes/-y. */
+ExitCode cmd_logout(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "logout"); confirm != ExitCode::Ok) return confirm;
     auto auth = factory.create_auth_service();
     auto result = auth.logout();
     if (!result) {
@@ -972,12 +995,9 @@ ExitCode cmd_mode(const CliArgs &args, OutputFormatter &out, CliConfig &config) 
     return save_config_and_report(out, config, "mode", config.mode);
 }
 
-/** Sensitive local mutation CLI handler: writes local config only after --confirm/--yes. */
-ExitCode cmd_config_set(const CliArgs &args, OutputFormatter &out, CliConfig &config) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "config set 会修改本地配置，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+/** Sensitive local mutation CLI handler: writes local config only after --confirm/--yes/-y. */
+ExitCode cmd_config_set(CliArgs &args, OutputFormatter &out, CliConfig &config) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "config set"); confirm != ExitCode::Ok) return confirm;
     if (args.config_key.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "config set 需要 --key <key>"});
         return ExitCode::InvalidArgument;
@@ -1015,12 +1035,9 @@ ExitCode cmd_config_set(const CliArgs &args, OutputFormatter &out, CliConfig &co
     return save_config_and_report(out, config, key, value);
 }
 
-/** Sensitive local mutation CLI handler: clears local cache only after --confirm/--yes and performs no remote I/O. */
-ExitCode cmd_cache_clear(const CliArgs &args, ServiceFactory & /*factory*/, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "cache clear 会清除本地缓存，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+/** Sensitive local mutation CLI handler: clears local cache only after --confirm/--yes/-y and performs no remote I/O. */
+ExitCode cmd_cache_clear(CliArgs &args, ServiceFactory & /*factory*/, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "cache clear"); confirm != ExitCode::Ok) return confirm;
     // v0.4 简化实现：mock 模式下缓存随进程销毁
     out.print_message("缓存已清除。");
     return ExitCode::Ok;
@@ -1440,12 +1457,10 @@ ExitCode cmd_bykc_course_show(const CliArgs &args, ServiceFactory &factory, Outp
     return print_record_result(factory, out, "course", service.show_course(id));
 }
 
-/** WriteGated CLI handler: BYKC select/unselect are remote mutations requiring --confirm/--yes and write_operations. */
-ExitCode cmd_bykc_select(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out, bool select) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, std::string("bykc ") + (select ? "select" : "unselect") + " 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+/** WriteGated CLI handler: BYKC select/unselect are remote mutations requiring --confirm/--yes/-y and write_operations. */
+ExitCode cmd_bykc_select(CliArgs &args, ServiceFactory &factory, OutputFormatter &out, bool select) {
+    const auto operation = std::string("bykc ") + (select ? "select" : "unselect");
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, operation); confirm != ExitCode::Ok) return confirm;
     const auto id = args.course_id.empty() ? args.id : args.course_id;
     if (id.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, std::string("bykc ") + (select ? "select" : "unselect") + " 需要 --course-id"});
@@ -1458,12 +1473,9 @@ ExitCode cmd_bykc_select(const CliArgs &args, ServiceFactory &factory, OutputFor
     return print_mutation_result(factory, out, select ? service.select_course(id) : service.unselect_course(id));
 }
 
-/** WriteGated CLI handler: BYKC sign is a remote mutation requiring --confirm/--yes and write_operations. */
-ExitCode cmd_bykc_sign(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+/** WriteGated CLI handler: BYKC sign is a remote mutation requiring --confirm/--yes/-y and write_operations. */
+ExitCode cmd_bykc_sign(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "bykc sign"); confirm != ExitCode::Ok) return confirm;
     if ((args.course_id.empty() && args.id.empty()) || args.sign_type == 0) {
         out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 需要 --course-id 和 --sign-type"});
         return ExitCode::InvalidArgument;
@@ -1541,11 +1553,8 @@ ExitCode cmd_cgyy_lock_code(const CliArgs &args, ServiceFactory &factory, Output
 }
 
 /** WriteGated CLI handler: venue reservation is a remote mutation with sensitive captcha/token inputs. */
-ExitCode cmd_cgyy_reserve(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+ExitCode cmd_cgyy_reserve(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "cgyy reserve"); confirm != ExitCode::Ok) return confirm;
     if (args.site_id.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "cgyy reserve 需要 --site-id <id>"});
         return ExitCode::InvalidArgument;
@@ -1593,12 +1602,9 @@ ExitCode cmd_cgyy_reserve(const CliArgs &args, ServiceFactory &factory, OutputFo
     return print_mutation_result(factory, out, service.reserve(args.site_id, args.space_id, args.date, args.id, args.purpose_type, args.theme, args.phone, args.joiners, args.captcha, args.token));
 }
 
-/** WriteGated CLI handler: venue order cancellation is a remote mutation requiring --confirm/--yes and write_operations. */
-ExitCode cmd_cgyy_cancel(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "cgyy order cancel 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+/** WriteGated CLI handler: venue order cancellation is a remote mutation requiring --confirm/--yes/-y and write_operations. */
+ExitCode cmd_cgyy_cancel(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "cgyy order cancel"); confirm != ExitCode::Ok) return confirm;
     auto order_id = args.order_id.empty() ? args.id : args.order_id;
     if (order_id.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "cgyy order cancel 需要 --order-id <id>"});
@@ -1669,12 +1675,9 @@ ExitCode cmd_libbook_area_show(const CliArgs &args, ServiceFactory &factory, Out
     return print_record_result(factory, out, "area", service.show_area(area_id));
 }
 
-/** WriteGated CLI handler: library booking is a remote mutation requiring --confirm/--yes and write_operations. */
-ExitCode cmd_libbook_book(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "libbook book 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+/** WriteGated CLI handler: library booking is a remote mutation requiring --confirm/--yes/-y and write_operations. */
+ExitCode cmd_libbook_book(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "libbook book"); confirm != ExitCode::Ok) return confirm;
     auto seat_id = args.seat_id.empty() ? args.id : args.seat_id;
     if (seat_id.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "libbook book 需要 --seat-id <id>"});
@@ -1695,12 +1698,9 @@ ExitCode cmd_libbook_book(const CliArgs &args, ServiceFactory &factory, OutputFo
     return print_mutation_result(factory, out, service.reserve_seat(seat_id, args.date, args.segment, args.start_time, args.end_time));
 }
 
-/** WriteGated CLI handler: library booking cancellation is a remote mutation requiring --confirm/--yes and write_operations. */
-ExitCode cmd_libbook_cancel(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "libbook cancel 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+/** WriteGated CLI handler: library booking cancellation is a remote mutation requiring --confirm/--yes/-y and write_operations. */
+ExitCode cmd_libbook_cancel(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "libbook cancel"); confirm != ExitCode::Ok) return confirm;
     auto booking_id = args.booking_id.empty() ? args.id : args.booking_id;
     if (booking_id.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "libbook cancel 需要 --booking-id <id>"});
@@ -1742,11 +1742,8 @@ ExitCode cmd_todo_list(const CliArgs &args, ServiceFactory &factory, OutputForma
  * Placeholder CLI handler for future file uploads.
  * Returns NotImplemented after confirmation and never reads local files or performs network I/O.
  */
-ExitCode cmd_file_upload_placeholder(const CliArgs &args, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "file upload 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+ExitCode cmd_file_upload_placeholder(CliArgs &args, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file upload"); confirm != ExitCode::Ok) return confirm;
     if (args.photo_path.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "file upload 需要 --path <path>"});
         return ExitCode::InvalidArgument;
@@ -1767,13 +1764,10 @@ ExitCode cmd_signin_today(ServiceFactory &factory, OutputFormatter &out) {
 
 /**
  * WriteGated CLI handler for real course sign-in.
- * Remote mutation: yes; requires --confirm/--yes and platform write_operations in real mode.
+ * Remote mutation: yes; requires --confirm/--yes/-y and platform write_operations in real mode.
  */
-ExitCode cmd_signin_do(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "signin do 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+ExitCode cmd_signin_do(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "signin do"); confirm != ExitCode::Ok) return confirm;
     const auto id = args.course_id.empty() ? args.id : args.course_id;
     if (id.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "signin do 需要 --id 或 --course-id"});
@@ -1805,11 +1799,8 @@ ExitCode cmd_ygdk_records(const CliArgs &args, ServiceFactory &factory, OutputFo
 }
 
 /** WriteGated CLI handler: YGDK submit is a remote mutation with sensitive time/place/photo input. */
-ExitCode cmd_ygdk_submit(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "ygdk submit 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+ExitCode cmd_ygdk_submit(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "ygdk submit"); confirm != ExitCode::Ok) return confirm;
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "ygdk", "submit", args.item_id.empty() ? args.id : args.item_id, args.confirmed);
 #endif
@@ -1836,12 +1827,9 @@ ExitCode cmd_evaluation_list(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "evaluations", service.list_evaluations());
 }
 
-/** WriteGated CLI handler: evaluation submit is a remote mutation requiring --confirm/--yes and write_operations. */
-ExitCode cmd_evaluation_submit(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
-    if (!args.confirmed) {
-        out.print_error({um::ErrorCode::InvalidArgument, "evaluation submit 是有副作用操作，必须显式传入 --confirm 或 --yes"});
-        return ExitCode::InvalidArgument;
-    }
+/** WriteGated CLI handler: evaluation submit is a remote mutation requiring --confirm/--yes/-y and write_operations. */
+ExitCode cmd_evaluation_submit(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "evaluation submit"); confirm != ExitCode::Ok) return confirm;
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "evaluation", "submit", args.id, args.confirmed);
 #endif

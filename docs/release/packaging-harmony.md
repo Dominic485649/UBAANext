@@ -44,7 +44,7 @@ DevEco 项目验证时必须确认：
 
 - HAP 包含正确 ABI 目录下的 NAPI/native `.so`。
 - HAP 不包含 CLI exe、测试二进制、fixtures、凭据、cookie/session dump、本地配置或开发机路径。
-- `secure_store=false`、`cookie_persistence=false`、`live_login=false`、`write_operations=false` 等 capability 不被 UI 壳隐藏。
+- `secure_store=false`、`cookie_persistence=false`、`live_login=false`、`write_operations=true` 等 capability 不被 UI 壳隐藏。
 - NAPI smoke 只调用 version/capability/mock-offline，不调用真实登录、真实写或通用上传。
 - redaction 结果能穿过 C ABI/NAPI，不泄露 username、password、cookie、token、ticket、session、captcha、authorization、URL query、本地路径、上传文件名、成绩、锁码、预约、打卡或座位敏感原文。
 

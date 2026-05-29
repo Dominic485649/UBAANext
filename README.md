@@ -90,12 +90,16 @@ cmake --build --preset windows-ninja-msvc-debug --target ubaa
 .\bin\x64\Debug\ubaa.exe week list --mock --json
 ```
 
-真实 HTTP、CAS 登录、live smoke 写操作、C ABI、NAPI、HarmonyOS 和 Slint 相关内容属于后续阶段或实验路径。运行涉及真实账号、远端服务或写操作的命令前，请先阅读对应文档并显式 opt-in。
+真实 HTTP、CAS 登录、live smoke 写操作、C ABI、NAPI、HarmonyOS 和 Slint 相关内容属于后续阶段或实验路径。运行涉及真实账号、远端服务或写操作的命令前，请先阅读对应文档并逐次确认。
+
+涉及真实校园系统写入或本地状态变更的命令（例如签到、选课、退选、场馆预约、取消预约、图书馆座位预约、阳光打卡、评教、登出、配置写入和缓存清理）会改变真实状态。CLI 在 Windows、Linux、Harmony 平台默认具备写能力，但每条写命令仍必须传入 `--confirm`、`--yes`、`-y`，或在未传确认参数时按提示输入 `y`；自动化脚本和 `--json` 模式应始终显式传确认参数，否则会返回 `InvalidArgument`。执行写命令前应先用列表/详情命令确认 `<...-id>` 来源与目标记录。
 
 ## 安全边界
 
 - 不要在普通回归中使用真实账号、密码或线上写操作。
-- 涉及远端写操作的命令必须显式确认，并受平台 capability 约束。
+- 涉及远端写操作的命令必须逐次确认：可使用 `--confirm`、`--yes`、`-y`，或在人类可读模式下按 `y/N` 提示输入 `y`。
+- 自动化脚本和 `--json` 模式不会交互确认，必须显式传确认参数，否则写命令应 fail-closed。
+- 涉及远端写操作前，应先运行对应列表/详情命令确认目标 ID，避免误签到、误选退课、误预约或误取消。
 - 日志、错误、diagnostics 和测试输出不得泄露 username、password、cookie、token、ticket、session、captcha、authorization、敏感 URL query 或 raw HTML。
 - secure store、cookie/session persistence、crypto 或 live login 能力不可用时，应 fail-closed，而不是静默降级成不安全实现。
 

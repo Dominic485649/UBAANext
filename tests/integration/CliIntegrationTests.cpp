@@ -209,21 +209,72 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
     REQUIRE_FALSE(json["data"]["commands"].empty());
 
     const auto &commands = json["data"]["commands"];
-    auto has_command = [&](const std::string &name) {
-        return std::any_of(commands.begin(), commands.end(), [&](const auto &command) {
+    auto find_command = [&](const std::string &name) -> const nlohmann::json * {
+        auto it = std::find_if(commands.begin(), commands.end(), [&](const auto &command) {
             return command.contains("name") && command["name"] == name;
         });
+        return it == commands.end() ? nullptr : &(*it);
+    };
+    auto has_command = [&](const std::string &name) {
+        return find_command(name) != nullptr;
+    };
+    auto find_option = [&](const std::string &command_name, const std::string &option_name) -> const nlohmann::json * {
+        const auto *command = find_command(command_name);
+        if (command == nullptr || !command->contains("options")) return nullptr;
+        const auto &options = (*command)["options"];
+        auto it = std::find_if(options.begin(), options.end(), [&](const auto &option) {
+            return option.contains("name") && option["name"] == option_name;
+        });
+        return it == options.end() ? nullptr : &(*it);
     };
     for (const auto &expected_command : expected_commands) {
         INFO("缺失 JSON help 命令: " << expected_command);
         CHECK(has_command(expected_command));
     }
 
+    auto spoc_id_option = find_option("spoc assignment show", "--id");
+    REQUIRE(spoc_id_option != nullptr);
+    CHECK((*spoc_id_option)["required"] == true);
+    CHECK((*spoc_id_option)["placeholder"] == "assignment-id");
+    CHECK((*spoc_id_option)["sourceCommand"] == "spoc assignments");
+    CHECK((*spoc_id_option)["sourceField"] == "id");
+
+    auto cgyy_time_option = find_option("cgyy reserve", "--id");
+    REQUIRE(cgyy_time_option != nullptr);
+    CHECK((*cgyy_time_option)["placeholder"] == "time-id");
+    CHECK((*cgyy_time_option)["sourceCommand"] == "cgyy day-info");
+    CHECK((*cgyy_time_option)["sourceField"] == "fields.timeId");
+
+    auto libbook_booking_option = find_option("libbook cancel", "--booking-id");
+    REQUIRE(libbook_booking_option != nullptr);
+    CHECK((*libbook_booking_option)["placeholder"] == "booking-id");
+    CHECK((*libbook_booking_option)["sourceCommand"] == "libbook reservations");
+    CHECK((*libbook_booking_option)["sourceField"] == "id");
+
     auto text_result = run_cli({"help"});
     REQUIRE(text_result.exit_code == 0);
     for (const auto &expected_command : expected_commands) {
         INFO("缺失普通 help 命令: " << expected_command);
         CHECK(text_result.stdout_output.find(expected_command) != std::string::npos);
+    }
+    const std::vector<std::string> expected_help_tokens = {
+        "<assignment-id>",
+        "<signin-id>",
+        "<course-id>",
+        "<site-id>",
+        "<order-id>",
+        "<library-id>",
+        "<area-id>",
+        "<seat-id>",
+        "<booking-id>",
+        "spoc assignments 输出记录的 id 字段",
+        "cgyy day-info 的 id，time-id 来自 fields.timeId",
+        "libbook reservations 输出记录的 id 字段",
+        "help --json 输出机器可读命令目录",
+    };
+    for (const auto &expected_token : expected_help_tokens) {
+        INFO("普通 help 缺失清晰参数提示: " << expected_token);
+        CHECK(text_result.stdout_output.find(expected_token) != std::string::npos);
     }
 }
 
@@ -785,13 +836,35 @@ TEST_CASE("CLI 占位上传接口仍需要显式确认", "[cli][integration]") {
     CHECK(json["error"]["code"] == "InvalidArgument");
 }
 
-TEST_CASE("CLI 默认禁写时打卡上传先返回写门控错误", "[cli][integration]") {
+TEST_CASE("CLI 默认写能力开启后打卡上传继续执行到下一层校验", "[cli][integration]") {
     auto result = run_cli({"ygdk", "submit", "--id", "ygdk-1", "--start-time", "08:00", "--end-time", "09:00", "--place", "操场", "--photo", "C:\\tmp\\missing-ygdk-photo.jpg", "--confirm", "--json"});
-    REQUIRE(result.exit_code != 0);
+    REQUIRE(result.exit_code == 2);
     auto json = parse_json_output(result.stdout_output);
     require_error_envelope(json);
-    CHECK(json["error"]["code"] == "UnsupportedPlatform");
-    CHECK(json["error"]["message"] == "ygdk submit 当前平台未启用真实写操作");
+    CHECK(json["error"]["code"] == "InvalidArgument");
+    CHECK(json["error"]["message"] == "无法读取上传文件");
+}
+
+TEST_CASE("CLI -y 可确认真实写操作", "[cli][integration]") {
+    auto result = run_cli({"ygdk", "submit", "--id", "ygdk-1", "--start-time", "08:00", "--end-time", "09:00", "--place", "操场", "--photo", "C:\\tmp\\missing-ygdk-photo.jpg", "-y", "--json"});
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
+    CHECK(json["error"]["message"] == "无法读取上传文件");
+}
+
+TEST_CASE("CLI JSON 模式写操作缺少确认时 fail closed", "[cli][integration]") {
+    auto result = run_cli({"ygdk", "submit", "--id", "ygdk-1", "--start-time", "08:00", "--end-time", "09:00", "--place", "操场", "--photo", "C:\\tmp\\missing-ygdk-photo.jpg", "--json"});
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
+    const auto message = json["error"]["message"].get<std::string>();
+    CHECK(message.find("--confirm") != std::string::npos);
+    CHECK(message.find("--yes") != std::string::npos);
+    CHECK(message.find("-y") != std::string::npos);
+    CHECK(message.find("交互输入 y") != std::string::npos);
 }
 
 #endif

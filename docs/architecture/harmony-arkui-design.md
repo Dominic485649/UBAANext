@@ -31,6 +31,6 @@ cmake --build "build\\openharmony-clang-debug" --config Debug
 - 真实只读 UI 需要先完成并冻结 C ABI/NAPI 合同，明确 typed service 映射、C ABI 返回的 JSON Envelope 外壳结构、错误码映射、安全脱敏（redaction）、运行时 capability 查询和局部失败的容错机制。
 - 登录状态、Cookie、缓存由 Native/Platform 侧通过隔离运行时桶统一管理，ArkUI 只展示状态和触发动作；由于 Harmony 平台尚未真正实现 secure store 与 `live_login=true`（仍由 C ABI 内的内存级 VolatileSecureStore 缓存），在平台底座就绪前，真实登录与会话持久化在冷启动后仍是临时的。
 - 真实写 UI 本阶段不进入；后续必须继续通过 typed write service、ArkUI 二次确认、`write_operations=true`、Core `WriteOperationGate` 和 live 写操作专项安全确认。
-- 当前 Harmony capability 实际值为 `real_network=true`、`redirect_control=true`、`openssl_crypto=true`、`app_data_path=true`、`upload_bytes=true`，但 `secure_store=false`、`cookie_persistence=false`、`secure_cookie_persistence=false`、`live_login=false`、`write_operations=false`。
+- 当前 Harmony capability 实际值为 `real_network=true`、`redirect_control=true`、`openssl_crypto=true`、`app_data_path=true`、`upload_bytes=true`、`write_operations=true`，但 `secure_store=false`、`cookie_persistence=false`、`secure_cookie_persistence=false`、`live_login=false`。
 - 真实网络和加密能力完成平台抽象前，Harmony 端优先使用 mock/offline 与只读兼容性验证。
 - 后续 native SDK 侧应建立受控 C ABI target `UBAANextBindingsC` / `ubaanext_c`，逐步暴露 Auth、Course、Grade、Exam、Todo、Signin、YGDK 等核心业务域符号。这可为上层 DevEco/NAPI 开发提供业务接口保障，但 .so 可加载及 HAP 可构建不代表线上各级业务真实语义已彻底完成上线验证。

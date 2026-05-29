@@ -78,7 +78,7 @@ $env:UBAANEXT_CONNECTION_MODE = "direct"              # 可选：direct（直连
 ### 3.3 L2/L3 级写入操作验证
 涉及远程状态改变的真实写操作命令（如今日打卡提交、图书馆座位真实锁定等）：
 1. **写操作安全门槛**：线上自动冒烟脚本**默认不执行任何真实写操作**，以避免弄脏测试账号的线上真实状态。
-2. **手动操作规范**：若需要验证 L2（写操作）或 L3（破坏性写操作）行为，必须由开发者手动运行对应的 CLI 命令行（例如使用 `--confirm` 或 `--yes` 参数），并配置：
+2. **手动操作规范**：若需要验证 L2（写操作）或 L3（破坏性写操作）行为，必须由开发者手动运行对应的 CLI 命令行（使用 `--confirm`、`--yes` 或 `-y` 参数）。`UBAANEXT_ALLOW_WRITE` / `UBAANEXT_CONFIRM_WRITE` 只作为 `live-smoke.ps1` 自动化写测试的额外安全门：
    ```powershell
    $env:UBAANEXT_ALLOW_WRITE = "1"
    $env:UBAANEXT_CONFIRM_WRITE = "1"

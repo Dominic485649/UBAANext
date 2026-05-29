@@ -555,7 +555,7 @@ Result<Model::MutationResult> FeatureService::mutate(const std::string &domain,
                                                      [[maybe_unused]] const std::string &id,
                                                      bool confirmed) {
     if (!confirmed) {
-        return make_error(ErrorCode::InvalidArgument, domain + " " + operation + " 是有副作用操作，必须显式传入 --confirm 或 --yes");
+        return make_error(ErrorCode::InvalidArgument, domain + " " + operation + " 是有副作用操作，必须通过 --confirm、--yes 或 -y 确认");
     }
 
 #if UBAANEXT_ENABLE_MOCKS

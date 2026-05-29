@@ -14,7 +14,7 @@ struct PlatformCapabilities {
     bool upload_bytes = true;
     /** Live login gate: false means credentials/session flows must fail closed or use mock-only behavior. */
     bool live_login = false;
-    /** WriteGated capability: real remote mutations require this plus explicit --confirm/--yes. */
+    /** WriteGated capability: real remote mutations require this plus per-command confirmation. */
     bool write_operations = false;
 };
 

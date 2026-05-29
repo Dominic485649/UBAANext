@@ -41,13 +41,13 @@
 
 - CLI JSON 输出保持 `ok/data/error` envelope，`help --json` 的命令目录不得出现重复命令名。
 - 参数错误、认证失效、网络错误、解析错误和业务错误不互相混淆。
-- 写操作缺少 `--confirm` / `--yes` 或平台 `write_operations` capability 时必须失败且不触发远端请求。
+- 写操作缺少 `--confirm` / `--yes` / `-y` 且无法交互确认时必须失败且不触发远端请求；未知或未验证平台缺少 `write_operations` capability 时也必须失败。
 - 聚合类只读命令遇到单个来源失败时，应保留成功来源并输出 source-level error，且错误消息必须脱敏，而不是把失败吞成空列表或整体成功。
 - Judge 批量详情遇到单个详情失败时，应保留成功详情并输出 `status=error` 单项记录；SPOC 当前没有批量详情 API，集成测试不得假设其存在。
 - 测试输出不得泄露 username、password、cookie、token、ticket、session、captcha、authorization、上传文件名、敏感 URL query、raw HTML、本地路径、锁码、预约、打卡或座位敏感原文。
 - 新增 live 覆盖必须先有离线 contract 或 parser/service 测试保护；若只存在单详情 API，不得用 CLI smoke 伪造批量语义。
 - `file upload` 作为占位接口只验证稳定 `NotImplemented` 合同，不得读取 `--path` 指向的本地文件。
-- `ygdk submit --photo` 等 typed 上传写操作必须单独验证本地文件读取失败和 `write_operations=false` fail-closed，且不进入默认 live smoke。
+- `ygdk submit --photo` 等 typed 上传写操作必须单独验证本地文件读取失败、缺少确认时 fail-closed，且不进入默认 live smoke。
 - OpenHarmony native 构建通过只说明 core/platform/binding 可被 DevEco 复用，不说明 HAP、NAPI、真实登录或真实业务 live 已完成。
 - `UBAANextBindingsC` 当前只允许 version/capability smoke；后续新增只读 C ABI/NAPI API 前必须先补错误码、redaction 和 partial failure 回归。
 - package consumer smoke 必须验证安装后的 headers、targets、DLL/import library 和依赖 target 同时可解析；CURL/OpenSSL/nlohmann-json 的消费侧来源必须与 SDK ABI/triplet 匹配，否则应报告为依赖环境问题，不把 package 本身标记为失败。

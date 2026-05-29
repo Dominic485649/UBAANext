@@ -16,8 +16,8 @@
 - 真实协议相关测试优先覆盖只读路径：登录/session、term、week、course、exam、classroom、grade、app.buaa、todo、SPOC、Judge、签到状态、阳光打卡概览、BYKC/CGYY/LibBook 查询。
 - Todo 等聚合类只读接口必须保留 source-level error / partial failure 记录，不得把下游失败吞成空列表或成功结果；来源错误消息必须使用 core 共享脱敏工具。
 - Judge 批量详情必须保留成功详情，并用 `status=error` 单项记录表达失败；SPOC 当前没有批量详情 API，保持 `Unverified`，不得硬造假批量协议。
-- 写操作（签到、评教提交、选课、预约、取消、打卡提交等）必须继续要求 `--confirm` / `--yes` 或等效显式确认，并同时要求平台 `write_operations` capability，不进入默认 live smoke。
-- typed 上传写操作（例如 `ygdk submit --photo`）需要覆盖本地文件读取失败、文件名/内容不泄露、默认 `write_operations=false` 拒绝执行；`file upload` 占位接口必须证明不会读取文件或触发远端请求。
+- 写操作（签到、评教提交、选课、预约、取消、打卡提交等）必须继续要求 `--confirm` / `--yes` / `-y` 或交互输入 `y` 确认，并同时要求平台 `write_operations` capability，不进入默认 live smoke。
+- typed 上传写操作（例如 `ygdk submit --photo`）需要覆盖本地文件读取失败、文件名/内容不泄露、缺少确认时 JSON 模式 fail-closed；`file upload` 占位接口必须证明不会读取文件或触发远端请求。
 - `FeatureService` 真实模式不得作为字符串路由写入口；真实写 contract 通过 typed service 和 `WriteOperationGate` 覆盖。
 - 测试输出和错误信息不得泄露 username、password、cookie、token、ticket、session、captcha、authorization、上传文件名、敏感 URL query、raw HTML、本地路径、锁码、预约、打卡或座位敏感原文。
 

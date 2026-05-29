@@ -183,7 +183,7 @@ AppContext create_current_platform_context(const PlatformContextOptions &options
     ctx.capabilities.app_data_path = true;
     ctx.capabilities.upload_bytes = true;
     ctx.capabilities.live_login = false;
-    // WriteGated fail-closed default: real remote mutations require an explicit platform opt-in.
+    // Unknown platforms fail closed for WriteGated remote mutations until explicitly validated.
     ctx.capabilities.write_operations = false;
 #endif
     return ctx;
