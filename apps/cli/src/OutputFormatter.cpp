@@ -10,9 +10,294 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
+#include <map>
+#include <string_view>
+
 namespace UBAANextCli {
 
 using json = nlohmann::json;
+
+namespace {
+
+struct TableColumn {
+    std::string name;
+    bool right_align = false;
+    std::size_t max_width = 0;
+};
+
+using TableRow = std::vector<std::string>;
+
+std::size_t utf8_sequence_length(std::string_view text, std::size_t offset) {
+    const auto c = static_cast<unsigned char>(text[offset]);
+    const auto remaining = text.size() - offset;
+    if (c < 0x80) return 1;
+    if ((c & 0xE0) == 0xC0 && remaining >= 2) return 2;
+    if ((c & 0xF0) == 0xE0 && remaining >= 3) return 3;
+    if ((c & 0xF8) == 0xF0 && remaining >= 4) return 4;
+    return 1;
+}
+
+std::uint32_t decode_codepoint(std::string_view text, std::size_t offset, std::size_t length) {
+    const auto c0 = static_cast<unsigned char>(text[offset]);
+    if (length == 1) return c0;
+    if (length == 2) return ((c0 & 0x1F) << 6) | (static_cast<unsigned char>(text[offset + 1]) & 0x3F);
+    if (length == 3) {
+        return ((c0 & 0x0F) << 12) |
+               ((static_cast<unsigned char>(text[offset + 1]) & 0x3F) << 6) |
+               (static_cast<unsigned char>(text[offset + 2]) & 0x3F);
+    }
+    return ((c0 & 0x07) << 18) |
+           ((static_cast<unsigned char>(text[offset + 1]) & 0x3F) << 12) |
+           ((static_cast<unsigned char>(text[offset + 2]) & 0x3F) << 6) |
+           (static_cast<unsigned char>(text[offset + 3]) & 0x3F);
+}
+
+bool is_combining_codepoint(std::uint32_t cp) {
+    return (cp >= 0x0300 && cp <= 0x036F) ||
+           (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+           (cp >= 0x1DC0 && cp <= 0x1DFF) ||
+           (cp >= 0x20D0 && cp <= 0x20FF) ||
+           (cp >= 0xFE20 && cp <= 0xFE2F);
+}
+
+bool is_wide_codepoint(std::uint32_t cp) {
+    return (cp >= 0x1100 && cp <= 0x115F) ||
+           (cp >= 0x2329 && cp <= 0x232A) ||
+           (cp >= 0x2E80 && cp <= 0xA4CF) ||
+           (cp >= 0xAC00 && cp <= 0xD7A3) ||
+           (cp >= 0xF900 && cp <= 0xFAFF) ||
+           (cp >= 0xFE10 && cp <= 0xFE19) ||
+           (cp >= 0xFE30 && cp <= 0xFE6F) ||
+           (cp >= 0xFF00 && cp <= 0xFF60) ||
+           (cp >= 0xFFE0 && cp <= 0xFFE6) ||
+           (cp >= 0x1F300 && cp <= 0x1FAFF);
+}
+
+std::size_t codepoint_display_width(std::uint32_t cp) {
+    if (cp == '\t') return 4;
+    if (cp < 0x20 || (cp >= 0x7F && cp < 0xA0)) return 0;
+    if (is_combining_codepoint(cp)) return 0;
+    return is_wide_codepoint(cp) ? 2 : 1;
+}
+
+std::size_t display_width(std::string_view text) {
+    std::size_t width = 0;
+    for (std::size_t i = 0; i < text.size();) {
+        const auto length = utf8_sequence_length(text, i);
+        width += codepoint_display_width(decode_codepoint(text, i, length));
+        i += length;
+    }
+    return width;
+}
+
+std::string truncate_display(std::string text, std::size_t max_width) {
+    if (max_width == 0 || display_width(text) <= max_width) return text;
+    const std::string suffix = max_width >= 3 ? "..." : std::string(max_width, '.');
+    const auto suffix_width = display_width(suffix);
+    const auto body_width = max_width > suffix_width ? max_width - suffix_width : 0;
+    std::string out;
+    std::size_t width = 0;
+    for (std::size_t i = 0; i < text.size();) {
+        const auto length = utf8_sequence_length(text, i);
+        const auto cp_width = codepoint_display_width(decode_codepoint(text, i, length));
+        if (width + cp_width > body_width) break;
+        out.append(text.substr(i, length));
+        width += cp_width;
+        i += length;
+    }
+    out += suffix;
+    return out;
+}
+
+std::string clean_cell(std::string text, std::size_t max_width = 0) {
+    text = redact_sensitive_text(text);
+    for (auto &ch : text) {
+        if (ch == '\r' || ch == '\n' || ch == '\t') ch = ' ';
+    }
+    if (text.empty()) text = "-";
+    return truncate_display(std::move(text), max_width);
+}
+
+std::string pad_cell(const std::string &text, std::size_t width, bool right_align) {
+    const auto cell_width = display_width(text);
+    if (cell_width >= width) return text;
+    const std::string padding(width - cell_width, ' ');
+    return right_align ? padding + text : text + padding;
+}
+
+std::string render_row(const std::vector<std::string> &cells,
+                       const std::vector<std::size_t> &widths,
+                       const std::vector<TableColumn> &columns) {
+    std::string line;
+    for (std::size_t i = 0; i < columns.size(); ++i) {
+        if (i > 0) line += "  ";
+        const auto cell = i < cells.size() ? cells[i] : std::string{};
+        line += pad_cell(cell, widths[i], columns[i].right_align);
+    }
+    return line;
+}
+
+void render_table(const std::string &title,
+                  const std::vector<TableColumn> &columns,
+                  const std::vector<TableRow> &rows) {
+    if (!title.empty()) {
+        Console::println("{}", title);
+        Console::println();
+    }
+
+    std::vector<TableRow> normalized_rows;
+    normalized_rows.reserve(rows.size());
+    std::vector<std::size_t> widths;
+    widths.reserve(columns.size());
+    for (const auto &column : columns) widths.push_back(display_width(column.name));
+
+    for (const auto &row : rows) {
+        TableRow normalized;
+        normalized.reserve(columns.size());
+        for (std::size_t i = 0; i < columns.size(); ++i) {
+            const auto value = i < row.size() ? row[i] : std::string{};
+            normalized.push_back(clean_cell(value, columns[i].max_width));
+            widths[i] = std::max(widths[i], display_width(normalized.back()));
+        }
+        normalized_rows.push_back(std::move(normalized));
+    }
+
+    TableRow headers;
+    headers.reserve(columns.size());
+    for (const auto &column : columns) headers.push_back(column.name);
+    Console::println("{}", render_row(headers, widths, columns));
+
+    TableRow separators;
+    separators.reserve(columns.size());
+    for (const auto width : widths) separators.push_back(std::string(width, '-'));
+    Console::println("{}", render_row(separators, widths, columns));
+
+    for (const auto &row : normalized_rows) {
+        Console::println("{}", render_row(row, widths, columns));
+    }
+    if (normalized_rows.empty()) {
+        Console::println("(无记录)");
+    }
+}
+
+std::string value_or_dash(const std::string &value) {
+    return value.empty() ? "-" : value;
+}
+
+std::string bool_text(bool value) {
+    return value ? "true" : "false";
+}
+
+std::string range_text(int start, int end) {
+    if (start <= 0 && end <= 0) return "-";
+    if (end <= 0 || start == end) return std::to_string(start);
+    return std::to_string(start) + "-" + std::to_string(end);
+}
+
+std::string time_range_text(const std::string &start, const std::string &end) {
+    if (start.empty() && end.empty()) return "-";
+    if (start.empty()) return end;
+    if (end.empty()) return start;
+    return start + "-" + end;
+}
+
+std::string weekday_text(int day) {
+    switch (day) {
+    case 1: return "周一";
+    case 2: return "周二";
+    case 3: return "周三";
+    case 4: return "周四";
+    case 5: return "周五";
+    case 6: return "周六";
+    case 7: return "周日";
+    default: return day > 0 ? std::to_string(day) : "-";
+    }
+}
+
+std::string join_ints(const std::vector<int> &values) {
+    if (values.empty()) return "-";
+    std::string out;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) out += ",";
+        out += std::to_string(values[i]);
+    }
+    return out;
+}
+
+std::string exam_status_text(UBAANext::Model::ExamStatus status) {
+    switch (status) {
+    case UBAANext::Model::ExamStatus::Pending: return "pending";
+    case UBAANext::Model::ExamStatus::Arranged: return "arranged";
+    case UBAANext::Model::ExamStatus::Finished: return "finished";
+    }
+    return "unknown";
+}
+
+std::string title_for_key(const std::string &key) {
+    static const std::map<std::string, std::string> titles = {
+        {"account", "Account"},
+        {"areas", "Areas"},
+        {"area", "Area"},
+        {"assignment", "Assignment"},
+        {"assignments", "Assignments"},
+        {"booking", "Booking"},
+        {"bookings", "Bookings"},
+        {"course", "Course"},
+        {"courses", "Courses"},
+        {"details", "Details"},
+        {"evaluation", "Evaluation"},
+        {"evaluations", "Evaluations"},
+        {"libraries", "Libraries"},
+        {"library", "Library"},
+        {"orders", "Orders"},
+        {"order", "Order"},
+        {"profile", "Profile"},
+        {"records", "Records"},
+        {"reservation", "Reservation"},
+        {"reservations", "Reservations"},
+        {"seat", "Seat"},
+        {"seats", "Seats"},
+        {"signin", "Sign-in"},
+        {"signins", "Sign-ins"},
+        {"sites", "Sites"},
+        {"site", "Site"},
+        {"stats", "Stats"},
+        {"todo", "Todo"},
+        {"todos", "Todos"},
+        {"user", "User"},
+    };
+    const auto it = titles.find(key);
+    if (it != titles.end()) return it->second;
+
+    std::string title = key.empty() ? "Records" : key;
+    bool capitalize_next = true;
+    for (auto &ch : title) {
+        if (ch == '-' || ch == '_') {
+            ch = ' ';
+            capitalize_next = true;
+            continue;
+        }
+        if (capitalize_next) {
+            ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+            capitalize_next = false;
+        }
+    }
+    return title;
+}
+
+json record_to_json(const UBAANext::Model::FeatureRecord &record) {
+    return {
+        {"id", record.id},
+        {"title", record.title},
+        {"status", record.status},
+        {"fields", record.fields},
+    };
+}
+
+} // namespace
 
 OutputFormatter::OutputFormatter(bool json_mode) : m_json(json_mode) {}
 
@@ -44,16 +329,26 @@ void OutputFormatter::print_courses(const std::vector<UBAANext::Model::Course> &
         return;
     }
 
-    if (week > 0) {
-        Console::println("第 {} 周课程:", week);
-    } else {
-        Console::println("今日课程:");
-    }
-    for (size_t i = 0; i < courses.size(); ++i) {
+    std::vector<TableRow> rows;
+    rows.reserve(courses.size());
+    for (std::size_t i = 0; i < courses.size(); ++i) {
         const auto &c = courses[i];
-        Console::println("{}. {} | {}-{}节 | {}", i + 1, c.name,
-                     c.section_start, c.section_end, c.classroom);
+        rows.push_back({
+            std::to_string(i + 1),
+            weekday_text(c.day_of_week),
+            range_text(c.section_start, c.section_end),
+            time_range_text(c.begin_time, c.end_time),
+            c.name,
+            value_or_dash(c.teacher),
+            value_or_dash(c.classroom),
+            value_or_dash(c.course_code),
+            value_or_dash(c.credit),
+            value_or_dash(c.id),
+        });
     }
+    render_table(week > 0 ? "Courses - Week " + std::to_string(week) : "Courses - Today",
+                 {{"Index", true}, {"Day"}, {"Sections"}, {"Time"}, {"Name"}, {"Teacher"}, {"Classroom"}, {"Code"}, {"Credit"}, {"Id"}},
+                 rows);
 }
 
 void OutputFormatter::print_exams(const std::vector<UBAANext::Model::Exam> &exams) {
@@ -78,12 +373,25 @@ void OutputFormatter::print_exams(const std::vector<UBAANext::Model::Exam> &exam
         return;
     }
 
-    Console::println("考试:");
-    for (size_t i = 0; i < exams.size(); ++i) {
+    std::vector<TableRow> rows;
+    rows.reserve(exams.size());
+    for (std::size_t i = 0; i < exams.size(); ++i) {
         const auto &e = exams[i];
-        Console::println("{}. {} | {} | {} | 座位: {}", i + 1,
-                     e.course_name, e.location, e.time_text, e.seat_no);
+        rows.push_back({
+            std::to_string(i + 1),
+            e.course_name,
+            value_or_dash(e.exam_type),
+            value_or_dash(e.time_text.empty() ? time_range_text(e.start_time, e.end_time) : e.time_text),
+            value_or_dash(e.location),
+            value_or_dash(e.seat_no),
+            exam_status_text(e.status),
+            value_or_dash(e.course_no),
+            value_or_dash(e.id),
+        });
     }
+    render_table("Exams",
+                 {{"Index", true}, {"Course"}, {"Type"}, {"Time"}, {"Location"}, {"Seat"}, {"Status"}, {"CourseNo"}, {"Id"}},
+                 rows);
 }
 
 void OutputFormatter::print_grades(const std::vector<UBAANext::Model::Grade> &grades) {
@@ -107,11 +415,26 @@ void OutputFormatter::print_grades(const std::vector<UBAANext::Model::Grade> &gr
         return;
     }
 
-    Console::println("成绩:");
-    for (size_t i = 0; i < grades.size(); ++i) {
+    std::vector<TableRow> rows;
+    rows.reserve(grades.size());
+    for (std::size_t i = 0; i < grades.size(); ++i) {
         const auto &g = grades[i];
-        Console::println("{}. {} | {} | {} 学分 | {}", i + 1, g.course_name, g.score, g.credit, g.term_code);
+        rows.push_back({
+            std::to_string(i + 1),
+            g.course_name,
+            value_or_dash(g.score),
+            value_or_dash(g.credit),
+            value_or_dash(g.grade_point),
+            value_or_dash(g.course_type),
+            value_or_dash(g.term_code),
+            value_or_dash(g.course_code),
+            value_or_dash(g.raw_status),
+            value_or_dash(g.id),
+        });
     }
+    render_table("Grades",
+                 {{"Index", true}, {"Course"}, {"Score"}, {"Credit"}, {"GPA"}, {"Type"}, {"Term"}, {"Code"}, {"Status"}, {"Id"}},
+                 rows);
 }
 
 void OutputFormatter::print_classrooms(const UBAANext::Model::ClassroomQueryResult &qr) {
@@ -133,18 +456,23 @@ void OutputFormatter::print_classrooms(const UBAANext::Model::ClassroomQueryResu
         return;
     }
 
-    Console::println("空闲教室:");
+    std::vector<TableRow> rows;
+    std::size_t index = 1;
     for (const auto &[building, rooms] : qr.buildings) {
-        Console::println("  {}:", building);
         for (const auto &room : rooms) {
-            Console::print("    {} - 空闲节次: ", room.name);
-            for (size_t i = 0; i < room.free_sections.size(); ++i) {
-                if (i > 0) Console::print(", ");
-                Console::print("{}", room.free_sections[i]);
-            }
-            Console::println();
+            rows.push_back({
+                std::to_string(index++),
+                building,
+                room.name,
+                value_or_dash(room.floor_id),
+                join_ints(room.free_sections),
+                value_or_dash(room.id),
+            });
         }
     }
+    render_table("Classrooms",
+                 {{"Index", true}, {"Building"}, {"Room"}, {"FloorId"}, {"FreeSections"}, {"Id"}},
+                 rows);
 }
 
 void OutputFormatter::print_terms(const std::vector<UBAANext::Model::Term> &terms) {
@@ -163,12 +491,21 @@ void OutputFormatter::print_terms(const std::vector<UBAANext::Model::Term> &term
         return;
     }
 
-    Console::println("学期列表:");
-    for (size_t i = 0; i < terms.size(); ++i) {
+    std::vector<TableRow> rows;
+    rows.reserve(terms.size());
+    for (std::size_t i = 0; i < terms.size(); ++i) {
         const auto &t = terms[i];
-        Console::println("{}. {} {} [{}]", i + 1, t.name, t.code,
-                     t.selected ? "当前" : "");
+        rows.push_back({
+            std::to_string(i + 1),
+            std::to_string(t.index),
+            t.name,
+            t.code,
+            t.selected ? "current" : "-",
+        });
     }
+    render_table("Terms",
+                 {{"Index", true}, {"TermIndex", true}, {"Name"}, {"Code"}, {"Selected"}},
+                 rows);
 }
 
 void OutputFormatter::print_weeks(const std::vector<UBAANext::Model::Week> &weeks) {
@@ -188,13 +525,22 @@ void OutputFormatter::print_weeks(const std::vector<UBAANext::Model::Week> &week
         return;
     }
 
-    Console::println("教学周列表:");
-    for (size_t i = 0; i < weeks.size(); ++i) {
+    std::vector<TableRow> rows;
+    rows.reserve(weeks.size());
+    for (std::size_t i = 0; i < weeks.size(); ++i) {
         const auto &w = weeks[i];
-        Console::println("{}. {} ({} - {}){}", i + 1, w.name,
-                     w.start_date, w.end_date,
-                     w.is_current ? " [当前周]" : "");
+        rows.push_back({
+            std::to_string(i + 1),
+            std::to_string(w.serial_number),
+            w.name,
+            value_or_dash(w.start_date),
+            value_or_dash(w.end_date),
+            w.is_current ? "current" : "-",
+        });
     }
+    render_table("Weeks",
+                 {{"Index", true}, {"Serial", true}, {"Name"}, {"StartDate"}, {"EndDate"}, {"Current"}},
+                 rows);
 }
 
 void OutputFormatter::print_account(const UBAANext::Model::Account &account) {
@@ -208,8 +554,9 @@ void OutputFormatter::print_account(const UBAANext::Model::Account &account) {
         return;
     }
 
-    Console::println("用户: {}", account.display_name);
-    Console::println("学号: {}", account.student_id);
+    render_table("Account",
+                 {{"Field"}, {"Value"}},
+                 {{"DisplayName", account.display_name}, {"StudentId", account.student_id}});
 }
 
 void OutputFormatter::print_login_result(const std::string &message, const UBAANext::Model::Account &account) {
@@ -226,23 +573,10 @@ void OutputFormatter::print_login_result(const std::string &message, const UBAAN
         return;
     }
 
-    Console::println("{}", message);
-    Console::println("用户: {}", account.display_name);
-    Console::println("学号: {}", account.student_id);
+    render_table("Login",
+                 {{"Field"}, {"Value"}},
+                 {{"Message", message}, {"DisplayName", account.display_name}, {"StudentId", account.student_id}});
 }
-
-namespace {
-
-json record_to_json(const UBAANext::Model::FeatureRecord &record) {
-    return {
-        {"id", record.id},
-        {"title", record.title},
-        {"status", record.status},
-        {"fields", record.fields},
-    };
-}
-
-} // namespace
 
 void OutputFormatter::print_records(const std::string &key, const std::vector<UBAANext::Model::FeatureRecord> &records) {
     if (m_json) {
@@ -255,11 +589,20 @@ void OutputFormatter::print_records(const std::string &key, const std::vector<UB
         return;
     }
 
-    Console::println("{}:", key);
-    for (size_t i = 0; i < records.size(); ++i) {
+    std::vector<TableRow> rows;
+    rows.reserve(records.size());
+    for (std::size_t i = 0; i < records.size(); ++i) {
         const auto &record = records[i];
-        Console::println("{}. {} [{}] {}", i + 1, record.title, record.status, record.id);
+        rows.push_back({
+            std::to_string(i + 1),
+            record.title,
+            value_or_dash(record.status),
+            value_or_dash(record.id),
+        });
     }
+    render_table(title_for_key(key),
+                 {{"Index", true}, {"Title"}, {"Status"}, {"Id"}},
+                 rows);
 }
 
 void OutputFormatter::print_record(const std::string &key, const UBAANext::Model::FeatureRecord &record) {
@@ -269,11 +612,15 @@ void OutputFormatter::print_record(const std::string &key, const UBAANext::Model
         return;
     }
 
-    Console::println("{}: {} [{}]", key, record.title, record.status);
-    Console::println("ID: {}", record.id);
+    std::vector<TableRow> rows = {
+        {"Title", record.title},
+        {"Status", value_or_dash(record.status)},
+        {"Id", value_or_dash(record.id)},
+    };
     for (const auto &[name, value] : record.fields) {
-        Console::println("{}: {}", name, value);
+        rows.push_back({name, value});
     }
+    render_table(title_for_key(key), {{"Field"}, {"Value", false, 120}}, rows);
 }
 
 void OutputFormatter::print_mutation(const UBAANext::Model::MutationResult &result) {
@@ -283,8 +630,13 @@ void OutputFormatter::print_mutation(const UBAANext::Model::MutationResult &resu
         return;
     }
 
-    Console::println("{}", result.message);
-    Console::println("对象: {} [{}]", result.summary.title, result.summary.id);
+    render_table("Mutation",
+                 {{"Field"}, {"Value", false, 120}},
+                 {{"Accepted", bool_text(result.accepted)}, {"Message", result.message}});
+    Console::println();
+    render_table("Result",
+                 {{"Title"}, {"Status"}, {"Id"}},
+                 {{result.summary.title, value_or_dash(result.summary.status), value_or_dash(result.summary.id)}});
 }
 
 void OutputFormatter::print_version(const std::string &version) {
@@ -317,6 +669,15 @@ void OutputFormatter::print_message(const std::string &msg) {
     }
 
     Console::println("{}", msg);
+}
+
+void OutputFormatter::print_fields(const std::string &title, const std::vector<std::pair<std::string, std::string>> &fields) {
+    std::vector<TableRow> rows;
+    rows.reserve(fields.size());
+    for (const auto &[name, value] : fields) {
+        rows.push_back({name, value});
+    }
+    render_table(title, {{"Field"}, {"Value", false, 120}}, rows);
 }
 
 } // namespace UBAANextCli

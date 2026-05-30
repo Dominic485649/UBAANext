@@ -90,6 +90,8 @@ cmake --build --preset windows-ninja-msvc-debug --target ubaa
 .\bin\x64\Debug\ubaa.exe week list --mock --json
 ```
 
+不加 `--json` 时，CLI 默认输出面向终端阅读的 PowerShell 风格表格：包含标题、列名、分隔线和对齐后的数据行。列表类命令会显式显示 `Id` 列，例如 `spoc assignments`、`signin today`、`bykc courses`、`cgyy sites`、`libbook seats`、`evaluation list`；后续命令里的 `<...-id>` 参数应从对应表格的 `Id` 列取得。脚本、GUI 或需要稳定机器解析的场景应继续使用 `--json`，JSON 输出合同不随文本排版变化。
+
 真实 HTTP、CAS 登录、live smoke 写操作、C ABI、NAPI、HarmonyOS 和 Slint 相关内容属于后续阶段或实验路径。运行涉及真实账号、远端服务或写操作的命令前，请先阅读对应文档并逐次确认。
 
 涉及真实校园系统写入或本地状态变更的命令（例如签到、选课、退选、场馆预约、取消预约、图书馆座位预约、阳光打卡、评教、登出、配置写入和缓存清理）会改变真实状态。CLI 在 Windows、Linux、Harmony 平台默认具备写能力，但每条写命令仍必须传入 `--confirm`、`--yes`、`-y`，或在未传确认参数时按提示输入 `y`；自动化脚本和 `--json` 模式应始终显式传确认参数，否则会返回 `InvalidArgument`。执行写命令前应先用列表/详情命令确认 `<...-id>` 来源与目标记录。

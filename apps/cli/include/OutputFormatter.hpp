@@ -18,6 +18,7 @@
 #include <UBAANext/Auth/AuthService.hpp>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace UBAANextCli {
@@ -48,6 +49,7 @@ public:
     void print_version(const std::string &version);
     void print_error(const UBAANext::Error &error);
     void print_message(const std::string &msg);
+    void print_fields(const std::string &title, const std::vector<std::pair<std::string, std::string>> &fields);
 
     [[nodiscard]] bool is_json() const { return m_json; }
 

@@ -421,6 +421,33 @@ TEST_CASE("CLI week list mock 命令", "[cli][integration]") {
     REQUIRE(week.contains("endDate"));
 }
 
+TEST_CASE("CLI 人类可读输出使用表格列名", "[cli][integration]") {
+    auto assignments = run_cli({"spoc", "assignments", "--mock"});
+    REQUIRE(assignments.exit_code == 0);
+    CHECK(assignments.stdout_output.find("Assignments") != std::string::npos);
+    CHECK(assignments.stdout_output.find("Index") != std::string::npos);
+    CHECK(assignments.stdout_output.find("Title") != std::string::npos);
+    CHECK(assignments.stdout_output.find("Status") != std::string::npos);
+    CHECK(assignments.stdout_output.find("Id") != std::string::npos);
+
+    auto courses = run_cli({"course", "today", "--mock"});
+    REQUIRE(courses.exit_code == 0);
+    CHECK(courses.stdout_output.find("Courses - Today") != std::string::npos);
+    CHECK(courses.stdout_output.find("Name") != std::string::npos);
+    CHECK(courses.stdout_output.find("Teacher") != std::string::npos);
+    CHECK(courses.stdout_output.find("Classroom") != std::string::npos);
+    CHECK(courses.stdout_output.find("Id") != std::string::npos);
+
+    auto detail = run_cli({"spoc", "assignment", "show", "--mock", "--id", "spoc-1"});
+    REQUIRE(detail.exit_code == 0);
+    CHECK(detail.stdout_output.find("Assignment") != std::string::npos);
+    CHECK(detail.stdout_output.find("Field") != std::string::npos);
+    CHECK(detail.stdout_output.find("Value") != std::string::npos);
+    CHECK(detail.stdout_output.find("Title") != std::string::npos);
+    CHECK(detail.stdout_output.find("Status") != std::string::npos);
+    CHECK(detail.stdout_output.find("Id") != std::string::npos);
+}
+
 TEST_CASE("CLI v0.4 golden help contract", "[cli][integration][golden]") {
     auto result = run_cli({"help", "--json"});
     REQUIRE(result.exit_code == 0);

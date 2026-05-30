@@ -947,14 +947,15 @@ ExitCode cmd_config_show(OutputFormatter &out, const CliConfig &config) {
         nlohmann::json out_json = {{"ok", true}, {"data", data}, {"error", nullptr}};
         UBAANextCli::Console::println("{}", out_json.dump(2));
     } else {
-        UBAANextCli::Console::println("当前配置:");
-        UBAANextCli::Console::println("  模式:     {}", config.mode);
-        UBAANextCli::Console::println("  代理:     {}", proxy.empty() ? "(无)" : proxy);
-        UBAANextCli::Console::println("  缓存:     {}", config.cache_enabled ? "启用" : "禁用");
-        UBAANextCli::Console::println("  会话文件: {}", get_session_file_path().string());
-        UBAANextCli::Console::println("  Cookie:   {}", get_cookie_file_path().string());
-        UBAANextCli::Console::println("  配置文件: {}", get_config_file_path().string());
-        UBAANextCli::Console::println("  版本:     {}", UBAANEXT_VERSION_STRING);
+        out.print_fields("Configuration", {
+            {"Mode", config.mode},
+            {"Proxy", proxy.empty() ? "-" : proxy},
+            {"CacheEnabled", config.cache_enabled ? "true" : "false"},
+            {"SessionPath", get_session_file_path().string()},
+            {"CookiePath", get_cookie_file_path().string()},
+            {"ConfigPath", get_config_file_path().string()},
+            {"Version", UBAANEXT_VERSION_STRING},
+        });
     }
     return ExitCode::Ok;
 }
@@ -980,8 +981,11 @@ ExitCode cmd_mode(const CliArgs &args, OutputFormatter &out, CliConfig &config) 
             };
             UBAANextCli::Console::println("{}", out_json.dump(2));
         } else {
-            UBAANextCli::Console::println("当前连接模式: {}", config.mode);
-            UBAANextCli::Console::println("可用命令: ubaa mode direct | ubaa mode vpn");
+            out.print_fields("Connection Mode", {
+                {"Mode", config.mode},
+                {"ConfigPath", get_config_file_path().string()},
+                {"AvailableCommands", "ubaa mode direct | ubaa mode vpn"},
+            });
         }
         return ExitCode::Ok;
     }
