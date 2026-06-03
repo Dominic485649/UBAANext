@@ -21,6 +21,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         PRIVATE
             UBAANextPlatformCurl
             UBAANextPlatformOpenSSL
+            UBAANextPlatformTcp
     )
     if(UBAANEXT_ENABLE_LINUX_LIBSECRET)
         find_package(PkgConfig REQUIRED)
@@ -42,5 +43,6 @@ else()
         INTERFACE
             UBAANextPlatformCurl
             UBAANextPlatformOpenSSL
+            UBAANextPlatformTcp
     )
 endif()

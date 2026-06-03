@@ -68,6 +68,7 @@ install(DIRECTORY core/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY ${CMAKE_BINARY_DIR}/generated/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY platform/common/curl/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY platform/common/openssl/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY platform/common/tcp/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY platform/harmony/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY platform/linux/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY platform/windows/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
@@ -79,6 +80,7 @@ set(UBAANEXT_INSTALL_TARGETS
     UBAANextCore
     UBAANextPlatformCurl
     UBAANextPlatformOpenSSL
+    UBAANextPlatformTcp
     UBAANextPlatformMock
     UBAANextPlatformWindows
     UBAANextPlatformLinux

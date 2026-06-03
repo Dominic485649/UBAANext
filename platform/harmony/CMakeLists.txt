@@ -16,6 +16,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "OHOS")
         PRIVATE
             UBAANextPlatformCurl
             UBAANextPlatformOpenSSL
+            UBAANextPlatformTcp
     )
 
     set_target_properties(UBAANextPlatformHarmony PROPERTIES
@@ -29,5 +30,6 @@ else()
         INTERFACE
             UBAANextPlatformCurl
             UBAANextPlatformOpenSSL
+            UBAANextPlatformTcp
     )
 endif()

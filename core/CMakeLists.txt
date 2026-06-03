@@ -17,10 +17,13 @@ add_library(UBAANextCore STATIC
     src/Service/TodoService.cpp
     src/Service/VenueReservationService.cpp
     src/Service/YgdkService.cpp
+    src/Service/TdService.cpp
+    src/Service/TdSchedulerService.cpp
     src/Service/BykcService.cpp
     src/Service/FeatureService.cpp
     src/Service/WriteOperationGate.cpp
     src/Service/ResponseUtils.cpp
+    src/Model/Td.cpp
     src/Protocol/ByxtSession.cpp
     src/Protocol/AppBuaaSession.cpp
     src/Protocol/AuthorizedDownstreamRequestExecutor.cpp
@@ -29,6 +32,7 @@ add_library(UBAANextCore STATIC
     src/Protocol/RedirectNavigator.cpp
     src/Protocol/ScoreSession.cpp
     src/Protocol/SessionGuards.cpp
+    src/Protocol/TdClient.cpp
     src/Net/CookieJar.cpp
     src/Net/VpnCipher.cpp
     src/Base/TimeUtils.cpp
@@ -36,6 +40,7 @@ add_library(UBAANextCore STATIC
     src/Crypto/CryptoProvider.cpp
     src/Storage/SecureStoreAdapter.cpp
     src/Storage/MemoryCacheStore.cpp
+    src/Storage/TdStore.cpp
     src/Parser/JsonParser.cpp
     src/Parser/JudgeParser.cpp
     src/Parser/SpocParser.cpp

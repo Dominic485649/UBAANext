@@ -13,8 +13,18 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <iterator>
 #include <map>
+#include <optional>
 #include <string_view>
+
+#if defined(_WIN32)
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace UBAANextCli {
 
@@ -29,6 +39,77 @@ struct TableColumn {
 };
 
 using TableRow = std::vector<std::string>;
+
+enum class TextStyle {
+    Plain,
+    Title,
+    Header,
+    Success,
+    Warning,
+    Error,
+    Muted,
+};
+
+bool is_stdout_terminal() {
+#if defined(_WIN32)
+    return _isatty(_fileno(stdout)) != 0;
+#else
+    return isatty(fileno(stdout)) != 0;
+#endif
+}
+
+std::optional<std::string> environment_value(const char *name) {
+#if defined(_WIN32)
+    char *value = nullptr;
+    std::size_t size = 0;
+    if (_dupenv_s(&value, &size, name) != 0 || value == nullptr) return std::nullopt;
+    std::string result(value, size > 0 ? size - 1 : 0);
+    std::free(value);
+    return result;
+#else
+    const auto *value = std::getenv(name);
+    if (value == nullptr) return std::nullopt;
+    return std::string(value);
+#endif
+}
+
+bool color_enabled() {
+    const auto no_color = environment_value("NO_COLOR");
+    if (no_color && !no_color->empty()) return false;
+    const auto ubaa_no_color = environment_value("UBAANEXT_NO_COLOR");
+    if (ubaa_no_color && !ubaa_no_color->empty() && *ubaa_no_color != "0") return false;
+    const auto force_color = environment_value("UBAANEXT_FORCE_COLOR");
+    if (force_color && !force_color->empty() && *force_color != "0") return true;
+    const auto ci = environment_value("CI");
+    if (ci && !ci->empty()) return false;
+    return is_stdout_terminal();
+}
+
+std::string style_code(TextStyle style) {
+    switch (style) {
+    case TextStyle::Title: return "\033[1;36m";
+    case TextStyle::Header: return "\033[1m";
+    case TextStyle::Success: return "\033[32m";
+    case TextStyle::Warning: return "\033[33m";
+    case TextStyle::Error: return "\033[31m";
+    case TextStyle::Muted: return "\033[90m";
+    case TextStyle::Plain: break;
+    }
+    return {};
+}
+
+std::string colorize(std::string text, TextStyle style) {
+    if (style == TextStyle::Plain || !color_enabled()) return text;
+    return style_code(style) + text + "\033[0m";
+}
+
+std::string success_text(std::string text) {
+    return colorize(std::move(text), TextStyle::Success);
+}
+
+std::string muted_text(std::string text) {
+    return colorize(std::move(text), TextStyle::Muted);
+}
 
 std::size_t utf8_sequence_length(std::string_view text, std::size_t offset) {
     const auto c = static_cast<unsigned char>(text[offset]);
@@ -86,6 +167,13 @@ std::size_t codepoint_display_width(std::uint32_t cp) {
 std::size_t display_width(std::string_view text) {
     std::size_t width = 0;
     for (std::size_t i = 0; i < text.size();) {
+        if (text[i] == '\033') {
+            const auto end = text.find('m', i + 1);
+            if (end != std::string_view::npos) {
+                i = end + 1;
+                continue;
+            }
+        }
         const auto length = utf8_sequence_length(text, i);
         width += codepoint_display_width(decode_codepoint(text, i, length));
         i += length;
@@ -144,7 +232,7 @@ void render_table(const std::string &title,
                   const std::vector<TableColumn> &columns,
                   const std::vector<TableRow> &rows) {
     if (!title.empty()) {
-        Console::println("{}", title);
+        Console::println("{}", colorize(title, TextStyle::Title));
         Console::println();
     }
 
@@ -167,12 +255,12 @@ void render_table(const std::string &title,
 
     TableRow headers;
     headers.reserve(columns.size());
-    for (const auto &column : columns) headers.push_back(column.name);
+    for (const auto &column : columns) headers.push_back(colorize(column.name, TextStyle::Header));
     Console::println("{}", render_row(headers, widths, columns));
 
     TableRow separators;
     separators.reserve(columns.size());
-    for (const auto width : widths) separators.push_back(std::string(width, '-'));
+    for (const auto width : widths) separators.push_back(muted_text(std::string(width, '-')));
     Console::println("{}", render_row(separators, widths, columns));
 
     for (const auto &row : normalized_rows) {
@@ -286,6 +374,105 @@ std::string title_for_key(const std::string &key) {
         }
     }
     return title;
+}
+
+std::string lowercase_ascii(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return text;
+}
+
+std::string status_badge(const std::string &status) {
+    if (status.empty()) return "-";
+    const auto normalized = lowercase_ascii(status);
+    if (normalized.find("error") != std::string::npos || normalized.find("fail") != std::string::npos ||
+        normalized == "rejected" || normalized == "denied") {
+        return colorize("✗ " + status, TextStyle::Error);
+    }
+    if (normalized == "pending" || normalized == "waiting" || normalized == "running") {
+        return colorize("… " + status, TextStyle::Warning);
+    }
+    if (normalized == "skipped" || normalized == "unchanged") {
+        return muted_text("- " + status);
+    }
+    if (normalized == "success" || normalized == "ok" || normalized == "completed" || normalized == "initialized" ||
+        normalized == "stored" || normalized == "updated" || normalized == "accepted" || normalized == "saved" ||
+        normalized == "deleted") {
+        return success_text("✓ " + status);
+    }
+    return status;
+}
+
+std::string field_label(const std::string &name) {
+    static const std::map<std::string, std::string> labels = {
+        {"accepted", "Accepted"},
+        {"cache", "Cache"},
+        {"campus", "Campus"},
+        {"cardId", "Card ID"},
+        {"changed", "Changed"},
+        {"completedRounds", "Completed Rounds"},
+        {"configPath", "Config Path"},
+        {"date", "Date"},
+        {"entranceImage", "Entrance Image"},
+        {"entranceMachine", "Entrance Machine"},
+        {"exitImage", "Exit Image"},
+        {"exitMachine", "Exit Machine"},
+        {"failure", "Failure"},
+        {"imagesDir", "Images Dir"},
+        {"inWindow", "In Window"},
+        {"lastError", "Last Error"},
+        {"lastMessage", "Last Message"},
+        {"logsDir", "Logs Dir"},
+        {"message", "Message"},
+        {"nextAction", "Next Action"},
+        {"nextRunAt", "Next Run At"},
+        {"now", "Now"},
+        {"path", "Path"},
+        {"pollSeconds", "Poll Seconds"},
+        {"remainingSeconds", "Remaining Seconds"},
+        {"remoteRequest", "Remote Request"},
+        {"root", "Root"},
+        {"rounds", "Rounds"},
+        {"settingsPath", "Settings Path"},
+        {"skipped", "Skipped"},
+        {"statePath", "State Path"},
+        {"studentId", "Student ID"},
+        {"success", "Success"},
+        {"termCount", "Term Count"},
+        {"total", "Total"},
+        {"usersPath", "Users Path"},
+        {"waitMinutes", "Wait Minutes"},
+    };
+    const auto it = labels.find(name);
+    return it != labels.end() ? it->second : name;
+}
+
+int field_priority(const std::string &name) {
+    static const std::vector<std::string> priority = {
+        "message", "lastMessage", "lastError", "studentId", "date", "now", "inWindow", "remoteRequest",
+        "total", "success", "failure", "skipped", "completedRounds", "termCount", "nextAction", "nextRunAt",
+        "remainingSeconds", "waitMinutes",
+    };
+    const auto it = std::find(priority.begin(), priority.end(), name);
+    if (it == priority.end()) return 1000;
+    return static_cast<int>(std::distance(priority.begin(), it));
+}
+
+std::vector<std::pair<std::string, std::string>> sorted_fields(const std::map<std::string, std::string> &fields,
+                                                               bool include_empty) {
+    std::vector<std::pair<std::string, std::string>> values;
+    for (const auto &[name, value] : fields) {
+        if (!include_empty && value.empty()) continue;
+        values.push_back({name, value});
+    }
+    std::sort(values.begin(), values.end(), [](const auto &lhs, const auto &rhs) {
+        const auto left_priority = field_priority(lhs.first);
+        const auto right_priority = field_priority(rhs.first);
+        if (left_priority != right_priority) return left_priority < right_priority;
+        return lhs.first < rhs.first;
+    });
+    return values;
 }
 
 json record_to_json(const UBAANext::Model::FeatureRecord &record) {
@@ -591,18 +778,29 @@ void OutputFormatter::print_records(const std::string &key, const std::vector<UB
 
     std::vector<TableRow> rows;
     rows.reserve(records.size());
+    std::vector<TableRow> detail_rows;
     for (std::size_t i = 0; i < records.size(); ++i) {
         const auto &record = records[i];
+        const auto index = std::to_string(i + 1);
         rows.push_back({
-            std::to_string(i + 1),
+            index,
             record.title,
-            value_or_dash(record.status),
+            status_badge(record.status),
             value_or_dash(record.id),
         });
+        for (const auto &[name, value] : sorted_fields(record.fields, false)) {
+            detail_rows.push_back({index, field_label(name), value});
+        }
     }
     render_table(title_for_key(key),
-                 {{"Index", true}, {"Title"}, {"Status"}, {"Id"}},
+                 {{"Index", true}, {"Title", false, 48}, {"Status"}, {"Id", false, 28}},
                  rows);
+    if (!detail_rows.empty()) {
+        Console::println();
+        render_table(title_for_key(key) + " Details",
+                     {{"Record", true}, {"Field"}, {"Value", false, 120}},
+                     detail_rows);
+    }
 }
 
 void OutputFormatter::print_record(const std::string &key, const UBAANext::Model::FeatureRecord &record) {
@@ -614,11 +812,11 @@ void OutputFormatter::print_record(const std::string &key, const UBAANext::Model
 
     std::vector<TableRow> rows = {
         {"Title", record.title},
-        {"Status", value_or_dash(record.status)},
+        {"Status", status_badge(record.status)},
         {"Id", value_or_dash(record.id)},
     };
-    for (const auto &[name, value] : record.fields) {
-        rows.push_back({name, value});
+    for (const auto &[name, value] : sorted_fields(record.fields, true)) {
+        rows.push_back({field_label(name), value});
     }
     render_table(title_for_key(key), {{"Field"}, {"Value", false, 120}}, rows);
 }
@@ -636,7 +834,15 @@ void OutputFormatter::print_mutation(const UBAANext::Model::MutationResult &resu
     Console::println();
     render_table("Result",
                  {{"Title"}, {"Status"}, {"Id"}},
-                 {{result.summary.title, value_or_dash(result.summary.status), value_or_dash(result.summary.id)}});
+                 {{result.summary.title, status_badge(result.summary.status), value_or_dash(result.summary.id)}});
+    const auto detail_fields = sorted_fields(result.summary.fields, false);
+    if (!detail_fields.empty()) {
+        std::vector<TableRow> rows;
+        rows.reserve(detail_fields.size());
+        for (const auto &[name, value] : detail_fields) rows.push_back({field_label(name), value});
+        Console::println();
+        render_table("Result Details", {{"Field"}, {"Value", false, 120}}, rows);
+    }
 }
 
 void OutputFormatter::print_version(const std::string &version) {
@@ -646,7 +852,7 @@ void OutputFormatter::print_version(const std::string &version) {
         return;
     }
 
-    Console::println("UBAA Next {}", version);
+    Console::println("{}", success_text("UBAA Next " + version));
 }
 
 void OutputFormatter::print_error(const UBAANext::Error &error) {
@@ -658,7 +864,7 @@ void OutputFormatter::print_error(const UBAANext::Error &error) {
         return;
     }
 
-    Console::eprintln("错误: {}", message);
+    Console::eprintln("{}", colorize("错误: " + message, TextStyle::Error));
 }
 
 void OutputFormatter::print_message(const std::string &msg) {
@@ -668,7 +874,7 @@ void OutputFormatter::print_message(const std::string &msg) {
         return;
     }
 
-    Console::println("{}", msg);
+    Console::println("{}", success_text(msg));
 }
 
 void OutputFormatter::print_fields(const std::string &title, const std::vector<std::pair<std::string, std::string>> &fields) {

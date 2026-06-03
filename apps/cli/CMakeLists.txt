@@ -19,6 +19,7 @@ target_link_libraries(ubaa
     PRIVATE UBAANextPlatformCurrent
     PRIVATE UBAANextPlatformCurl
     PRIVATE UBAANextPlatformOpenSSL
+    PRIVATE UBAANextPlatformTcp
 )
 
 if(UBAANEXT_ENABLE_MOCKS)

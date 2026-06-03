@@ -12,9 +12,10 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
-#include <cstdio>
 #include <ctime>
 #include <exception>
+#include <iomanip>
+#include <sstream>
 #include <string>
 
 namespace UBAANext {
@@ -111,9 +112,12 @@ Result<std::vector<Model::Course>> CourseService::get_today_courses() {
     auto now = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
     auto tm = local_time(time);
-    char buf[11];
-    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
-    return get_date_courses(buf);
+    std::ostringstream date;
+    date << std::setfill('0')
+         << std::setw(4) << (tm.tm_year + 1900) << '-'
+         << std::setw(2) << (tm.tm_mon + 1) << '-'
+         << std::setw(2) << tm.tm_mday;
+    return get_date_courses(date.str());
 }
 
 Result<std::vector<Model::Course>> CourseService::get_date_courses(const std::string &date) {

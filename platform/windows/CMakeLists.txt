@@ -16,6 +16,7 @@ if(WIN32)
         PRIVATE
             UBAANextPlatformCurl
             UBAANextPlatformOpenSSL
+            UBAANextPlatformTcp
             crypt32
     )
 

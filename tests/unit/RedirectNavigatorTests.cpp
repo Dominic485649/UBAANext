@@ -22,6 +22,12 @@ TEST_CASE("RedirectNavigator extracts query parameters and redacts sensitive que
     CHECK(extract_query_parameter("https://example.edu/callback?ticket=ST-1&cas=CAS-1#frag", "missing").empty());
     CHECK(extract_query_parameter_anywhere("https://d.buaa.edu.cn/https/enc/path?redirect=https%3A%2F%2Fbooking.lib.buaa.edu.cn%2Fv4%2Flogin%2Fcas%3Fcas%3DCAS-2", "cas") == "CAS-2");
     CHECK(extract_query_parameter_anywhere("https://ygdk.buaa.edu.cn/#/home?code=OAUTH-1", "code") == "OAUTH-1");
+
+    std::string large_body(200000, 'x');
+    large_body += "?redirect=https%3A%2F%2Fbooking.lib.buaa.edu.cn%2Fv4%2Flogin%2Fcas%3Fcas%3DCAS-LARGE%26next%3Dok";
+    large_body += std::string(200000, 'y');
+    CHECK(extract_query_parameter_anywhere(large_body, "cas") == "CAS-LARGE");
+
     CHECK(redact_url_query("https://example.edu/callback?ticket=ST-1&cas=CAS-1#frag") == "https://example.edu/callback?<redacted>#frag");
     CHECK(redact_url_query("https://example.edu/callback") == "https://example.edu/callback");
 }

@@ -125,7 +125,10 @@ std::array<std::uint8_t, 176> expand_key(const std::string &key) {
             for (auto &byte : temp) byte = sbox[byte];
             temp[0] ^= rcon[rcon_iteration++];
         }
-        for (int i = 0; i < 4; ++i) round_keys[bytes_generated++] = round_keys[bytes_generated - 16] ^ temp[i];
+        for (int i = 0; i < 4; ++i) {
+            round_keys[bytes_generated] = round_keys[bytes_generated - 16] ^ temp[i];
+            ++bytes_generated;
+        }
     }
     return round_keys;
 }

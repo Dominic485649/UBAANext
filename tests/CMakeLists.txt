@@ -42,6 +42,12 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/LibrarySeatParserTests.cpp
         unit/LibrarySeatServiceTests.cpp
         unit/ResponseUtilsTests.cpp
+        unit/TdModelTests.cpp
+        unit/TdStoreTests.cpp
+        unit/TdClientTests.cpp
+        unit/TdTcpTransportTests.cpp
+        unit/TdServiceTests.cpp
+        unit/TdSchedulerServiceTests.cpp
         unit/DownstreamSessionTypesTests.cpp
         unit/SessionGuardsTests.cpp
         unit/RedirectNavigatorTests.cpp
@@ -58,6 +64,7 @@ if(UBAANEXT_ENABLE_MOCKS)
         PRIVATE UBAANextCore
         PRIVATE UBAANextPlatformCurl
         PRIVATE UBAANextPlatformOpenSSL
+        PRIVATE UBAANextPlatformTcp
         PRIVATE UBAANextMocks
         PRIVATE Catch2::Catch2
     )

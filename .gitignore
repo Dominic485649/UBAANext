@@ -3,6 +3,8 @@ build/
 cmake-build-*/
 vcpkg_installed/
 vcpkg-manifest-install.log
+/bin/*/*/ubaa
+/bin/*/*/ubaa.exe
 /bin/*/*/*.pdb
 /bin/*/*/*.ilk
 /bin/*/*/*.sha256

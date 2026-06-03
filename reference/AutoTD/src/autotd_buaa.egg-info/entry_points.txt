@@ -1,0 +1,2 @@
+[console_scripts]
+autotd = auto_td.cli:main

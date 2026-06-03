@@ -4,5 +4,6 @@
 - [单元测试](unit-tests.md)
 - [集成测试计划](integration-tests-plan.md)
 - [Mock 数据策略](mock-data-policy.md)
+- [TD 真实 smoke test](td-live-smoke.md)
 - [Golden Files](golden-files.md)
 - [CI 计划](ci-plan.md)

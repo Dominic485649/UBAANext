@@ -122,7 +122,6 @@ TEST_CASE("LibrarySeatService 预约保留时段参数", "[service][libbook]") {
 
     auto result = service.reserve_seat("seat-1", "2026-05-15", "08:00-10:00");
 
-#ifdef _WIN32
     REQUIRE(result);
     REQUIRE(http_client.confirm_requests == 1);
     CHECK(result->summary.fields.at("startTime") == "08:00");
@@ -131,11 +130,6 @@ TEST_CASE("LibrarySeatService 预约保留时段参数", "[service][libbook]") {
     auto body = nlohmann::json::parse(http_client.last_confirm_body);
     REQUIRE(body.contains("aesjson"));
     CHECK(body["aesjson"].is_string());
-#else
-    REQUIRE_FALSE(result);
-    CHECK(result.error().code == UBAANext::ErrorCode::NotImplemented);
-    REQUIRE(http_client.confirm_requests == 0);
-#endif
 }
 
 TEST_CASE("LibrarySeatService 预约接受显式起止时间", "[service][libbook]") {
@@ -148,14 +142,9 @@ TEST_CASE("LibrarySeatService 预约接受显式起止时间", "[service][libboo
 
     auto result = service.reserve_seat("seat-1", "2026-05-15", "", "10:00", "12:00");
 
-#ifdef _WIN32
     REQUIRE(result);
     CHECK(result->summary.fields.at("startTime") == "10:00");
     CHECK(result->summary.fields.at("endTime") == "12:00");
-#else
-    REQUIRE_FALSE(result);
-    CHECK(result.error().code == UBAANext::ErrorCode::NotImplemented);
-#endif
 }
 
 TEST_CASE("LibrarySeatService 预约识别业务失败消息", "[service][libbook]") {
@@ -169,14 +158,9 @@ TEST_CASE("LibrarySeatService 预约识别业务失败消息", "[service][libboo
 
     auto result = service.reserve_seat("seat-1", "2026-05-15", "08:00-10:00");
 
-#ifdef _WIN32
     REQUIRE_FALSE(result);
     CHECK(result.error().code == UBAANext::ErrorCode::NetworkError);
     CHECK(result.error().message == "该座位已被预约");
-#else
-    REQUIRE_FALSE(result);
-    CHECK(result.error().code == UBAANext::ErrorCode::NotImplemented);
-#endif
 }
 
 TEST_CASE("LibrarySeatService 查询业务错误消息会脱敏", "[service][libbook][security]") {

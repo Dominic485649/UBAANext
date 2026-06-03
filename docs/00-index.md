@@ -35,6 +35,7 @@
 - [Result 类型](core/result-type.md)
 - [模型层](core/model-layer.md)
 - [服务层](core/service-layer.md)
+- [TD 核心模块](core/td-core.md)
 - [解析器层](core/parser-layer.md)
 - [网络抽象](core/net-abstraction.md)
 - [存储抽象](core/storage-abstraction.md)
@@ -68,12 +69,14 @@
 - [单元测试](testing/unit-tests.md)
 - [集成测试计划](testing/integration-tests-plan.md)
 - [Mock 数据策略](testing/mock-data-policy.md)
+- [TD 真实 smoke test](testing/td-live-smoke.md)
 - [基准文件](testing/golden-files.md)
 - [CI 计划](testing/ci-plan.md)
 
 ## 应用
 
 - [Windows CLI](apps/windows-cli.md)
+- [TD CLI](apps/td-cli.md)
 - [Harmony ArkUI](apps/harmony-arkui.md)
 - [Windows Slint GUI](apps/windows-slint-gui.md)
 - [发布渠道计划](apps/release-channel-plan.md)
@@ -99,6 +102,7 @@
 ## 协议
 
 - [Mock 协议](protocol/mock-protocol.md)
+- [TD 协议](protocol/td-protocol.md)
 - [认证流程计划](protocol/auth-flow-plan.md)
 - [课程数据计划](protocol/course-data-plan.md)
 - [考试数据计划](protocol/exam-data-plan.md)
@@ -122,3 +126,4 @@
 - [0004: 使用 ArkUI 用于 HarmonyOS](decisions/0004-use-arkui-for-harmonyos.md)
 - [0005: Windows 上优先使用 CLI](decisions/0005-use-cli-first-on-windows.md)
 - [0006: 保留 Slint 作为未来 Windows GUI](decisions/0006-keep-slint-as-future-windows-gui.md)
+- [0007: AutoTD 核心迁移第一阶段边界](decisions/0007-migrate-autotd-core.md)

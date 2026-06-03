@@ -22,14 +22,14 @@ UBAANext::PlatformCapabilities planned_harmony_capabilities() {
     caps.secure_store = false;
     caps.app_data_path = true;
     caps.upload_bytes = true;
-    caps.live_login = false;
-    caps.write_operations = false;
+    caps.live_login = true;
+    caps.write_operations = true;
     return caps;
 }
 
 } // namespace
 
-TEST_CASE("Harmony skeleton capabilities keep secure persistence unsupported", "[platform][harmony]") {
+TEST_CASE("Harmony capabilities expose live network but keep secure persistence unsupported", "[platform][harmony]") {
     const auto caps = planned_harmony_capabilities();
 
     CHECK(caps.real_network);
@@ -40,8 +40,8 @@ TEST_CASE("Harmony skeleton capabilities keep secure persistence unsupported", "
     CHECK_FALSE(caps.secure_store);
     CHECK_FALSE(caps.cookie_persistence);
     CHECK_FALSE(caps.secure_cookie_persistence);
-    CHECK_FALSE(caps.live_login);
-    CHECK_FALSE(caps.write_operations);
+    CHECK(caps.live_login);
+    CHECK(caps.write_operations);
 }
 
 #if defined(UBAANEXT_TEST_HARMONY_TYPES)

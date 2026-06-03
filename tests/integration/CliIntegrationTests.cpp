@@ -18,8 +18,13 @@
 #include <fstream>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <sys/wait.h>
+#endif
 
 namespace {
 
@@ -34,25 +39,66 @@ struct CliResult {
     std::string stderr_output;
 };
 
-[[nodiscard]] CliResult run_cli(const std::vector<std::string> &args) {
-    // 构建命令行 - 用引号包裹路径以防空格
-    static const auto app_data_dir = (std::filesystem::temp_directory_path() / "ubaanext-cli-tests").string();
+[[nodiscard]] std::string quote_arg(const std::string &arg) {
+#if defined(_WIN32)
+    std::string quoted = "\"";
+    for (char ch : arg) {
+        if (ch == '"') quoted += "\"\"";
+        else quoted += ch;
+    }
+    quoted += "\"";
+    return quoted;
+#else
+    std::string quoted = "'";
+    for (char ch : arg) {
+        if (ch == '\'') quoted += "'\\''";
+        else quoted += ch;
+    }
+    quoted += "'";
+    return quoted;
+#endif
+}
+
+[[nodiscard]] std::string make_app_data_dir() {
+    static int sequence = 0;
+    auto path = std::filesystem::temp_directory_path() / ("ubaanext-cli-tests-" + std::to_string(++sequence));
+    std::filesystem::remove_all(path);
+    std::filesystem::create_directories(path);
+    return path.string();
+}
+
+[[nodiscard]] CliResult run_cli(const std::vector<std::string> &args, const std::string &app_data_dir = make_app_data_dir()) {
     std::filesystem::create_directories(app_data_dir);
 
-    std::string cmd = "set \"UBAANEXT_APP_DATA_DIR=";
+    std::string cmd;
+#if defined(_WIN32)
+    cmd = "set \"UBAANEXT_APP_DATA_DIR=";
     cmd += app_data_dir;
     cmd += "\" && \"";
     cmd += UBAA_CLI_PATH;
     cmd += "\"";
+#else
+    cmd = "UBAANEXT_APP_DATA_DIR=";
+    cmd += quote_arg(app_data_dir);
+    cmd += " ";
+    cmd += quote_arg(UBAA_CLI_PATH);
+#endif
     for (const auto &arg : args) {
-        cmd += " " + arg;
+        cmd += " " + quote_arg(arg);
     }
     cmd += " 2>&1";  // 合并 stderr
 
     CliResult result;
     std::array<char, 4096> buffer;
 
-    std::unique_ptr<FILE, decltype(&_pclose)> pipe(_popen(cmd.c_str(), "r"), _pclose);
+#if defined(_WIN32)
+    FILE *raw_pipe = _popen(cmd.c_str(), "r");
+    auto closer = [](FILE *file) { return _pclose(file); };
+#else
+    FILE *raw_pipe = popen(cmd.c_str(), "r");
+    auto closer = [](FILE *file) { return pclose(file); };
+#endif
+    std::unique_ptr<FILE, decltype(closer)> pipe(raw_pipe, closer);
     if (!pipe) {
         result.exit_code = -1;
         return result;
@@ -62,8 +108,17 @@ struct CliResult {
         result.stdout_output += buffer.data();
     }
 
+#if defined(_WIN32)
     result.exit_code = _pclose(pipe.release());
     // Windows _popen 返回的是原始退出码
+#else
+    const int raw_exit = pclose(pipe.release());
+    if (WIFEXITED(raw_exit)) {
+        result.exit_code = WEXITSTATUS(raw_exit);
+    } else {
+        result.exit_code = raw_exit;
+    }
+#endif
     return result;
 }
 
@@ -138,6 +193,7 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "version",
         "help",
         "login",
+        "relogin",
         "mode",
         "mode direct",
         "mode vpn",
@@ -196,6 +252,19 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "config show",
         "config set",
         "cache clear",
+        "td init",
+        "td image add",
+        "td image list",
+        "td user add",
+        "td user list",
+        "td user show",
+        "td user delete",
+        "td status",
+        "td count",
+        "td run",
+        "td scheduler once",
+        "td scheduler clear-errors",
+        "td scheduler watch",
     };
 
     auto json_result = run_cli({"help", "--json"});
@@ -271,6 +340,16 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "cgyy day-info 的 id，time-id 来自 fields.timeId",
         "libbook reservations 输出记录的 id 字段",
         "help --json 输出机器可读命令目录",
+        "relogin --saved",
+        "--save-password",
+        "td image add <path>",
+        "td user add <student-id> --quick",
+        "td count [student-id] --refresh",
+        "td run --once",
+        "td scheduler once",
+        "td scheduler clear-errors",
+        "td scheduler watch",
+        "--poll-seconds",
     };
     for (const auto &expected_token : expected_help_tokens) {
         INFO("普通 help 缺失清晰参数提示: " << expected_token);
@@ -299,12 +378,65 @@ TEST_CASE("CLI login mock 兼容旧参数", "[cli][integration]") {
     REQUIRE(result.stdout_output.find("20260000") != std::string::npos);
 }
 
+TEST_CASE("CLI relogin mock 手动替换已有会话", "[cli][integration]") {
+    auto app_data_dir = make_app_data_dir();
+    auto initial = run_cli({"login", "--mock", "20260010", "test", "--save-password", "--json"}, app_data_dir);
+    REQUIRE(initial.exit_code == 0);
+
+    auto blocked = run_cli({"login", "--mock", "20260011", "test", "--json"}, app_data_dir);
+    REQUIRE(blocked.exit_code != 0);
+    auto blocked_json = parse_json_output(blocked.stdout_output);
+    require_error_envelope(blocked_json);
+    CHECK(blocked_json["error"]["message"].get<std::string>().find("relogin") != std::string::npos);
+
+    auto still_initial = run_cli({"whoami", "--mock", "--json"}, app_data_dir);
+    REQUIRE(still_initial.exit_code == 0);
+    auto still_initial_json = parse_json_output(still_initial.stdout_output);
+    REQUIRE(still_initial_json["data"]["studentId"] == "20260010");
+
+    auto missing_confirm = run_cli({"relogin", "--mock", "20260011", "test", "--json"}, app_data_dir);
+    REQUIRE(missing_confirm.exit_code != 0);
+    auto missing_confirm_json = parse_json_output(missing_confirm.stdout_output);
+    require_error_envelope(missing_confirm_json);
+    CHECK(missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto relogin = run_cli({"relogin", "--mock", "20260011", "test", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(relogin.exit_code == 0);
+
+    auto current = run_cli({"whoami", "--mock", "--json"}, app_data_dir);
+    REQUIRE(current.exit_code == 0);
+    auto current_json = parse_json_output(current.stdout_output);
+    REQUIRE(current_json["data"]["studentId"] == "20260011");
+}
+
+TEST_CASE("CLI relogin mock 可复用显式保存的账号密码", "[cli][integration]") {
+    auto app_data_dir = make_app_data_dir();
+    auto initial = run_cli({"login", "--mock", "20260012", "test", "--save-password", "--json"}, app_data_dir);
+    REQUIRE(initial.exit_code == 0);
+
+    auto missing_confirm = run_cli({"relogin", "--mock", "--saved", "--json"}, app_data_dir);
+    REQUIRE(missing_confirm.exit_code != 0);
+    auto missing_confirm_json = parse_json_output(missing_confirm.stdout_output);
+    require_error_envelope(missing_confirm_json);
+    CHECK(missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto relogin = run_cli({"relogin", "--mock", "--saved", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(relogin.exit_code == 0);
+    REQUIRE(relogin.stdout_output.find("test") == std::string::npos);
+
+    auto current = run_cli({"whoami", "--mock", "--json"}, app_data_dir);
+    REQUIRE(current.exit_code == 0);
+    auto current_json = parse_json_output(current.stdout_output);
+    REQUIRE(current_json["data"]["studentId"] == "20260012");
+}
+
 TEST_CASE("CLI whoami 命令", "[cli][integration]") {
+    auto app_data_dir = make_app_data_dir();
     // 先登录
-    auto login_result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--json"});
+    auto login_result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--relogin", "--confirm", "--json"}, app_data_dir);
     REQUIRE(login_result.exit_code == 0);
 
-    auto result = run_cli({"whoami", "--json"});
+    auto result = run_cli({"whoami", "--mock", "--json"}, app_data_dir);
     REQUIRE(result.exit_code == 0);
 
     auto json = parse_json_output(result.stdout_output);
@@ -314,18 +446,19 @@ TEST_CASE("CLI whoami 命令", "[cli][integration]") {
 }
 
 TEST_CASE("CLI logout 命令", "[cli][integration]") {
+    auto app_data_dir = make_app_data_dir();
     // 先登录
-    auto login_result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--json"});
+    auto login_result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--relogin", "--confirm", "--json"}, app_data_dir);
     REQUIRE(login_result.exit_code == 0);
 
-    auto result = run_cli({"logout", "--confirm", "--json"});
+    auto result = run_cli({"logout", "--mock", "--confirm", "--json"}, app_data_dir);
     REQUIRE(result.exit_code == 0);
 
     auto json = parse_json_output(result.stdout_output);
     REQUIRE(json["ok"] == true);
     REQUIRE(json["data"].contains("message"));
 
-    auto whoami = run_cli({"whoami", "--json"});
+    auto whoami = run_cli({"whoami", "--mock", "--json"}, app_data_dir);
     REQUIRE(whoami.exit_code != 0);
     auto whoami_json = parse_json_output(whoami.stdout_output);
     require_error_envelope(whoami_json);
@@ -508,33 +641,34 @@ TEST_CASE("CLI v0.4 golden exit code contract", "[cli][integration][golden]") {
 }
 
 TEST_CASE("CLI v0.4 config/cache confirm gates", "[cli][integration][golden]") {
-    auto set_without_confirm = run_cli({"config", "set", "--key", "cache", "--value", "false", "--json"});
+    auto app_data_dir = make_app_data_dir();
+    auto set_without_confirm = run_cli({"config", "set", "--key", "cache", "--value", "false", "--json"}, app_data_dir);
     REQUIRE(set_without_confirm.exit_code == 2);
     auto set_without_confirm_json = parse_json_output(set_without_confirm.stdout_output);
     require_error_envelope(set_without_confirm_json);
     CHECK(set_without_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
 
-    auto set_with_confirm = run_cli({"config", "set", "--key", "cache", "--value", "false", "--confirm", "--json"});
+    auto set_with_confirm = run_cli({"config", "set", "--key", "cache", "--value", "false", "--confirm", "--json"}, app_data_dir);
     REQUIRE(set_with_confirm.exit_code == 0);
     auto set_with_confirm_json = parse_json_output(set_with_confirm.stdout_output);
     require_success_envelope(set_with_confirm_json);
     REQUIRE(set_with_confirm_json["data"].contains("message"));
     CHECK(set_with_confirm_json["data"]["message"].get<std::string>().find("cache = false") != std::string::npos);
 
-    auto show_after_set = run_cli({"config", "show", "--json"});
+    auto show_after_set = run_cli({"config", "show", "--json"}, app_data_dir);
     REQUIRE(show_after_set.exit_code == 0);
     auto show_after_set_json = parse_json_output(show_after_set.stdout_output);
     require_success_envelope(show_after_set_json);
     REQUIRE(show_after_set_json["data"].contains("cacheEnabled"));
     CHECK(show_after_set_json["data"]["cacheEnabled"] == false);
 
-    auto clear_without_confirm = run_cli({"cache", "clear", "--json"});
+    auto clear_without_confirm = run_cli({"cache", "clear", "--json"}, app_data_dir);
     REQUIRE(clear_without_confirm.exit_code == 2);
     auto clear_without_confirm_json = parse_json_output(clear_without_confirm.stdout_output);
     require_error_envelope(clear_without_confirm_json);
     CHECK(clear_without_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
 
-    auto clear_with_confirm = run_cli({"cache", "clear", "--confirm", "--json"});
+    auto clear_with_confirm = run_cli({"cache", "clear", "--confirm", "--json"}, app_data_dir);
     REQUIRE(clear_with_confirm.exit_code == 0);
     require_success_envelope(parse_json_output(clear_with_confirm.stdout_output));
 }
@@ -560,20 +694,214 @@ TEST_CASE("CLI real login fails closed without secure store", "[cli][integration
 }
 #endif
 
+TEST_CASE("CLI TD 本地子命令保持无真实网络并遵守确认边界", "[cli][integration][td]") {
+    auto app_data_dir = make_app_data_dir();
+    const auto fixture_dir = std::filesystem::path(app_data_dir) / "fixtures";
+    std::filesystem::create_directories(fixture_dir);
+    const auto image_path = fixture_dir / "entrance.jpg";
+    {
+        std::ofstream image_file(image_path, std::ios::binary);
+        image_file << "td-image-sample";
+        REQUIRE(image_file.good());
+    }
+
+    auto init_missing_confirm = run_cli({"td", "init", "--json"}, app_data_dir);
+    REQUIRE(init_missing_confirm.exit_code == 2);
+    auto init_missing_confirm_json = parse_json_output(init_missing_confirm.stdout_output);
+    require_error_envelope(init_missing_confirm_json);
+    CHECK(init_missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto init = run_cli({"td", "init", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(init.exit_code == 0);
+    auto init_json = parse_json_output(init.stdout_output);
+    require_success_envelope(init_json);
+    REQUIRE(init_json["data"].contains("tdInit"));
+    require_feature_record(init_json["data"]["tdInit"]);
+    CHECK(init_json["data"]["tdInit"]["status"] == "initialized");
+
+    auto image_missing_confirm = run_cli({"td", "image", "add", image_path.string(), "--json"}, app_data_dir);
+    REQUIRE(image_missing_confirm.exit_code == 2);
+    auto image_missing_confirm_json = parse_json_output(image_missing_confirm.stdout_output);
+    require_error_envelope(image_missing_confirm_json);
+    CHECK(image_missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto image_add = run_cli({"td", "image", "add", image_path.string(), "--confirm", "--json"}, app_data_dir);
+    REQUIRE(image_add.exit_code == 0);
+    auto image_add_json = parse_json_output(image_add.stdout_output);
+    require_mutation_contract(image_add_json);
+    CHECK(image_add_json["data"]["result"]["id"] == "entrance.jpg");
+
+    auto image_list = run_cli({"td", "image", "list", "--json"}, app_data_dir);
+    REQUIRE(image_list.exit_code == 0);
+    auto image_list_json = parse_json_output(image_list.stdout_output);
+    require_records_contract(image_list_json, "tdImages");
+    CHECK(image_list_json["data"]["tdImages"].size() == 1);
+
+    auto user_missing_confirm = run_cli({"td", "user", "add", "2023123456", "--quick", "沙河", "--json"}, app_data_dir);
+    REQUIRE(user_missing_confirm.exit_code == 2);
+    auto user_missing_confirm_json = parse_json_output(user_missing_confirm.stdout_output);
+    require_error_envelope(user_missing_confirm_json);
+    CHECK(user_missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto user_add = run_cli({"td", "user", "add", "2023123456", "--quick", "沙河", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(user_add.exit_code == 0);
+    auto user_add_json = parse_json_output(user_add.stdout_output);
+    require_mutation_contract(user_add_json);
+    CHECK(user_add_json["data"]["result"]["id"] == "2023123456");
+
+    auto user_list = run_cli({"td", "user", "list", "--json"}, app_data_dir);
+    REQUIRE(user_list.exit_code == 0);
+    auto user_list_json = parse_json_output(user_list.stdout_output);
+    require_records_contract(user_list_json, "tdUsers");
+    CHECK(user_list_json["data"]["tdUsers"].size() == 1);
+
+    auto user_show = run_cli({"td", "user", "show", "2023123456", "--json"}, app_data_dir);
+    REQUIRE(user_show.exit_code == 0);
+    auto user_show_json = parse_json_output(user_show.stdout_output);
+    require_success_envelope(user_show_json);
+    REQUIRE(user_show_json["data"].contains("tdUser"));
+    require_feature_record(user_show_json["data"]["tdUser"]);
+    CHECK(user_show_json["data"]["tdUser"]["fields"]["entranceMachineId"] == "8");
+
+    auto count = run_cli({"td", "count", "2023123456", "--json"}, app_data_dir);
+    REQUIRE(count.exit_code == 0);
+    auto count_json = parse_json_output(count.stdout_output);
+    require_success_envelope(count_json);
+    REQUIRE(count_json["data"].contains("tdCount"));
+    require_feature_record(count_json["data"]["tdCount"]);
+    CHECK(count_json["data"]["tdCount"]["fields"]["source"] == "none");
+
+    auto status = run_cli({"td", "status", "--json"}, app_data_dir);
+    REQUIRE(status.exit_code == 0);
+    auto status_json = parse_json_output(status.stdout_output);
+    require_success_envelope(status_json);
+    REQUIRE(status_json["data"].contains("tdStates"));
+    REQUIRE(status_json["data"]["tdStates"].is_array());
+    CHECK(status_json["data"]["tdStates"].empty());
+
+    auto refresh_missing_confirm = run_cli({"td", "count", "2023123456", "--refresh", "--json"}, app_data_dir);
+    REQUIRE(refresh_missing_confirm.exit_code == 2);
+    auto refresh_missing_confirm_json = parse_json_output(refresh_missing_confirm.stdout_output);
+    require_error_envelope(refresh_missing_confirm_json);
+    CHECK(refresh_missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto refresh = run_cli({"td", "count", "2023123456", "--refresh", "--mock", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(refresh.exit_code == 0);
+    auto refresh_json = parse_json_output(refresh.stdout_output);
+    require_success_envelope(refresh_json);
+    REQUIRE(refresh_json["data"].contains("tdCount"));
+    require_feature_record(refresh_json["data"]["tdCount"]);
+    CHECK(refresh_json["data"]["tdCount"]["fields"]["source"] == "server");
+    CHECK(refresh_json["data"]["tdCount"]["fields"]["termCount"] == "7");
+
+    auto run_once = run_cli({"td", "run", "--once", "--mock", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(run_once.exit_code == 0);
+    auto run_once_json = parse_json_output(run_once.stdout_output);
+    require_records_contract(run_once_json, "tdRun");
+    REQUIRE(run_once_json["data"]["tdRun"].size() == 2);
+    CHECK(run_once_json["data"]["tdRun"][0]["fields"]["total"] == "1");
+    CHECK(run_once_json["data"]["tdRun"][0]["fields"]["success"] == "1");
+    CHECK(run_once_json["data"]["tdRun"][1]["id"] == "2023123456");
+    CHECK(run_once_json["data"]["tdRun"][1]["status"] == "completed");
+
+    auto user_delete = run_cli({"td", "user", "delete", "2023123456", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(user_delete.exit_code == 0);
+    auto user_delete_json = parse_json_output(user_delete.stdout_output);
+    require_mutation_contract(user_delete_json);
+    CHECK(user_delete_json["data"]["result"]["status"] == "deleted");
+}
+
+TEST_CASE("CLI TD scheduler 子命令使用 mock 客户端并写入状态", "[cli][integration][td]") {
+    auto app_data_dir = make_app_data_dir();
+    const auto fixture_dir = std::filesystem::path(app_data_dir) / "fixtures";
+    std::filesystem::create_directories(fixture_dir);
+    const auto image_path = fixture_dir / "td.jpg";
+    {
+        std::ofstream image_file(image_path, std::ios::binary);
+        image_file << "td-scheduler-image";
+        REQUIRE(image_file.good());
+    }
+
+    REQUIRE(run_cli({"td", "init", "--confirm", "--json"}, app_data_dir).exit_code == 0);
+    {
+        const auto config_path = std::filesystem::path(app_data_dir) / "td" / "config.json";
+        std::ifstream input(config_path, std::ios::binary);
+        REQUIRE(input.good());
+        auto config_json = nlohmann::json::parse(input);
+        config_json["windows"] = nlohmann::json::array({"00:00-23:59"});
+        config_json["poll_seconds"] = 1;
+        std::ofstream output(config_path, std::ios::binary | std::ios::trunc);
+        output << config_json.dump(2);
+        REQUIRE(output.good());
+    }
+    REQUIRE(run_cli({"td", "image", "add", image_path.string(), "--confirm", "--json"}, app_data_dir).exit_code == 0);
+    REQUIRE(run_cli({"td", "user", "add", "2023123456", "--quick", "沙河", "--wait-min", "0", "--wait-max", "0", "--confirm", "--json"}, app_data_dir).exit_code == 0);
+
+    auto scheduler_missing_confirm = run_cli({"td", "scheduler", "once", "--mock", "--json"}, app_data_dir);
+    REQUIRE(scheduler_missing_confirm.exit_code == 2);
+    auto scheduler_missing_confirm_json = parse_json_output(scheduler_missing_confirm.stdout_output);
+    require_error_envelope(scheduler_missing_confirm_json);
+    CHECK(scheduler_missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto scheduler_once = run_cli({"td", "scheduler", "once", "--mock", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(scheduler_once.exit_code == 0);
+    auto scheduler_once_json = parse_json_output(scheduler_once.stdout_output);
+    require_records_contract(scheduler_once_json, "tdScheduler");
+    REQUIRE(scheduler_once_json["data"]["tdScheduler"].size() == 2);
+    CHECK(scheduler_once_json["data"]["tdScheduler"][0]["fields"]["total"] == "1");
+    CHECK(scheduler_once_json["data"]["tdScheduler"][0]["fields"]["success"] == "1");
+    CHECK(scheduler_once_json["data"]["tdScheduler"][1]["id"] == "2023123456");
+    CHECK(scheduler_once_json["data"]["tdScheduler"][1]["status"] == "waiting");
+    CHECK(scheduler_once_json["data"]["tdScheduler"][1]["fields"]["remoteRequest"] == "true");
+    CHECK(scheduler_once_json["data"]["tdScheduler"][1]["fields"]["message"].get<std::string>().find("入口完成") != std::string::npos);
+
+    auto status = run_cli({"td", "status", "--json"}, app_data_dir);
+    REQUIRE(status.exit_code == 0);
+    auto status_json = parse_json_output(status.stdout_output);
+    require_records_contract(status_json, "tdStates");
+    CHECK(status_json["data"]["tdStates"][0]["fields"]["lastMessage"].get<std::string>().find("入口完成") != std::string::npos);
+
+    auto status_text = run_cli({"td", "status"}, app_data_dir);
+    REQUIRE(status_text.exit_code == 0);
+    CHECK(status_text.stdout_output.find("TdStates Details") != std::string::npos);
+    CHECK(status_text.stdout_output.find("Last Message") != std::string::npos);
+    CHECK(status_text.stdout_output.find("入口完成") != std::string::npos);
+    CHECK(status_text.stdout_output.find("Next Action") != std::string::npos);
+
+    auto clear_missing_confirm = run_cli({"td", "scheduler", "clear-errors", "--mock", "--json"}, app_data_dir);
+    REQUIRE(clear_missing_confirm.exit_code == 2);
+    auto clear_missing_confirm_json = parse_json_output(clear_missing_confirm.stdout_output);
+    require_error_envelope(clear_missing_confirm_json);
+    CHECK(clear_missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto clear_errors = run_cli({"td", "scheduler", "clear-errors", "--mock", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(clear_errors.exit_code == 0);
+    auto clear_errors_json = parse_json_output(clear_errors.stdout_output);
+    require_mutation_contract(clear_errors_json);
+    CHECK(clear_errors_json["data"]["result"]["fields"]["changed"] == "0");
+
+    auto watch_json = run_cli({"td", "scheduler", "watch", "--mock", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(watch_json.exit_code == 2);
+    auto watch_json_json = parse_json_output(watch_json.stdout_output);
+    require_error_envelope(watch_json_json);
+    CHECK(watch_json_json["error"]["message"].get<std::string>().find("不支持 --json") != std::string::npos);
+}
+
 TEST_CASE("CLI config proxy 输出会脱敏凭据", "[cli][integration]") {
-    auto set_result = run_cli({"config", "set", "--key", "proxy", "--value", "http://user:secret@example.com:8080", "--confirm", "--json"});
+    auto app_data_dir = make_app_data_dir();
+    auto set_result = run_cli({"config", "set", "--key", "proxy", "--value", "http://user:secret@example.com:8080", "--confirm", "--json"}, app_data_dir);
     REQUIRE(set_result.exit_code == 0);
     REQUIRE(set_result.stdout_output.find("user:secret") == std::string::npos);
     REQUIRE(set_result.stdout_output.find("[REDACTED]") != std::string::npos);
 
-    auto show_result = run_cli({"config", "show", "--json"});
+    auto show_result = run_cli({"config", "show", "--json"}, app_data_dir);
     REQUIRE(show_result.exit_code == 0);
     REQUIRE(show_result.stdout_output.find("user:secret") == std::string::npos);
     auto json = parse_json_output(show_result.stdout_output);
     REQUIRE(json["ok"] == true);
     REQUIRE(json["data"]["proxy"].get<std::string>() == "http://[REDACTED]@example.com:8080");
 
-    auto clear_result = run_cli({"config", "set", "--key", "proxy", "--value", "none", "--confirm", "--json"});
+    auto clear_result = run_cli({"config", "set", "--key", "proxy", "--value", "none", "--confirm", "--json"}, app_data_dir);
     REQUIRE(clear_result.exit_code == 0);
 }
 
@@ -1032,6 +1360,7 @@ TEST_CASE("CLI 选项缺值时保留 JSON 错误合同", "[cli][integration]") {
         {"judge", "assignment", "details-batch", "--input", "--json"},
         {"config", "set", "--base-url", "--json"},
         {"config", "set", "--proxy", "--json"},
+        {"td", "scheduler", "watch", "--poll-seconds", "--json"},
     };
 
     for (const auto &command : commands) {

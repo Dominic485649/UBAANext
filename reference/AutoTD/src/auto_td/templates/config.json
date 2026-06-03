@@ -1,0 +1,84 @@
+{
+  "type": 1,
+  "schoolno": "10006",
+  "eventno": "802",
+  "server": {
+    "ip": "10.212.28.38",
+    "port": 8888,
+    "timeout": 10
+  },
+  "machine": [
+    {
+      "id": 2,
+      "machinesn": "20211025001",
+      "location": "北航本部TD入口1",
+      "doortype": "1"
+    },
+    {
+      "id": 3,
+      "machinesn": "20220301004",
+      "location": "北航本部TD入口3",
+      "doortype": "1"
+    },
+    {
+      "id": 4,
+      "machinesn": "20230417001",
+      "location": "北航本部TD入口2",
+      "doortype": "1"
+    },
+    {
+      "id": 5,
+      "machinesn": "20210421003",
+      "location": "北航本部TD出口2",
+      "doortype": "2"
+    },
+    {
+      "id": 6,
+      "machinesn": "20210420002",
+      "location": "北航本部TD出口1",
+      "doortype": "2"
+    },
+    {
+      "id": 7,
+      "machinesn": "20220301003",
+      "location": "北航本部TD出口3",
+      "doortype": "2"
+    },
+    {
+      "id": 8,
+      "machinesn": "20210511001",
+      "location": "北航沙河TD入口1",
+      "doortype": "1"
+    },
+    {
+      "id": 9,
+      "machinesn": "20210511002",
+      "location": "北航沙河TD入口2",
+      "doortype": "1"
+    },
+    {
+      "id": 10,
+      "machinesn": "20210511003",
+      "location": "北航沙河TD入口3",
+      "doortype": "1"
+    },
+    {
+      "id": 11,
+      "machinesn": "20220218001",
+      "location": "北航沙河TD出口1",
+      "doortype": "2"
+    },
+    {
+      "id": 12,
+      "machinesn": "20220218002",
+      "location": "北航沙河TD出口2",
+      "doortype": "2"
+    },
+    {
+      "id": 13,
+      "machinesn": "20220218003",
+      "location": "北航沙河TD出口3",
+      "doortype": "2"
+    }
+  ]
+}

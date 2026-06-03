@@ -4,6 +4,7 @@ endif()
 
 add_subdirectory(common/curl)
 add_subdirectory(common/openssl)
+add_subdirectory(common/tcp)
 add_subdirectory(mock)
 add_subdirectory(windows)
 add_subdirectory(linux)

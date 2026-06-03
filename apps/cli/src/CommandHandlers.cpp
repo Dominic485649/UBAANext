@@ -59,8 +59,13 @@ nlohmann::json get_help_json() {
         option("--mock", "使用模拟数据", false),
 #endif
         option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+        option("--relogin", "手动重新登录：已有本地会话时允许清理旧会话后登录", false),
+        option("--saved", "重新登录时复用此前显式保存的账号密码；仅限安全存储或 mock", false),
+        option("--save-password", "登录成功后显式保存账号密码，供后续 relogin --saved 复用", false),
+        option("--confirm", "与 --relogin、--saved 或 relogin 命令配合，确认清理旧本地会话；也可用 --yes 或 -y", false),
     };
     add_command(commands, "login", "登录", login_options);
+    add_command(commands, "relogin", "手动重新登录并替换本地会话", login_options);
 
     add_command(commands, "mode", "显示当前连接模式");
     add_command(commands, "mode vpn", "切换为 VPN 模式");
@@ -135,6 +140,66 @@ nlohmann::json get_help_json() {
     };
     add_command(commands, "cache clear", "清除缓存", confirm_options);
     add_command(commands, "logout", "登出并清除本地会话", confirm_options);
+
+    json td_local_write_options = {
+        option("--confirm", "确认本地 TD 配置写操作；也可用 --yes 或 -y", true),
+    };
+    add_command(commands, "td init", "初始化 TD 本地配置、用户、状态、图片和日志目录", td_local_write_options);
+    add_command(commands, "td image add", "添加 TD 图片到本地 TD 图片目录", json{
+        option("path", "图片源文件路径位置参数；也可用 --path", true, "path"),
+        option("--path", "图片源文件路径", false, "path"),
+        option("--name", "保存到 TD 图片目录中的文件名", false, "name"),
+        option("--overwrite", "允许覆盖同名本地 TD 图片", false),
+        option("--confirm", "确认本地图片写入；也可用 --yes 或 -y", true),
+    });
+    add_command(commands, "td image list", "列出本地 TD 图片");
+    add_command(commands, "td user add", "添加 TD 用户；支持 --quick 沙河/学院路 或显式机器与图片参数", json{
+        option("student-id", "学号位置参数；也可用 --student-id", true, "student-id"),
+        option("--student-id", "学号", false, "student-id"),
+        option("--quick", "按校区从默认机器池和已有图片快速生成用户，仅支持 沙河 或 学院路", false, "沙河|学院路"),
+        option("--card-id", "可选卡号；未指定时按模型规则从学号派生", false, "card-id"),
+        option("--entrance", "入口机器 ID；显式模式必填", false, "machine-id"),
+        option("--exit", "出口机器 ID；显式模式必填", false, "machine-id"),
+        option("--entrance-image", "入口图片文件名；显式模式必填，来自 td image list", false, "image-name", "td image list", "id"),
+        option("--exit-image", "出口图片文件名；显式模式必填，来自 td image list", false, "image-name", "td image list", "id"),
+        option("--rounds", "目标往返次数，默认使用 TD 模型默认值", false, "n"),
+        option("--wait-min", "每轮等待下限分钟数", false, "minutes"),
+        option("--wait-max", "每轮等待上限分钟数", false, "minutes"),
+        option("--overwrite", "允许更新已存在的 TD 用户", false),
+        option("--confirm", "确认本地用户写入；也可用 --yes 或 -y", true),
+    });
+    add_command(commands, "td user list", "列出本地 TD 用户");
+    add_command(commands, "td user show", "显示本地 TD 用户详情", json{
+        option("student-id", "学号位置参数；也可用 --student-id", true, "student-id", "td user list", "id"),
+        option("--student-id", "学号", false, "student-id"),
+    });
+    add_command(commands, "td user delete", "删除本地 TD 用户", json{
+        option("student-id", "学号位置参数；也可用 --student-id", true, "student-id", "td user list", "id"),
+        option("--student-id", "学号", false, "student-id"),
+        option("--confirm", "确认本地用户删除；也可用 --yes 或 -y", true),
+    });
+    add_command(commands, "td status", "显示本地 TD 运行状态缓存");
+    add_command(commands, "td count", "读取本地缓存的 TD 锻炼次数；--refresh 会在确认后通过 TD 服务器刷新", json{
+        option("student-id", "可选学号；未指定时显示所有本地 TD 用户", false, "student-id", "td user list", "id"),
+        option("--refresh", "通过 TD check 协议刷新服务器次数；具有写语义，必须显式确认", false),
+        option("--confirm", "与 --refresh 配合确认 write-like 协议请求；也可用 --yes 或 -y", false),
+    });
+    add_command(commands, "td run", "执行一次 TD 编排；确认后通过 TD 服务器完成入口/出口请求和图片上传", json{
+        option("--once", "执行一次 TD 编排", true),
+        option("--confirm", "确认真实写语义；也可用 --yes 或 -y", true),
+    });
+    add_command(commands, "td scheduler once", "执行一次 TD 调度 tick；按时间窗口推进入口/出口状态并写入日志", json{
+        option("--confirm", "确认调度 tick 可能触发 TD check/upload 请求；也可用 --yes 或 -y", true),
+    });
+    add_command(commands, "td scheduler clear-errors", "清理今日 TD error 状态，使调度器可重新从入口开始", json{
+        option("--date", "可选日期，格式 yyyy-MM-dd；默认今天", false, "yyyy-MM-dd"),
+        option("--confirm", "确认本地状态写入；也可用 --yes 或 -y", true),
+    });
+    add_command(commands, "td scheduler watch", "后台持续轮询 TD 调度 tick；人类可读模式下按 Ctrl-C 停止", json{
+        option("--poll-seconds", "轮询间隔秒数；默认使用 TD config.poll_seconds", false, "seconds"),
+        option("--confirm", "确认持续调度可能触发 TD check/upload 请求；也可用 --yes 或 -y", true),
+    });
+
     add_command(commands, "user info", "显示用户信息");
     add_command(commands, "app version", "显示应用版本信息");
     add_command(commands, "app announcement", "显示公告");
@@ -309,8 +374,15 @@ void print_usage() {
     Console::println("  version                                  显示版本");
     Console::println("  help                                     显示帮助；help --json 输出机器可读命令目录");
     Console::println("  login <账号> <密码>                     登录（默认 VPN 模式，兼容 --username/--password）");
+    Console::println("  login <账号> <密码> --save-password     登录成功后显式保存密码，供后续 relogin --saved 复用");
+    Console::println("  relogin <账号> <密码> [-y|--confirm|--yes]  手动重新登录并替换本地会话");
+    Console::println("  relogin --saved [-y|--confirm|--yes]    复用已保存账号密码重新登录");
+    Console::println("  login --relogin <账号> <密码> [-y|--confirm|--yes]  兼容写法：手动重新登录");
 #if UBAANEXT_ENABLE_MOCKS
     Console::println("  login --mock <账号> <密码>              模拟登录");
+    Console::println("  login --mock <账号> <密码> --save-password  模拟登录并保存密码供 relogin --saved 使用");
+    Console::println("  relogin --mock <账号> <密码> [-y|--confirm|--yes]  模拟手动重新登录");
+    Console::println("  relogin --mock --saved [-y|--confirm|--yes]  模拟复用已保存账号密码重新登录");
 #endif
     Console::println("  mode                                     显示当前连接模式");
     Console::println("  mode direct                              切换为直连模式");
@@ -426,6 +498,29 @@ void print_usage() {
     Console::println("                                           提交评教；来源: evaluation list 输出记录的 id 字段");
     Console::println("  todo list [--pending-only|--all]         显示待办聚合");
 
+    Console::println("  td init [-y|--confirm|--yes]             初始化 TD 本地目录和默认配置");
+    Console::println("  td image add <path> [--name <name>] [--overwrite] [-y|--confirm|--yes]");
+    Console::println("                                           添加本地 TD 图片；不会上传到 TD 服务器");
+    Console::println("  td image list                            列出本地 TD 图片");
+    Console::println("  td user add <student-id> --quick <沙河|学院路> [-y|--confirm|--yes]");
+    Console::println("                                           快速添加 TD 用户；需要先用 td image add 准备图片");
+    Console::println("  td user add <student-id> --entrance <id> --exit <id> --entrance-image <name> --exit-image <name> [-y|--confirm|--yes]");
+    Console::println("                                           显式添加 TD 用户；图片名来自 td image list");
+    Console::println("  td user list                             列出本地 TD 用户");
+    Console::println("  td user show <student-id>                显示本地 TD 用户详情");
+    Console::println("  td user delete <student-id> [-y|--confirm|--yes]");
+    Console::println("                                           删除本地 TD 用户");
+    Console::println("  td status                                显示本地 TD 状态缓存");
+    Console::println("  td count [student-id]                    读取本地缓存的 TD 锻炼次数，不访问服务器");
+    Console::println("  td count [student-id] --refresh [-y|--confirm|--yes]");
+    Console::println("                                           确认后通过 TD check 协议刷新服务器次数，具有写语义");
+    Console::println("  td run --once [-y|--confirm|--yes]       确认后执行一次 TD 入口/出口编排并上传图片");
+    Console::println("  td scheduler once [-y|--confirm|--yes]  执行一次 TD 时间窗口调度并写入日志");
+    Console::println("  td scheduler clear-errors [--date <yyyy-MM-dd>] [-y|--confirm|--yes]");
+    Console::println("                                           清理今日或指定日期的 TD error 状态");
+    Console::println("  td scheduler watch [--poll-seconds <n>] [-y|--confirm|--yes]");
+    Console::println("                                           持续后台轮询 TD 调度；人类可读模式按 Ctrl-C 停止");
+
     Console::println("\n配置、缓存和占位接口");
     Console::println("  config show                              显示当前配置");
     Console::println("  config set --key <key> --value <value> [-y|--confirm|--yes]");
@@ -455,16 +550,16 @@ void print_help(OutputFormatter &out) {
 }
 
 bool is_cli_command(const std::string &command) {
-    static constexpr std::array<std::string_view, 21> commands = {
+    static constexpr std::array<std::string_view, 22> commands = {
         "course", "exam", "classroom", "term", "week", "config", "mode", "cache",
         "user", "app", "grade", "spoc", "judge", "signin", "ygdk", "evaluation",
-        "bykc", "cgyy", "libbook", "todo", "file",
+        "bykc", "cgyy", "libbook", "todo", "file", "td",
     };
     return std::find(commands.begin(), commands.end(), std::string_view(command)) != commands.end();
 }
 
 bool is_command_with_action(const std::string &command) {
-    static constexpr std::array<std::string_view, 5> commands = {"spoc", "judge", "bykc", "cgyy", "libbook"};
+    static constexpr std::array<std::string_view, 6> commands = {"spoc", "judge", "bykc", "cgyy", "libbook", "td"};
     return std::find(commands.begin(), commands.end(), std::string_view(command)) != commands.end();
 }
 

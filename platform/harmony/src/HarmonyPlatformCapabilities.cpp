@@ -12,7 +12,7 @@ PlatformCapabilities HarmonyPlatformCapabilities::capabilities() const {
     caps.secure_store = false;
     caps.app_data_path = true;
     caps.upload_bytes = true;
-    caps.live_login = false;
+    caps.live_login = true;
     caps.write_operations = true;
     return caps;
 }

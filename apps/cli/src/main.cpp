@@ -5,7 +5,8 @@
  * 命令树：
  *   version [--json]
  *   help [--json]
- *   login [--mock] <id> <pw> [--mode vpn|direct]
+ *   login [--mock] <id> <pw> [--mode vpn|direct] [--save-password]
+ *   relogin [--mock] [<id> <pw>|--saved] [--mode vpn|direct] [--confirm]
  *   mode [vpn|direct] [--json]
  *   whoami [--json]
  *   logout [--json]
@@ -19,6 +20,18 @@
  *   config show [--json]
  *   config set --key <key> --value <value> [--json]
  *   cache clear [--json]
+ *   td init [--confirm] [--json]
+ *   td image add <path> [--name <name>] [--overwrite] [--confirm] [--json]
+ *   td image list [--json]
+ *   td user add <student-id> --quick <沙河|学院路> [--card-id <id>] [--confirm] [--json]
+ *   td user add <student-id> --entrance <id> --exit <id> --entrance-image <name> --exit-image <name> [--confirm] [--json]
+ *   td user list|show|delete [<student-id>] [--confirm] [--json]
+ *   td status [--json]
+ *   td count [<student-id>] [--refresh] [--confirm] [--json]
+ *   td run --once [--confirm] [--json]
+ *   td scheduler once [--confirm] [--json]
+ *   td scheduler clear-errors [--date <yyyy-MM-dd>] [--confirm] [--json]
+ *   td scheduler watch [--poll-seconds <n>] [--confirm] [--json]
  *
  * 所有命令支持 --json 输出。
  */
@@ -36,29 +49,60 @@
 #include <UBAANext/Version.hpp>
 #include <UBAANext/Auth/SessionContext.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
+#include <UBAANext/Model/Td.hpp>
+#include <UBAANext/Platform/Tcp/TdTcpTransport.hpp>
+#include <UBAANext/Protocol/TdClient.hpp>
+#include <UBAANext/Service/TdSchedulerService.hpp>
+#include <UBAANext/Service/TdService.hpp>
+#include <UBAANext/Service/WriteOperationGate.hpp>
+#include <UBAANext/Storage/TdStore.hpp>
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <csignal>
 #include <cctype>
 #include <charconv>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <optional>
 #include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#include <windows.h>
+#endif
+
 namespace um = UBAANext;
+namespace td = UBAANext::Model::Td;
 using UBAANextCli::AppContext;
 using UBAANextCli::CliConfig;
 using UBAANextCli::ExitCode;
 using UBAANextCli::OutputFormatter;
 using UBAANextCli::ServiceFactory;
+
+namespace {
+
+volatile std::sig_atomic_t g_td_scheduler_stop_requested = 0;
+
+void request_td_scheduler_stop(int /*signal*/) {
+    g_td_scheduler_stop_requested = 1;
+}
+
+} // namespace
 
 struct CliArgs;
 
@@ -126,6 +170,24 @@ struct CliArgs {
     std::string end_time;
     std::string storey_id;
     bool confirmed = false;
+    bool relogin = false;
+    bool saved_credentials = false;
+    bool save_password = false;
+    std::string student_id;
+    std::string card_id;
+    std::string td_campus;
+    std::string image_name;
+    std::string entrance_image;
+    std::string exit_image;
+    int entrance_machine_id = 0;
+    int exit_machine_id = 0;
+    int rounds = um::Model::Td::default_rounds;
+    int wait_min = um::Model::Td::default_wait_time_min_minutes;
+    int wait_max = um::Model::Td::default_wait_time_max_minutes;
+    int poll_seconds = 0;
+    bool overwrite = false;
+    bool once = false;
+    bool refresh = false;
     std::string error_message;  // 详细的错误信息
 };
 
@@ -248,6 +310,12 @@ CliArgs parse_args(int argc, char *argv[]) {
 #endif
         } else if (arg == "--json") {
             args.json_output = true;
+        } else if (arg == "--no-color" || arg == "--no-colour") {
+#if defined(_WIN32)
+            _putenv_s("UBAANEXT_NO_COLOR", "1");
+#else
+            setenv("UBAANEXT_NO_COLOR", "1", 1);
+#endif
         } else if (arg == "--username") {
             read_string_option(argc, argv, i, "--username", args.username, args);
         } else if (arg == "--password") {
@@ -382,6 +450,108 @@ CliArgs parse_args(int argc, char *argv[]) {
             read_string_option(argc, argv, i, "--photo", args.photo_path, args);
         } else if (arg == "--path") {
             read_string_option(argc, argv, i, "--path", args.photo_path, args);
+        } else if (arg == "--name") {
+            read_string_option(argc, argv, i, "--name", args.image_name, args);
+        } else if (arg == "--student-id") {
+            read_string_option(argc, argv, i, "--student-id", args.student_id, args);
+        } else if (arg == "--card-id") {
+            read_string_option(argc, argv, i, "--card-id", args.card_id, args);
+        } else if (arg == "--quick") {
+            read_string_option(argc, argv, i, "--quick", args.td_campus, args);
+        } else if (arg == "--entrance") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--entrance", value, args)) continue;
+            if (auto v = parse_int(value)) {
+                if (*v <= 0) {
+                    args.error_message = "--entrance 值必须大于 0";
+                    args.parse_error = true;
+                } else {
+                    args.entrance_machine_id = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--entrance 值无效 '{}'", value);
+                args.parse_error = true;
+            }
+        } else if (arg == "--exit") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--exit", value, args)) continue;
+            if (auto v = parse_int(value)) {
+                if (*v <= 0) {
+                    args.error_message = "--exit 值必须大于 0";
+                    args.parse_error = true;
+                } else {
+                    args.exit_machine_id = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--exit 值无效 '{}'", value);
+                args.parse_error = true;
+            }
+        } else if (arg == "--entrance-image") {
+            read_string_option(argc, argv, i, "--entrance-image", args.entrance_image, args);
+        } else if (arg == "--exit-image") {
+            read_string_option(argc, argv, i, "--exit-image", args.exit_image, args);
+        } else if (arg == "--rounds") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--rounds", value, args)) continue;
+            if (auto v = parse_int(value)) {
+                if (*v <= 0) {
+                    args.error_message = "--rounds 值必须大于 0";
+                    args.parse_error = true;
+                } else {
+                    args.rounds = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--rounds 值无效 '{}'", value);
+                args.parse_error = true;
+            }
+        } else if (arg == "--wait-min") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--wait-min", value, args)) continue;
+            if (auto v = parse_int(value)) {
+                if (*v < 0) {
+                    args.error_message = "--wait-min 值不能为负数";
+                    args.parse_error = true;
+                } else {
+                    args.wait_min = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--wait-min 值无效 '{}'", value);
+                args.parse_error = true;
+            }
+        } else if (arg == "--wait-max") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--wait-max", value, args)) continue;
+            if (auto v = parse_int(value)) {
+                if (*v < 0) {
+                    args.error_message = "--wait-max 值不能为负数";
+                    args.parse_error = true;
+                } else {
+                    args.wait_max = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--wait-max 值无效 '{}'", value);
+                args.parse_error = true;
+            }
+        } else if (arg == "--overwrite") {
+            args.overwrite = true;
+        } else if (arg == "--once") {
+            args.once = true;
+        } else if (arg == "--refresh") {
+            args.refresh = true;
+        } else if (arg == "--poll-seconds") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--poll-seconds", value, args)) continue;
+            if (auto v = parse_int(value)) {
+                if (*v <= 0) {
+                    args.error_message = "--poll-seconds 值必须大于 0";
+                    args.parse_error = true;
+                } else {
+                    args.poll_seconds = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--poll-seconds 值无效 '{}'", value);
+                args.parse_error = true;
+            }
         } else if (arg == "--seat-id") {
             read_string_option(argc, argv, i, "--seat-id", args.seat_id, args);
         } else if (arg == "--segment") {
@@ -434,6 +604,12 @@ CliArgs parse_args(int argc, char *argv[]) {
             }
         } else if (arg == "--confirm" || arg == "--yes" || arg == "-y") {
             args.confirmed = true;
+        } else if (arg == "--relogin") {
+            args.relogin = true;
+        } else if (arg == "--saved" || arg == "--use-saved" || arg == "--saved-credentials") {
+            args.saved_credentials = true;
+        } else if (arg == "--save-password") {
+            args.save_password = true;
         } else if (arg == "--base-url") {
             args.config_key = "base-url";
             read_string_option(argc, argv, i, "--base-url", args.config_value, args);
@@ -443,10 +619,16 @@ CliArgs parse_args(int argc, char *argv[]) {
         } else if (arg.rfind("--", 0) == 0) {
             args.error_message = UBAANextCli::Console::format("未知选项: '{}'", arg);
             args.parse_error = true;
-        } else if (args.command == "login" && args.username.empty()) {
+        } else if ((args.command == "login" || args.command == "relogin") && args.username.empty()) {
             args.username = arg;
-        } else if (args.command == "login" && args.password.empty()) {
+        } else if ((args.command == "login" || args.command == "relogin") && args.password.empty()) {
             args.password = arg;
+        } else if (args.command == "td" && args.subcommand == "image" && args.action == "add" && args.photo_path.empty()) {
+            args.photo_path = arg;
+        } else if (args.command == "td" && args.student_id.empty() &&
+                   (args.subcommand == "count" ||
+                    (args.subcommand == "user" && (args.action == "add" || args.action == "show" || args.action == "delete" || args.action == "count")))) {
+            args.student_id = arg;
         } else {
             args.error_message = UBAANextCli::Console::format("未知参数: '{}'", arg);
             args.parse_error = true;
@@ -579,6 +761,7 @@ AppContext build_context(bool mock, const std::string &mode, const CliConfig &co
 
 /** Sensitive cookie persistence forward declaration: saves platform cookies only after real requests. */
 void save_real_cookies(ServiceFactory &factory);
+ExitCode map_error_to_exit_code(const um::Error &error);
 
 bool command_requires_session(const CliArgs &args) {
     if (args.mock || args.command.empty()) {
@@ -657,10 +840,51 @@ bool real_session_persistence_available(const AppContext &ctx) {
     return ctx.mock_mode || ctx.capabilities.secure_store;
 }
 
+/** Credential reuse storage: persists only after explicit --save-password and only in secure/mock stores. */
+bool can_store_saved_credentials(const AppContext &ctx) {
+    return ctx.mock_mode || ctx.capabilities.secure_store;
+}
+
 /** Sensitive session persistence error: real login must fail closed when secure store is unavailable. */
 um::Error unsupported_session_persistence_error() {
     return {um::ErrorCode::UnsupportedSecureStore,
             "当前平台没有可用安全存储，已拒绝保存真实登录会话；请启用平台安全存储后重试"};
+}
+
+/** Sensitive stored credentials: only manual relogin may reuse credentials explicitly saved in secure/mock store. */
+um::Result<void> load_saved_credentials_if_requested(CliArgs &args, const AppContext &ctx) {
+    if (!args.saved_credentials) return {};
+    if (args.command != "relogin" && !args.relogin) {
+        return um::make_error(um::ErrorCode::InvalidArgument, "--saved 只能与 relogin 或 login --relogin 配合使用");
+    }
+    if (!args.username.empty() || !args.password.empty()) {
+        return um::make_error(um::ErrorCode::InvalidArgument, "--saved 会复用已保存账号密码，不能同时手动传入账号或密码");
+    }
+    if (!can_store_saved_credentials(ctx)) {
+        return um::make_error(um::ErrorCode::UnsupportedSecureStore, "当前平台没有可用安全存储，不能复用已保存账号密码");
+    }
+    const auto username = ctx.store->get_string("login.username");
+    const auto password = ctx.store->get_string("login.password");
+    if (!username || !password || username->empty() || password->empty()) {
+        return um::make_error(um::ErrorCode::InvalidArgument, "没有可复用的已保存账号密码；请先使用 login <账号> <密码> --save-password 显式保存");
+    }
+    args.username = *username;
+    args.password = *password;
+    return {};
+}
+
+/** Sensitive stored credentials: opt-in only; never saves passwords in unsupported real stores. */
+um::Result<void> save_credentials_if_requested(const CliArgs &args, AppContext &ctx) {
+    if (!args.save_password) return {};
+    if (!can_store_saved_credentials(ctx)) {
+        return um::make_error(um::ErrorCode::UnsupportedSecureStore, "当前平台没有可用安全存储，已拒绝保存登录密码；请启用平台安全存储后重试");
+    }
+    ctx.store->set_string("login.username", args.username);
+    ctx.store->set_string("login.password", args.password);
+    ctx.store->set_string("login.connection_mode", ctx.conn_mode == um::ConnectionMode::Direct ? "direct" : (ctx.mock_mode ? "mock" : "vpn"));
+    auto flushed = ctx.store->flush();
+    if (!flushed) return um::make_error(flushed.error().code, flushed.error().message);
+    return {};
 }
 
 /** Sensitive local mutation: clears platform cookies and local cookie file; does not prove remote logout. */
@@ -680,18 +904,56 @@ ExitCode cmd_help(OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
+/** Sensitive re-login preparation: manual relogin clears local session/cookies/cache before saving the new session. */
+ExitCode prepare_relogin_if_needed(CliArgs &args, ServiceFactory &factory, OutputFormatter &out, um::AuthService &auth) {
+    const bool wants_relogin = args.command == "relogin" || args.relogin;
+    const auto existing = auth.restore_session();
+    if (!existing) {
+        return ExitCode::Ok;
+    }
+    if (!wants_relogin) {
+        out.print_error({um::ErrorCode::InvalidArgument,
+                         "已存在本地登录会话；如需手动重新登录，请使用 'ubaa relogin <账号> <密码> --confirm'，或为 login 传入 --relogin --confirm"});
+        return ExitCode::InvalidArgument;
+    }
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "relogin"); confirm != ExitCode::Ok) return confirm;
+    auto logged_out = auth.logout();
+    if (!logged_out) {
+        out.print_error(logged_out.error());
+        return map_error_to_exit_code(logged_out.error());
+    }
+    if (!args.save_password) {
+        factory.context().store->remove("login.username");
+        factory.context().store->remove("login.password");
+        factory.context().store->remove("login.connection_mode");
+        (void)factory.context().store->flush();
+    }
+    clear_real_cookies(factory);
+    factory.context().cache->clear();
+    return ExitCode::Ok;
+}
+
 /** Sensitive input CLI handler: performs login/session persistence; credentials must stay redacted and mock mode is not live proof. */
-ExitCode cmd_login(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out, bool mock) {
+ExitCode cmd_login(CliArgs &args, ServiceFactory &factory, OutputFormatter &out, bool mock) {
     if (args.username.empty()) {
-        out.print_error({um::ErrorCode::InvalidArgument, "login 需要账号: ubaa login <账号> <密码>"});
+        out.print_error({um::ErrorCode::InvalidArgument, args.saved_credentials
+                             ? "relogin --saved 需要先存在已保存账号密码"
+                             : "login 需要账号: ubaa login <账号> <密码>"});
         return ExitCode::InvalidArgument;
     }
     if (args.password.empty()) {
-        out.print_error({um::ErrorCode::InvalidArgument, "login 需要密码: ubaa login <账号> <密码>"});
+        out.print_error({um::ErrorCode::InvalidArgument, args.saved_credentials
+                             ? "relogin --saved 需要先存在已保存账号密码"
+                             : "login 需要密码: ubaa login <账号> <密码>"});
         return ExitCode::InvalidArgument;
     }
 
     auto auth = factory.create_auth_service();
+    if (args.saved_credentials) {
+        args.save_password = true;
+        args.relogin = true;
+    }
+    if (auto prepared = prepare_relogin_if_needed(args, factory, out, auth); prepared != ExitCode::Ok) return prepared;
 
 #if UBAANEXT_ENABLE_MOCKS
     if (mock) {
@@ -699,6 +961,10 @@ ExitCode cmd_login(const CliArgs &args, ServiceFactory &factory, OutputFormatter
         if (!result) {
             out.print_error(result.error());
             return ExitCode::General;
+        }
+        if (auto saved = save_credentials_if_requested(args, factory.context()); !saved) {
+            out.print_error(saved.error());
+            return map_error_to_exit_code(saved.error());
         }
         out.print_login_result("登录成功（模拟）。", *result);
         return ExitCode::Ok;
@@ -722,6 +988,11 @@ ExitCode cmd_login(const CliArgs &args, ServiceFactory &factory, OutputFormatter
     }
 
     save_real_cookies(factory);
+
+    if (auto saved = save_credentials_if_requested(args, factory.context()); !saved) {
+        out.print_error(saved.error());
+        return map_error_to_exit_code(saved.error());
+    }
 
     out.print_login_result("登录成功。", *result);
     return ExitCode::Ok;
@@ -929,6 +1200,704 @@ ExitCode cmd_week_list(const CliArgs &args, ServiceFactory &factory, OutputForma
     save_real_cookies(factory);
     out.print_weeks(*result);
     return ExitCode::Ok;
+}
+
+[[nodiscard]] um::TdStore create_td_store() {
+    return um::TdStore(get_app_data_dir() / "td");
+}
+
+[[nodiscard]] std::string path_text(const std::filesystem::path &path) {
+    return path.u8string();
+}
+
+[[nodiscard]] std::string int_text(int value) {
+    return std::to_string(value);
+}
+
+[[nodiscard]] std::string optional_int_text(const std::optional<int> &value) {
+    return value ? std::to_string(*value) : std::string{};
+}
+
+[[nodiscard]] um::Model::FeatureRecord td_init_record(const um::TdStore &store) {
+    const auto &paths = store.paths();
+    um::Model::FeatureRecord record;
+    record.id = "td";
+    record.title = "TD 本地数据目录";
+    record.status = "initialized";
+    record.fields["root"] = path_text(paths.root);
+    record.fields["imagesDir"] = path_text(paths.images_dir);
+    record.fields["logsDir"] = path_text(paths.logs_dir);
+    record.fields["configPath"] = path_text(paths.config_path);
+    record.fields["usersPath"] = path_text(paths.users_path);
+    record.fields["statePath"] = path_text(paths.state_path);
+    record.fields["settingsPath"] = path_text(paths.settings_path);
+    return record;
+}
+
+[[nodiscard]] um::Model::FeatureRecord td_image_record(const std::string &name, const um::TdStore *store = nullptr) {
+    um::Model::FeatureRecord record;
+    record.id = name;
+    record.title = name;
+    record.status = "stored";
+    if (store != nullptr) {
+        auto path = store->image_path(name);
+        if (path) record.fields["path"] = path_text(*path);
+    }
+    return record;
+}
+
+[[nodiscard]] um::Model::FeatureRecord td_user_record(const td::User &user) {
+    um::Model::FeatureRecord record;
+    record.id = user.student_id;
+    record.title = user.student_id;
+    record.status = "configured";
+    record.fields["cardId"] = user.card_id;
+    record.fields["entranceMachineId"] = int_text(user.entrance_machine_id);
+    record.fields["exitMachineId"] = int_text(user.exit_machine_id);
+    record.fields["entranceImage"] = user.entrance_image;
+    record.fields["exitImage"] = user.exit_image;
+    record.fields["rounds"] = int_text(user.rounds);
+    record.fields["waitMinMinutes"] = int_text(user.wait_time_min_minutes);
+    record.fields["waitMaxMinutes"] = int_text(user.wait_time_max_minutes);
+    record.fields["cachedTermCount"] = optional_int_text(user.cached_term_count);
+    return record;
+}
+
+[[nodiscard]] um::Model::FeatureRecord td_state_record(const td::UserState &state) {
+    um::Model::FeatureRecord record;
+    record.id = state.student_id;
+    record.title = state.date.empty() ? state.student_id : state.date;
+    record.status = state.status;
+    record.fields["studentId"] = state.student_id;
+    record.fields["date"] = state.date;
+    record.fields["nextAction"] = state.next_action;
+    record.fields["completedRounds"] = int_text(state.completed_rounds);
+    record.fields["termCount"] = optional_int_text(state.term_count);
+    record.fields["nextRunAt"] = state.next_run_at;
+    record.fields["lastError"] = state.last_error;
+    record.fields["lastMessage"] = state.last_message;
+    return record;
+}
+
+[[nodiscard]] um::Model::FeatureRecord td_count_record(const td::User &user, const std::optional<td::UserState> &state) {
+    um::Model::FeatureRecord record;
+    record.id = user.student_id;
+    record.title = user.student_id;
+    if (state && state->term_count) {
+        record.status = "cached-state";
+        record.fields["termCount"] = std::to_string(*state->term_count);
+        record.fields["source"] = "state";
+    } else if (user.cached_term_count) {
+        record.status = "cached-user";
+        record.fields["termCount"] = std::to_string(*user.cached_term_count);
+        record.fields["source"] = "user";
+    } else {
+        record.status = "missing";
+        record.fields["termCount"] = "";
+        record.fields["source"] = "none";
+    }
+    record.fields["completedRounds"] = state ? int_text(state->completed_rounds) : std::string{};
+    record.fields["lastError"] = state ? state->last_error : std::string{};
+    return record;
+}
+
+[[nodiscard]] um::Model::MutationResult td_mutation(std::string message, um::Model::FeatureRecord summary, bool accepted = true) {
+    um::Model::MutationResult result;
+    result.accepted = accepted;
+    result.message = std::move(message);
+    result.summary = std::move(summary);
+    return result;
+}
+
+[[nodiscard]] ExitCode td_print_error(OutputFormatter &out, const um::Error &error) {
+    out.print_error(error);
+    return map_error_to_exit_code(error);
+}
+
+[[nodiscard]] ExitCode td_initialize_store(um::TdStore &store, OutputFormatter &out) {
+    auto initialized = store.initialize();
+    if (!initialized) return td_print_error(out, initialized.error());
+    return ExitCode::Ok;
+}
+
+[[nodiscard]] std::string td_student_id_arg(const CliArgs &args) {
+    if (!args.student_id.empty()) return args.student_id;
+    if (!args.id.empty()) return args.id;
+    if (args.command == "td" && args.subcommand == "count" && !args.action.empty()) return args.action;
+    return {};
+}
+
+[[nodiscard]] std::int64_t td_timestamp_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+[[nodiscard]] um::WriteOperationGate td_write_gate(const AppContext &ctx, std::string operation, bool confirmed) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (ctx.conn_mode == um::ConnectionMode::Mock) {
+        um::WriteOperationGate gate;
+        gate.confirmed = confirmed;
+        gate.allow_write_operations = true;
+        gate.operation = std::move(operation);
+        return gate;
+    }
+#endif
+    return um::confirmed_write_operation(ctx.capabilities, std::move(operation), confirmed);
+}
+
+#if UBAANEXT_ENABLE_MOCKS
+class CliMockTdClient final : public um::Protocol::Td::ITdClient {
+public:
+    [[nodiscard]] um::Result<um::Protocol::Td::CheckResponse> check(const td::User & /*user*/,
+                                                                    int /*machine_id*/,
+                                                                    std::int64_t /*timestamp_ms*/) override {
+        um::Protocol::Td::CheckResponse response;
+        response.success = true;
+        response.server_message = "mock td check ok";
+        response.count = 7 + ++m_count;
+        return response;
+    }
+
+    [[nodiscard]] um::Result<um::Protocol::Td::TdRawResponse> upload_photo(int /*machine_id*/,
+                                                                           const um::Protocol::Td::ByteVector & /*photo*/,
+                                                                           std::int64_t /*timestamp_ms*/) override {
+        um::Protocol::Td::TdRawResponse response;
+        response.status = "success";
+        response.server_message = "mock td upload ok";
+        return response;
+    }
+
+    [[nodiscard]] um::Result<int> query_count(const td::User & /*user*/,
+                                              std::optional<int> /*machine_id*/,
+                                              std::int64_t /*timestamp_ms*/) override {
+        return 7;
+    }
+
+private:
+    int m_count = 0;
+};
+#endif
+
+class CliNoopTdClient final : public um::Protocol::Td::ITdClient {
+public:
+    [[nodiscard]] um::Result<um::Protocol::Td::CheckResponse> check(const td::User &, int, std::int64_t) override {
+        return um::make_error(um::ErrorCode::NotImplemented, "TD noop client 不执行 check");
+    }
+
+    [[nodiscard]] um::Result<um::Protocol::Td::TdRawResponse> upload_photo(int,
+                                                                           const um::Protocol::Td::ByteVector &,
+                                                                           std::int64_t) override {
+        return um::make_error(um::ErrorCode::NotImplemented, "TD noop client 不执行 upload_photo");
+    }
+
+    [[nodiscard]] um::Result<int> query_count(const td::User &, std::optional<int>, std::int64_t) override {
+        return um::make_error(um::ErrorCode::NotImplemented, "TD noop client 不执行 query_count");
+    }
+};
+
+[[nodiscard]] um::Result<um::Model::FeatureRecord> td_refresh_user_count(um::TdStore &store,
+                                                                          um::Protocol::Td::ITdClient &client,
+                                                                          const td::User &user,
+                                                                          const std::optional<td::UserState> &previous_state) {
+    td::UserState state = previous_state.value_or(td::UserState{});
+    state.student_id = user.student_id;
+    if (state.next_action.empty()) state.next_action = "entrance";
+
+    auto count = client.query_count(user,
+                                    user.entrance_machine_id > 0 ? std::optional<int>{user.entrance_machine_id} : std::nullopt,
+                                    td_timestamp_ms());
+    if (!count) {
+        state.status = "error";
+        state.last_error = count.error().message;
+        auto saved_error = store.save_state(state);
+        if (!saved_error) return um::make_error(saved_error.error().code, saved_error.error().message);
+        return um::make_error(count.error().code, count.error().message);
+    }
+
+    state.term_count = *count;
+    state.status = *count >= td::completion_limit ? "completed" : "refreshed";
+    if (*count >= td::completion_limit) state.next_action = "none";
+    state.last_error.clear();
+
+    auto saved = store.save_state(state);
+    if (!saved) return um::make_error(saved.error().code, saved.error().message);
+
+    auto record = td_count_record(user, std::optional<td::UserState>{state});
+    record.status = state.status;
+    record.fields["source"] = "server";
+    return record;
+}
+
+ExitCode td_refresh_counts(CliArgs &args, OutputFormatter &out, um::TdStore &store, um::Protocol::Td::ITdClient &client) {
+    const auto student_id = td_student_id_arg(args);
+    if (!student_id.empty()) {
+        auto user = store.load_user(student_id);
+        if (!user) return td_print_error(out, user.error());
+        if (!*user) {
+            out.print_error({um::ErrorCode::InvalidArgument, "TD 用户不存在: " + student_id});
+            return ExitCode::InvalidArgument;
+        }
+        auto state = store.load_state(student_id);
+        if (!state) return td_print_error(out, state.error());
+        auto record = td_refresh_user_count(store, client, **user, *state);
+        if (!record) return td_print_error(out, record.error());
+        out.print_record("tdCount", *record);
+        return ExitCode::Ok;
+    }
+
+    auto users = store.load_users();
+    if (!users) return td_print_error(out, users.error());
+    auto states = store.load_states();
+    if (!states) return td_print_error(out, states.error());
+
+    std::vector<um::Model::FeatureRecord> records;
+    records.reserve(users->size());
+    for (const auto &user : *users) {
+        auto state_it = std::find_if(states->begin(), states->end(), [&](const td::UserState &state) {
+            return state.student_id == user.student_id;
+        });
+        std::optional<td::UserState> state;
+        if (state_it != states->end()) state = *state_it;
+        auto record = td_refresh_user_count(store, client, user, state);
+        if (!record) return td_print_error(out, record.error());
+        records.push_back(*record);
+    }
+    out.print_records("tdCounts", records);
+    return ExitCode::Ok;
+}
+
+[[nodiscard]] std::vector<um::Model::FeatureRecord> td_run_records(const um::TdRunResult &result) {
+    std::vector<um::Model::FeatureRecord> records;
+    records.reserve(result.users.size() + 1);
+
+    um::Model::FeatureRecord summary;
+    summary.id = "td";
+    summary.title = "TD run --once";
+    summary.status = result.total == 0 ? "empty" : (result.failure_count > 0 ? "partial" : "completed");
+    summary.fields["total"] = int_text(result.total);
+    summary.fields["success"] = int_text(result.success_count);
+    summary.fields["failure"] = int_text(result.failure_count);
+    summary.fields["skipped"] = int_text(result.skipped_count);
+    records.push_back(std::move(summary));
+
+    for (const auto &user : result.users) {
+        um::Model::FeatureRecord record;
+        record.id = user.student_id;
+        record.title = user.student_id;
+        record.status = user.status;
+        record.fields["index"] = int_text(user.index);
+        record.fields["success"] = user.success ? "true" : "false";
+        record.fields["skipped"] = user.skipped ? "true" : "false";
+        record.fields["message"] = user.message;
+        record.fields["termCount"] = optional_int_text(user.term_count);
+        record.fields["completedRounds"] = int_text(user.completed_rounds);
+        record.fields["nextAction"] = user.state.next_action;
+        record.fields["lastError"] = user.state.last_error;
+        records.push_back(std::move(record));
+    }
+    return records;
+}
+
+ExitCode cmd_td_init(CliArgs &args, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td init"); confirm != ExitCode::Ok) return confirm;
+    auto store = create_td_store();
+    if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+    out.print_record("tdInit", td_init_record(store));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_image_add(CliArgs &args, OutputFormatter &out) {
+    if (args.photo_path.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "td image add 需要 <path> 或 --path <path>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td image add"); confirm != ExitCode::Ok) return confirm;
+    auto store = create_td_store();
+    if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+    auto image = store.add_image(args.photo_path, args.image_name, args.overwrite);
+    if (!image) return td_print_error(out, image.error());
+    out.print_mutation(td_mutation("TD 图片已保存", td_image_record(*image, &store)));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_image_list(OutputFormatter &out) {
+    auto store = create_td_store();
+    auto images = store.list_images();
+    if (!images) return td_print_error(out, images.error());
+    std::vector<um::Model::FeatureRecord> records;
+    records.reserve(images->size());
+    for (const auto &image : *images) {
+        records.push_back(td_image_record(image, &store));
+    }
+    out.print_records("tdImages", records);
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_user_add(CliArgs &args, OutputFormatter &out) {
+    const auto student_id = td_student_id_arg(args);
+    if (student_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "td user add 需要 <student-id> 或 --student-id <student-id>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.wait_min > args.wait_max) {
+        out.print_error({um::ErrorCode::InvalidArgument, "--wait-min 必须小于等于 --wait-max"});
+        return ExitCode::InvalidArgument;
+    }
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td user add"); confirm != ExitCode::Ok) return confirm;
+
+    auto store = create_td_store();
+    if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+
+    um::Result<td::User> user = um::make_error(um::ErrorCode::InvalidArgument, "td user add 参数不足");
+    if (!args.td_campus.empty()) {
+        auto config = store.load_config();
+        if (!config) return td_print_error(out, config.error());
+        auto images = store.list_images();
+        if (!images) return td_print_error(out, images.error());
+        user = td::build_quick_user(*config, *images, student_id, args.td_campus, 0, 0, 0, 0, args.card_id);
+        if (user) {
+            user->rounds = args.rounds;
+            user->wait_time_min_minutes = args.wait_min;
+            user->wait_time_max_minutes = args.wait_max;
+        }
+    } else {
+        if (args.entrance_machine_id <= 0 || args.exit_machine_id <= 0 || args.entrance_image.empty() || args.exit_image.empty()) {
+            out.print_error({um::ErrorCode::InvalidArgument,
+                             "td user add 需要 --quick <沙河|学院路>，或显式传入 --entrance <id> --exit <id> --entrance-image <name> --exit-image <name>"});
+            return ExitCode::InvalidArgument;
+        }
+        user = td::make_user(student_id,
+                             args.card_id,
+                             args.entrance_machine_id,
+                             args.exit_machine_id,
+                             args.entrance_image,
+                             args.exit_image,
+                             args.rounds,
+                             args.wait_min,
+                             args.wait_max);
+    }
+    if (!user) return td_print_error(out, user.error());
+
+    auto saved = store.save_user(*user, args.overwrite);
+    if (!saved) return td_print_error(out, saved.error());
+    out.print_mutation(td_mutation(args.overwrite ? "TD 用户已保存" : "TD 用户已添加", td_user_record(*user)));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_user_list(OutputFormatter &out) {
+    auto store = create_td_store();
+    auto users = store.load_users();
+    if (!users) return td_print_error(out, users.error());
+    std::vector<um::Model::FeatureRecord> records;
+    records.reserve(users->size());
+    for (const auto &user : *users) {
+        records.push_back(td_user_record(user));
+    }
+    out.print_records("tdUsers", records);
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_user_show(const CliArgs &args, OutputFormatter &out) {
+    const auto student_id = td_student_id_arg(args);
+    if (student_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "td user show 需要 <student-id> 或 --student-id <student-id>"});
+        return ExitCode::InvalidArgument;
+    }
+    auto store = create_td_store();
+    auto user = store.load_user(student_id);
+    if (!user) return td_print_error(out, user.error());
+    if (!*user) {
+        out.print_error({um::ErrorCode::InvalidArgument, "TD 用户不存在: " + student_id});
+        return ExitCode::InvalidArgument;
+    }
+    out.print_record("tdUser", td_user_record(**user));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_user_delete(CliArgs &args, OutputFormatter &out) {
+    const auto student_id = td_student_id_arg(args);
+    if (student_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "td user delete 需要 <student-id> 或 --student-id <student-id>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td user delete"); confirm != ExitCode::Ok) return confirm;
+    auto store = create_td_store();
+    if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+    auto removed = store.delete_user(student_id);
+    if (!removed) return td_print_error(out, removed.error());
+    if (!*removed) {
+        out.print_error({um::ErrorCode::InvalidArgument, "TD 用户不存在: " + student_id});
+        return ExitCode::InvalidArgument;
+    }
+    um::Model::FeatureRecord record;
+    record.id = student_id;
+    record.title = student_id;
+    record.status = "deleted";
+    out.print_mutation(td_mutation("TD 用户已删除", std::move(record)));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_status(OutputFormatter &out) {
+    auto store = create_td_store();
+    auto states = store.load_states();
+    if (!states) return td_print_error(out, states.error());
+    std::vector<um::Model::FeatureRecord> records;
+    records.reserve(states->size());
+    for (const auto &state : *states) {
+        records.push_back(td_state_record(state));
+    }
+    out.print_records("tdStates", records);
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_count(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    auto store = create_td_store();
+    if (args.refresh) {
+        if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td count --refresh"); confirm != ExitCode::Ok) return confirm;
+        auto allowed = um::require_write_operation(td_write_gate(factory.context(), "td count --refresh", args.confirmed));
+        if (!allowed) return td_print_error(out, allowed.error());
+        if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+
+#if UBAANEXT_ENABLE_MOCKS
+        if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+            CliMockTdClient client;
+            return td_refresh_counts(args, out, store, client);
+        }
+#endif
+
+        auto config = store.load_config();
+        if (!config) return td_print_error(out, config.error());
+        um::Platform::Tcp::TdTcpTransport transport;
+        um::Protocol::Td::TdProtocolClient client(*config, transport);
+        return td_refresh_counts(args, out, store, client);
+    }
+
+    const auto student_id = td_student_id_arg(args);
+    if (!student_id.empty()) {
+        auto user = store.load_user(student_id);
+        if (!user) return td_print_error(out, user.error());
+        if (!*user) {
+            out.print_error({um::ErrorCode::InvalidArgument, "TD 用户不存在: " + student_id});
+            return ExitCode::InvalidArgument;
+        }
+        auto state = store.load_state(student_id);
+        if (!state) return td_print_error(out, state.error());
+        out.print_record("tdCount", td_count_record(**user, *state));
+        return ExitCode::Ok;
+    }
+
+    auto users = store.load_users();
+    if (!users) return td_print_error(out, users.error());
+    auto states = store.load_states();
+    if (!states) return td_print_error(out, states.error());
+    std::vector<um::Model::FeatureRecord> records;
+    records.reserve(users->size());
+    for (const auto &user : *users) {
+        auto state_it = std::find_if(states->begin(), states->end(), [&](const td::UserState &state) {
+            return state.student_id == user.student_id;
+        });
+        std::optional<td::UserState> state;
+        if (state_it != states->end()) state = *state_it;
+        records.push_back(td_count_record(user, state));
+    }
+    out.print_records("tdCounts", records);
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_run(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (!(args.once || args.action == "once")) {
+        out.print_error({um::ErrorCode::InvalidArgument, "td run 当前只支持 --once"});
+        return ExitCode::InvalidArgument;
+    }
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td run --once"); confirm != ExitCode::Ok) return confirm;
+
+    auto store = create_td_store();
+    if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+    auto gate = td_write_gate(factory.context(), "td run --once", args.confirmed);
+
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        CliMockTdClient client;
+        um::TdService service(store, client);
+        service.set_write_operation_gate(gate);
+        auto result = service.run_once();
+        if (!result) return td_print_error(out, result.error());
+        out.print_records("tdRun", td_run_records(*result));
+        return ExitCode::Ok;
+    }
+#endif
+
+    auto config = store.load_config();
+    if (!config) return td_print_error(out, config.error());
+    um::Platform::Tcp::TdTcpTransport transport;
+    um::Protocol::Td::TdProtocolClient client(*config, transport);
+    um::TdService service(store, client);
+    service.set_write_operation_gate(gate);
+    auto result = service.run_once();
+    if (!result) return td_print_error(out, result.error());
+    out.print_records("tdRun", td_run_records(*result));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_scheduler_once(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.action != "once") {
+        out.print_error({um::ErrorCode::InvalidArgument, "td scheduler once 需要 action 为 once"});
+        return ExitCode::InvalidArgument;
+    }
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td scheduler once"); confirm != ExitCode::Ok) return confirm;
+
+    auto store = create_td_store();
+    if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+    auto gate = td_write_gate(factory.context(), "td scheduler once", args.confirmed);
+
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        CliMockTdClient client;
+        um::TdSchedulerService service(store, client);
+        service.set_write_operation_gate(gate);
+        auto result = service.run_once();
+        if (!result) return td_print_error(out, result.error());
+        out.print_records("tdScheduler", um::td_scheduler_records(*result));
+        return ExitCode::Ok;
+    }
+#endif
+
+    auto config = store.load_config();
+    if (!config) return td_print_error(out, config.error());
+    um::Platform::Tcp::TdTcpTransport transport;
+    um::Protocol::Td::TdProtocolClient client(*config, transport);
+    um::TdSchedulerService service(store, client);
+    service.set_write_operation_gate(gate);
+    auto result = service.run_once();
+    if (!result) return td_print_error(out, result.error());
+    out.print_records("tdScheduler", um::td_scheduler_records(*result));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_scheduler_clear_errors(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.action != "clear-errors") {
+        out.print_error({um::ErrorCode::InvalidArgument, "td scheduler clear-errors 需要 action 为 clear-errors"});
+        return ExitCode::InvalidArgument;
+    }
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td scheduler clear-errors"); confirm != ExitCode::Ok) return confirm;
+    auto allowed = um::require_write_operation(td_write_gate(factory.context(), "td scheduler clear-errors", args.confirmed));
+    if (!allowed) return td_print_error(out, allowed.error());
+
+    auto store = create_td_store();
+    if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+    CliNoopTdClient client;
+    um::TdSchedulerService service(store, client);
+    service.set_write_operation_gate(td_write_gate(factory.context(), "td scheduler clear-errors", args.confirmed));
+    auto changed = service.clear_today_errors(args.date);
+    if (!changed) return td_print_error(out, changed.error());
+
+    um::Model::FeatureRecord record;
+    record.id = args.date.empty() ? "today" : args.date;
+    record.title = "TD scheduler clear-errors";
+    record.status = *changed > 0 ? "updated" : "unchanged";
+    record.fields["date"] = args.date;
+    record.fields["changed"] = int_text(*changed);
+    out.print_mutation(td_mutation("TD 今日错误状态已清理", std::move(record), *changed > 0));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_scheduler_watch(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.action != "watch") {
+        out.print_error({um::ErrorCode::InvalidArgument, "td scheduler watch 需要 action 为 watch"});
+        return ExitCode::InvalidArgument;
+    }
+    if (out.is_json()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "td scheduler watch 是持续轮询命令，当前不支持 --json；请使用 td scheduler once --json"});
+        return ExitCode::InvalidArgument;
+    }
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td scheduler watch"); confirm != ExitCode::Ok) return confirm;
+
+    auto store = create_td_store();
+    if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+    auto config = store.load_config();
+    if (!config) return td_print_error(out, config.error());
+    const int poll_seconds = args.poll_seconds > 0 ? args.poll_seconds : (config->poll_seconds > 0 ? config->poll_seconds : td::default_poll_seconds);
+    auto gate = td_write_gate(factory.context(), "td scheduler watch", args.confirmed);
+
+    g_td_scheduler_stop_requested = 0;
+    auto previous_int = std::signal(SIGINT, request_td_scheduler_stop);
+    auto previous_term = std::signal(SIGTERM, request_td_scheduler_stop);
+
+    auto restore_signals = [&]() {
+        std::signal(SIGINT, previous_int);
+        std::signal(SIGTERM, previous_term);
+    };
+
+    UBAANextCli::Console::println("TD scheduler watch 已启动，轮询间隔 {} 秒；按 Ctrl-C 停止。", poll_seconds);
+    while (g_td_scheduler_stop_requested == 0) {
+#if UBAANEXT_ENABLE_MOCKS
+        if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+            CliMockTdClient client;
+            um::TdSchedulerService service(store, client);
+            service.set_write_operation_gate(gate);
+            auto result = service.run_once();
+            if (!result) {
+                restore_signals();
+                return td_print_error(out, result.error());
+            }
+            out.print_records("tdScheduler", um::td_scheduler_records(*result));
+        } else
+#endif
+        {
+            auto latest_config = store.load_config();
+            if (!latest_config) {
+                restore_signals();
+                return td_print_error(out, latest_config.error());
+            }
+            um::Platform::Tcp::TdTcpTransport transport;
+            um::Protocol::Td::TdProtocolClient client(*latest_config, transport);
+            um::TdSchedulerService service(store, client);
+            service.set_write_operation_gate(gate);
+            auto result = service.run_once();
+            if (!result) {
+                restore_signals();
+                return td_print_error(out, result.error());
+            }
+            out.print_records("tdScheduler", um::td_scheduler_records(*result));
+        }
+
+        for (int elapsed = 0; elapsed < poll_seconds && g_td_scheduler_stop_requested == 0; ++elapsed) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+
+    restore_signals();
+    out.print_message("TD scheduler watch 已停止。");
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_td_scheduler(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.action == "once") return cmd_td_scheduler_once(args, factory, out);
+    if (args.action == "clear-errors") return cmd_td_scheduler_clear_errors(args, factory, out);
+    if (args.action == "watch") return cmd_td_scheduler_watch(args, factory, out);
+    out.print_error({um::ErrorCode::InvalidArgument, "未知的 td scheduler 动作: " + args.action});
+    return ExitCode::InvalidArgument;
+}
+
+ExitCode cmd_td(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.subcommand == "init") return cmd_td_init(args, out);
+    if (args.subcommand == "image") {
+        if (args.action == "add") return cmd_td_image_add(args, out);
+        if (args.action == "list" || args.action.empty()) return cmd_td_image_list(out);
+    }
+    if (args.subcommand == "user") {
+        if (args.action == "add") return cmd_td_user_add(args, out);
+        if (args.action == "list" || args.action.empty()) return cmd_td_user_list(out);
+        if (args.action == "show") return cmd_td_user_show(args, out);
+        if (args.action == "delete" || args.action == "remove") return cmd_td_user_delete(args, out);
+        if (args.action == "count") return cmd_td_count(args, factory, out);
+    }
+    if (args.subcommand == "status") return cmd_td_status(out);
+    if (args.subcommand == "count") return cmd_td_count(args, factory, out);
+    if (args.subcommand == "run") return cmd_td_run(args, factory, out);
+    if (args.subcommand == "scheduler") return cmd_td_scheduler(args, factory, out);
+
+    out.print_error({um::ErrorCode::InvalidArgument, "未知的 td 子命令: " + args.subcommand});
+    return ExitCode::InvalidArgument;
 }
 
 /** Sensitive local config CLI handler: displays redacted config and must not expose proxy credentials. */
@@ -1878,11 +2847,16 @@ int run_cli(int argc, char *argv[]) {
     auto ctx = build_context(args.mock, config.mode, config);
     ServiceFactory factory(ctx);
 
+    if (auto loaded = load_saved_credentials_if_requested(args, ctx); !loaded) {
+        out.print_error(loaded.error());
+        return static_cast<int>(map_error_to_exit_code(loaded.error()));
+    }
+
     if (args.command == "mode") {
         return static_cast<int>(cmd_mode(args, out, config));
     }
 
-    if (args.command == "login") {
+    if (args.command == "login" || args.command == "relogin") {
         return static_cast<int>(cmd_login(args, factory, out, args.mock));
     }
     if (args.command == "whoami") {
@@ -1940,6 +2914,10 @@ int run_cli(int argc, char *argv[]) {
         if (args.subcommand == "clear") return static_cast<int>(cmd_cache_clear(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 cache 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
+    }
+
+    if (args.command == "td") {
+        return static_cast<int>(cmd_td(args, factory, out));
     }
 
     if (args.command == "user") {
@@ -2060,6 +3038,25 @@ int run_cli(int argc, char *argv[]) {
 
 namespace {
 
+void enable_windows_virtual_terminal() {
+#if defined(_WIN32)
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (out != INVALID_HANDLE_VALUE) {
+        DWORD mode = 0;
+        if (GetConsoleMode(out, &mode)) {
+            SetConsoleMode(out, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        }
+    }
+    HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+    if (err != INVALID_HANDLE_VALUE) {
+        DWORD mode = 0;
+        if (GetConsoleMode(err, &mode)) {
+            SetConsoleMode(err, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        }
+    }
+#endif
+}
+
 bool cli_has_flag(int argc, char *argv[], std::string_view flag) {
     for (int i = 1; i < argc; ++i) {
         if (std::string_view(argv[i]) == flag) return true;
@@ -2070,6 +3067,7 @@ bool cli_has_flag(int argc, char *argv[], std::string_view flag) {
 } // namespace
 
 int main(int argc, char *argv[]) {
+    enable_windows_virtual_terminal();
     try {
         return run_cli(argc, argv);
     } catch (const std::exception &ex) {

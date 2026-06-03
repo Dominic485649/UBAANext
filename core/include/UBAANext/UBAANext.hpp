@@ -28,6 +28,7 @@
 #include <UBAANext/Model/LibrarySeat.hpp>
 #include <UBAANext/Model/Signin.hpp>
 #include <UBAANext/Model/Spoc.hpp>
+#include <UBAANext/Model/Td.hpp>
 #include <UBAANext/Model/Term.hpp>
 #include <UBAANext/Model/VenueReservation.hpp>
 #include <UBAANext/Model/Week.hpp>
@@ -51,6 +52,7 @@
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
 #include <UBAANext/Storage/SecureStore.hpp>
 #include <UBAANext/Storage/SecureStoreAdapter.hpp>
+#include <UBAANext/Storage/TdStore.hpp>
 
 #include <UBAANext/Upload/UploadPart.hpp>
 
@@ -71,6 +73,7 @@
 #include <UBAANext/Protocol/DownstreamSessionTypes.hpp>
 #include <UBAANext/Protocol/RedirectNavigator.hpp>
 #include <UBAANext/Protocol/ScoreSession.hpp>
+#include <UBAANext/Protocol/TdClient.hpp>
 
 // ── 解析 ──────────────────────────────────────────────────────────
 #include <UBAANext/Parser/BykcParser.hpp>
@@ -97,6 +100,8 @@
 #include <UBAANext/Service/SigninService.hpp>
 #include <UBAANext/Service/SpocService.hpp>
 #include <UBAANext/Service/TermService.hpp>
+#include <UBAANext/Service/TdSchedulerService.hpp>
+#include <UBAANext/Service/TdService.hpp>
 #include <UBAANext/Service/TodoService.hpp>
 #include <UBAANext/Service/VenueReservationService.hpp>
 #include <UBAANext/Service/WriteOperationGate.hpp>

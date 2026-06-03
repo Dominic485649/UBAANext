@@ -7,6 +7,7 @@
 - [Result 类型](result-type.md)
 - [模型层](model-layer.md)
 - [服务层](service-layer.md)
+- [TD 核心模块](td-core.md)
 - [解析器层](parser-layer.md)
 - [网络抽象](net-abstraction.md)
 - [存储抽象](storage-abstraction.md)
