@@ -127,3 +127,37 @@ target_compile_definitions(UBAANextCliTests PRIVATE
 )
 
 catch_discover_tests(UBAANextCliTests)
+
+if(UBAANEXT_BUILD_BINDINGS)
+    add_executable(UBAANextCAbiSmokeTests
+        integration/CAbiSmokeTests.cpp
+    )
+
+    target_link_libraries(UBAANextCAbiSmokeTests
+        PRIVATE UBAANextBindingsC
+        PRIVATE Catch2::Catch2WithMain
+        PRIVATE nlohmann_json::nlohmann_json
+    )
+
+    target_compile_definitions(UBAANextCAbiSmokeTests PRIVATE
+        UBAANEXT_ENABLE_MOCKS=$<BOOL:${UBAANEXT_ENABLE_MOCKS}>
+    )
+
+    set_target_properties(UBAANextCAbiSmokeTests PROPERTIES
+        CXX_STANDARD ${UBAANEXT_CXX_STANDARD}
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    if(WIN32)
+        add_custom_command(TARGET UBAANextCAbiSmokeTests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:UBAANextBindingsC>
+                $<TARGET_FILE_DIR:UBAANextCAbiSmokeTests>
+            COMMENT "Copy C ABI DLL next to smoke tests"
+            VERBATIM
+        )
+    endif()
+
+    catch_discover_tests(UBAANextCAbiSmokeTests)
+endif()

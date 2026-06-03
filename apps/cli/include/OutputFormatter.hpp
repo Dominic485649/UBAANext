@@ -15,6 +15,7 @@
 #include <UBAANext/Model/Term.hpp>
 #include <UBAANext/Model/Week.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
+#include <UBAANext/Platform/PlatformCapabilities.hpp>
 #include <UBAANext/Auth/AuthService.hpp>
 
 #include <string>
@@ -46,6 +47,7 @@ public:
     void print_records(const std::string &key, const std::vector<UBAANext::Model::FeatureRecord> &records);
     void print_record(const std::string &key, const UBAANext::Model::FeatureRecord &record);
     void print_mutation(const UBAANext::Model::MutationResult &result);
+    void print_capabilities(const UBAANext::PlatformCapabilities &capabilities);
     void print_version(const std::string &version);
     void print_error(const UBAANext::Error &error);
     void print_message(const std::string &msg);

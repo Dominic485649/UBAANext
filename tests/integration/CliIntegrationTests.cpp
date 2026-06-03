@@ -206,6 +206,7 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "classroom query",
         "term list",
         "week list",
+        "capability show",
         "grade list",
         "grade all",
         "user info",
@@ -605,6 +606,7 @@ TEST_CASE("CLI v0.4 golden help contract", "[cli][integration][golden]") {
     };
 
     CHECK(contains_name("config show"));
+    CHECK(contains_name("capability show"));
     CHECK(contains_name("config set"));
     CHECK(contains_name("cache clear"));
     CHECK(contains_name("course today"));
@@ -681,6 +683,35 @@ TEST_CASE("CLI config show 命令", "[cli][integration]") {
     REQUIRE(json["ok"] == true);
     REQUIRE(json["data"].contains("mode"));
     REQUIRE(json["data"].contains("version"));
+}
+
+TEST_CASE("CLI capability show 命令", "[cli][integration][capability]") {
+    auto result = run_cli({"capability", "show", "--json"});
+    REQUIRE(result.exit_code == 0);
+
+    auto json = parse_json_output(result.stdout_output);
+    require_success_envelope(json);
+    REQUIRE(json["data"].contains("capabilities"));
+    REQUIRE(json["data"]["capabilities"].is_object());
+
+    const auto &capabilities = json["data"]["capabilities"];
+    const std::vector<std::string> expected_fields = {
+        "realNetwork",
+        "secureCookiePersistence",
+        "cookiePersistence",
+        "redirectControl",
+        "opensslCrypto",
+        "secureStore",
+        "appDataPath",
+        "uploadBytes",
+        "liveLogin",
+        "writeOperations",
+    };
+    for (const auto &field : expected_fields) {
+        INFO("缺失 capability 字段: " << field);
+        REQUIRE(capabilities.contains(field));
+        CHECK(capabilities[field].is_boolean());
+    }
 }
 
 #if !defined(_WIN32)

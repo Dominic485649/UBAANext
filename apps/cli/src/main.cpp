@@ -17,6 +17,7 @@
  *   classroom query --campus <id> --date <yyyy-MM-dd> [--mock] [--mode vpn|direct] [--json]
  *   term list [--mock] [--mode vpn|direct] [--json]
  *   week list [--mock] [--mode vpn|direct] [--json]
+ *   capability show [--json]
  *   config show [--json]
  *   config set --key <key> --value <value> [--json]
  *   cache clear [--json]
@@ -767,6 +768,9 @@ bool command_requires_session(const CliArgs &args) {
     if (args.mock || args.command.empty()) {
         return false;
     }
+    if (args.command == "capability") {
+        return false;
+    }
     if (args.command == "course") {
         if (args.subcommand == "week" && args.term.empty()) {
             return false;
@@ -904,6 +908,11 @@ ExitCode cmd_help(OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
+ExitCode cmd_capability_show(ServiceFactory &factory, OutputFormatter &out) {
+    out.print_capabilities(factory.context().capabilities);
+    return ExitCode::Ok;
+}
+
 /** Sensitive re-login preparation: manual relogin clears local session/cookies/cache before saving the new session. */
 ExitCode prepare_relogin_if_needed(CliArgs &args, ServiceFactory &factory, OutputFormatter &out, um::AuthService &auth) {
     const bool wants_relogin = args.command == "relogin" || args.relogin;
@@ -1037,12 +1046,12 @@ ExitCode map_error_to_exit_code(const um::Error &error) {
     case um::ErrorCode::Timeout:
     case um::ErrorCode::TlsError:         return ExitCode::Network;
     case um::ErrorCode::UnsupportedPlatform:
-    case um::ErrorCode::UnsupportedSecureStore:
     case um::ErrorCode::UnsupportedCrypto:
-    case um::ErrorCode::UnsupportedCookiePersistence:
     case um::ErrorCode::NotImplemented:
-    case um::ErrorCode::CryptoError:
-    case um::ErrorCode::StorageError:    return ExitCode::General;
+    case um::ErrorCode::CryptoError:     return ExitCode::General;
+    case um::ErrorCode::UnsupportedSecureStore:
+    case um::ErrorCode::UnsupportedCookiePersistence:
+    case um::ErrorCode::StorageError:    return ExitCode::Storage;
     case um::ErrorCode::ParseError:      return ExitCode::Parse;
     default:                             return ExitCode::General;
     }
@@ -2864,6 +2873,12 @@ int run_cli(int argc, char *argv[]) {
     }
     if (args.command == "logout") {
         return static_cast<int>(cmd_logout(args, factory, out));
+    }
+
+    if (args.command == "capability") {
+        if (args.subcommand == "show") return static_cast<int>(cmd_capability_show(factory, out));
+        out.print_error({um::ErrorCode::InvalidArgument, "未知的 capability 子命令: " + args.subcommand});
+        return static_cast<int>(ExitCode::InvalidArgument);
     }
 
     auto session_ready = restore_session_for_command(args, factory, out);

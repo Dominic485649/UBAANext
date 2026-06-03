@@ -27,6 +27,11 @@
 #include <UBAANext/Storage/SecureStore.hpp>
 #include <UBAANext/Version.hpp>
 
+#if UBAANEXT_ENABLE_MOCKS
+#    include <UBAANextMocks/MockCacheStore.hpp>
+#    include <UBAANextMocks/MockHttpClient.hpp>
+#endif
+
 #if defined(_WIN32)
 #    include <UBAANext/Platform/Windows/WindowsPlatformCapabilities.hpp>
 #elif defined(__OHOS__)
@@ -112,6 +117,14 @@ struct RuntimeBucket {
     UBAANext::Platform::Curl::CurlNetworkStack network{store};
 };
 
+#if UBAANEXT_ENABLE_MOCKS
+struct MockRuntimeBucket {
+    VolatileSecureStore store;
+    UBAANextMocks::MockCacheStore cache;
+    UBAANextMocks::MockHttpClient http;
+};
+#endif
+
 } // namespace
 
 struct UbaaNextContext {
@@ -120,15 +133,33 @@ struct UbaaNextContext {
     RuntimeBucket direct;
     RuntimeBucket webvpn;
 #if UBAANEXT_ENABLE_MOCKS
-    RuntimeBucket mock;
+    MockRuntimeBucket mock;
 #endif
     std::mutex mutex;
 
-    RuntimeBucket &bucket() {
-#if UBAANEXT_ENABLE_MOCKS
-        if (mode == UBAANext::ConnectionMode::Mock) return mock;
-#endif
+    RuntimeBucket &real_bucket() {
         return mode == UBAANext::ConnectionMode::Direct ? direct : webvpn;
+    }
+
+    UBAANext::IHttpClient &http_client() {
+#if UBAANEXT_ENABLE_MOCKS
+        if (mode == UBAANext::ConnectionMode::Mock) return mock.http;
+#endif
+        return real_bucket().network.http_client();
+    }
+
+    UBAANext::ICacheStore &cache_store() {
+#if UBAANEXT_ENABLE_MOCKS
+        if (mode == UBAANext::ConnectionMode::Mock) return mock.cache;
+#endif
+        return real_bucket().cache;
+    }
+
+    UBAANext::ISecureStore &secure_store() {
+#if UBAANEXT_ENABLE_MOCKS
+        if (mode == UBAANext::ConnectionMode::Mock) return mock.store;
+#endif
+        return real_bucket().store;
     }
 };
 
@@ -190,48 +221,40 @@ namespace {
 }
 
 [[nodiscard]] UBAANext::AuthService create_auth_service(UbaaNextContext &context) {
-    auto &bucket = context.bucket();
-    UBAANext::AuthService auth(bucket.network.http_client(), bucket.store);
+    UBAANext::AuthService auth(context.http_client(), context.secure_store());
     auth.set_connection_mode(context.mode);
     return auth;
 }
 
 [[nodiscard]] UBAANext::CourseService create_course_service(UbaaNextContext &context) {
-    auto &bucket = context.bucket();
-    return UBAANext::CourseService(bucket.network.http_client(), bucket.cache, context.mode);
+    return UBAANext::CourseService(context.http_client(), context.cache_store(), context.mode);
 }
 
 [[nodiscard]] UBAANext::GradeService create_grade_service(UbaaNextContext &context) {
-    auto &bucket = context.bucket();
-    return UBAANext::GradeService(bucket.network.http_client(), bucket.cache, context.mode);
+    return UBAANext::GradeService(context.http_client(), context.cache_store(), context.mode);
 }
 
 [[nodiscard]] UBAANext::ExamService create_exam_service(UbaaNextContext &context) {
-    auto &bucket = context.bucket();
-    return UBAANext::ExamService(bucket.network.http_client(), bucket.cache, context.mode);
+    return UBAANext::ExamService(context.http_client(), context.cache_store(), context.mode);
 }
 
 [[nodiscard]] UBAANext::TodoService create_todo_service(UbaaNextContext &context) {
-    auto &bucket = context.bucket();
-    return UBAANext::TodoService(bucket.network.http_client(), bucket.cache, context.mode);
+    return UBAANext::TodoService(context.http_client(), context.cache_store(), context.mode);
 }
 
 [[nodiscard]] UBAANext::TermService create_term_service(UbaaNextContext &context) {
-    auto &bucket = context.bucket();
-    return UBAANext::TermService(bucket.network.http_client(), bucket.cache, context.mode);
+    return UBAANext::TermService(context.http_client(), context.cache_store(), context.mode);
 }
 
 [[nodiscard]] UBAANext::SigninService create_signin_service(UbaaNextContext &context) {
-    auto &bucket = context.bucket();
     auto auth = create_auth_service(context);
     auto account = auth.restore_session();
     std::string student_id = account ? account->student_id : std::string{};
-    return UBAANext::SigninService(bucket.network.http_client(), bucket.cache, context.mode, std::move(student_id));
+    return UBAANext::SigninService(context.http_client(), context.cache_store(), context.mode, std::move(student_id));
 }
 
 [[nodiscard]] UBAANext::YgdkService create_ygdk_service(UbaaNextContext &context) {
-    auto &bucket = context.bucket();
-    return UBAANext::YgdkService(bucket.network.http_client(), bucket.cache, context.mode);
+    return UBAANext::YgdkService(context.http_client(), context.cache_store(), context.mode);
 }
 
 [[nodiscard]] json account_to_json(const UBAANext::Model::Account &account) {
@@ -372,12 +395,12 @@ const char *ubaanext_version(void) {
 }
 
 int32_t ubaanext_get_capabilities(UbaaNextCapabilities *out_capabilities) {
-    if(out_capabilities == nullptr) {
-        return -1;
+    if (out_capabilities == nullptr) {
+        return UBAANEXT_STATUS_INVALID_ARGUMENT;
     }
 
     write_capabilities(current_capabilities(), *out_capabilities);
-    return 0;
+    return UBAANEXT_STATUS_OK;
 }
 
 UbaaNextContext *ubaanext_context_create(void) {
@@ -394,12 +417,12 @@ void ubaanext_context_release(UbaaNextContext *context) {
 }
 
 int32_t ubaanext_context_set_connection_mode(UbaaNextContext *context, const char *mode) {
-    if (!context) return -1;
+    if (!context) return UBAANEXT_STATUS_INVALID_ARGUMENT;
     auto parsed = parse_connection_mode(mode);
-    if (!parsed) return -2;
+    if (!parsed) return UBAANEXT_STATUS_INVALID_CONNECTION_MODE;
     std::lock_guard<std::mutex> lock(context->mutex);
     context->mode = *parsed;
-    return 0;
+    return UBAANEXT_STATUS_OK;
 }
 
 void ubaanext_release_result(const char *result_json) {

@@ -91,3 +91,30 @@ TEST_CASE("C ABI capability struct keeps reserved bytes zeroed", "[boundary][abi
     CHECK(header.find("uint8_t reserved[14]") != std::string::npos);
     CHECK(source.find("std::memset(&out_capabilities, 0, sizeof(out_capabilities))") != std::string::npos);
 }
+
+TEST_CASE("C ABI non-JSON status returns use named constants", "[boundary][abi]") {
+    const auto header = read_text(std::filesystem::path(source_root()) / "bindings" / "c" / "include" / "UBAANext" / "Bindings" / "C" / "UbaaNative.h");
+    const auto source = read_text(std::filesystem::path(source_root()) / "bindings" / "c" / "src" / "UbaaNative.cpp");
+
+    CHECK(header.find("typedef enum UbaaNextStatus") != std::string::npos);
+    CHECK(header.find("UBAANEXT_STATUS_OK = 0") != std::string::npos);
+    CHECK(header.find("UBAANEXT_STATUS_INVALID_ARGUMENT = -1") != std::string::npos);
+    CHECK(header.find("UBAANEXT_STATUS_INVALID_CONNECTION_MODE = -2") != std::string::npos);
+    CHECK(source.find("return UBAANEXT_STATUS_INVALID_ARGUMENT") != std::string::npos);
+    CHECK(source.find("return UBAANEXT_STATUS_INVALID_CONNECTION_MODE") != std::string::npos);
+    CHECK(source.find("return -1") == std::string::npos);
+    CHECK(source.find("return -2") == std::string::npos);
+}
+
+TEST_CASE("CLI and C ABI record serializers preserve partial failure fields", "[boundary][partial]") {
+    const auto cli = read_text(std::filesystem::path(source_root()) / "apps" / "cli" / "src" / "OutputFormatter.cpp");
+    const auto cabi = read_text(std::filesystem::path(source_root()) / "bindings" / "c" / "src" / "UbaaNative.cpp");
+
+    CHECK(cli.find("record_to_json") != std::string::npos);
+    CHECK(cli.find("{\"status\", record.status}") != std::string::npos);
+    CHECK(cli.find("{\"fields\", record.fields}") != std::string::npos);
+    CHECK(cabi.find("feature_record_to_json") != std::string::npos);
+    CHECK(cabi.find("{\"status\", record.status}") != std::string::npos);
+    CHECK(cabi.find("{\"fields\", record.fields}") != std::string::npos);
+    CHECK(cabi.find("source-error") == std::string::npos);
+}

@@ -16,6 +16,12 @@
 extern "C" {
 #endif
 
+typedef enum UbaaNextStatus {
+    UBAANEXT_STATUS_OK = 0,
+    UBAANEXT_STATUS_INVALID_ARGUMENT = -1,
+    UBAANEXT_STATUS_INVALID_CONNECTION_MODE = -2
+} UbaaNextStatus;
+
 typedef struct UbaaNextCapabilities {
     uint8_t real_network;
     uint8_t secure_cookie_persistence;
@@ -39,11 +45,16 @@ UBAANEXT_C_API const char *ubaanext_version(void);
 
 /**
  * Stable C ABI entry for embedding clients. Writes current platform capability flags; unsupported, fallback, and gated flags must not be treated as completion.
+ * Returns UBAANEXT_STATUS_OK or UBAANEXT_STATUS_INVALID_ARGUMENT.
  */
 UBAANEXT_C_API int32_t ubaanext_get_capabilities(UbaaNextCapabilities *out_capabilities);
 
 UBAANEXT_C_API UbaaNextContext *ubaanext_context_create(void);
 UBAANEXT_C_API void ubaanext_context_release(UbaaNextContext *context);
+/**
+ * Sets context connection mode to mock, direct, vpn, or webvpn.
+ * Returns UBAANEXT_STATUS_OK, UBAANEXT_STATUS_INVALID_ARGUMENT, or UBAANEXT_STATUS_INVALID_CONNECTION_MODE.
+ */
 UBAANEXT_C_API int32_t ubaanext_context_set_connection_mode(UbaaNextContext *context, const char *mode);
 UBAANEXT_C_API void ubaanext_release_result(const char *result_json);
 

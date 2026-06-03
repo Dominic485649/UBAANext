@@ -127,6 +127,7 @@ nlohmann::json get_help_json() {
     add_command(commands, "week list", "显示教学周列表", term_options);
 
     add_command(commands, "config show", "显示当前配置");
+    add_command(commands, "capability show", "显示当前平台能力声明；capability 不代表真实登录、真实写 UI 或业务 API 完成");
 
     json config_set_options = {
         option("--key", "配置键", true, "mode|proxy|cache"),
@@ -387,6 +388,7 @@ void print_usage() {
     Console::println("  mode                                     显示当前连接模式");
     Console::println("  mode direct                              切换为直连模式");
     Console::println("  mode vpn                                 切换为 VPN 模式");
+    Console::println("  capability show                          显示当前平台能力声明；不代表真实登录或真实写 UI 已完成");
     Console::println("  whoami                                   显示当前用户");
     Console::println("  logout [-y|--confirm|--yes]                         登出并清除本地会话");
 
@@ -522,6 +524,7 @@ void print_usage() {
     Console::println("                                           持续后台轮询 TD 调度；人类可读模式按 Ctrl-C 停止");
 
     Console::println("\n配置、缓存和占位接口");
+    Console::println("  capability show                          显示当前平台能力声明");
     Console::println("  config show                              显示当前配置");
     Console::println("  config set --key <key> --value <value> [-y|--confirm|--yes]");
     Console::println("                                           设置配置项；key 支持 mode、proxy、cache");
@@ -550,10 +553,10 @@ void print_help(OutputFormatter &out) {
 }
 
 bool is_cli_command(const std::string &command) {
-    static constexpr std::array<std::string_view, 22> commands = {
+    static constexpr std::array<std::string_view, 23> commands = {
         "course", "exam", "classroom", "term", "week", "config", "mode", "cache",
         "user", "app", "grade", "spoc", "judge", "signin", "ygdk", "evaluation",
-        "bykc", "cgyy", "libbook", "todo", "file", "td",
+        "bykc", "cgyy", "libbook", "todo", "file", "td", "capability",
     };
     return std::find(commands.begin(), commands.end(), std::string_view(command)) != commands.end();
 }

@@ -16,6 +16,10 @@ target_link_libraries(UBAANextBindingsC
         UBAANextPlatformOpenSSL
 )
 
+if(UBAANEXT_ENABLE_MOCKS)
+    target_link_libraries(UBAANextBindingsC PRIVATE UBAANextMocks)
+endif()
+
 target_compile_definitions(UBAANextBindingsC
     PRIVATE UBAANEXT_BINDINGS_C_EXPORTS
 )
