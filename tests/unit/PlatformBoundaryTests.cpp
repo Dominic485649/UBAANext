@@ -83,3 +83,11 @@ TEST_CASE("CLI real platform context does not use plaintext session store", "[bo
     CHECK(real_branch.find("UnsupportedHttpClient") == std::string::npos);
     CHECK(real_branch.find("CurlNetworkStack") != std::string::npos);
 }
+
+TEST_CASE("C ABI capability struct keeps reserved bytes zeroed", "[boundary][abi]") {
+    const auto header = read_text(std::filesystem::path(source_root()) / "bindings" / "c" / "include" / "UBAANext" / "Bindings" / "C" / "UbaaNative.h");
+    const auto source = read_text(std::filesystem::path(source_root()) / "bindings" / "c" / "src" / "UbaaNative.cpp");
+
+    CHECK(header.find("uint8_t reserved[14]") != std::string::npos);
+    CHECK(source.find("std::memset(&out_capabilities, 0, sizeof(out_capabilities))") != std::string::npos);
+}

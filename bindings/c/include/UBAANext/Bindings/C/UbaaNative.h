@@ -27,6 +27,7 @@ typedef struct UbaaNextCapabilities {
     uint8_t upload_bytes;
     uint8_t live_login;
     uint8_t write_operations;
+    uint8_t reserved[14]; /* 为 ABI 兼容扩展预留；写入方必须置零。 */
 } UbaaNextCapabilities;
 
 typedef struct UbaaNextContext UbaaNextContext;

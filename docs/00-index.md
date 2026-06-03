@@ -1,6 +1,6 @@
 # 文档索引
 
-> 当前仓库版本号为 **0.4.0**，以 [路线图](02-roadmap.md) 的 `v0.4 — CLI 工程化` 为当前基线。v0.5+ 真实 HTTP、C ABI、NAPI、HarmonyOS、Slint 和正式打包发布文档保留为后续阶段或实验性设计说明。
+> 当前仓库版本号为 **0.4.0**，以 [路线图](02-roadmap.md) 的 `v0.4 — CLI 工程化` 为已发布稳定基线。`master` 中还包含 TD core/CLI、C ABI、HarmonyOS native 前置能力等 post-0.4 收口内容；v0.5+ 真实 HTTP、C ABI、NAPI、HarmonyOS、Slint 和正式打包发布文档在同步版本号前仍按后续阶段或实验性设计说明处理。
 
 ## 概览
 

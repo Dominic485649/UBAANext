@@ -42,6 +42,13 @@
 - 文档同步 CLI 命令 API、JSON 输出格式、错误码、Windows CLI、测试策略和版本号说明
 - 为 v0.5 真实测试准备安全边界：默认测试离线，live smoke 必须显式设置 `UBAANEXT_LIVE=1`，真实凭据不得入库、不得进入日志或测试快照，L1 只读失败不得被已知失败机制掩盖
 
+## post-0.4 — 核心/桥接收口（master 当前工作区）
+
+- TD core/CLI、TCP transport、TD 文档和 TD 单元/集成测试已进入主线，用于验证 AutoTD 核心能力迁移，不代表真实 TD 无人值守写操作可进入默认回归。
+- CLI 参数和 ID 校验已收口到 mock/真实请求之前，缺少 option value、非法数值和写命令缺少目标 ID 应 fail-closed。
+- C ABI / HarmonyOS native 前置能力已开始落地，当前仍是 v0.6/v0.7 前置实验接口；真实登录 UI 和真实写 UI 继续受 `secure_store`、`cookie_persistence`、`live_login`、`write_operations` 和 UI 二次确认门控约束。
+- 下一步优先完成核心/桥接文档、C ABI/NAPI 错误映射、capability 展示和离线 smoke，再进入 HarmonyOS mock-offline UI skeleton。
+
 ## v0.5 — 真实 HTTP 与认证
 
 - 实现真实 HTTP 客户端（libcurl 或 WinHTTP）

@@ -69,6 +69,7 @@ using json = nlohmann::json;
 }
 
 void write_capabilities(const UBAANext::PlatformCapabilities &caps, UbaaNextCapabilities &out_capabilities) {
+    std::memset(&out_capabilities, 0, sizeof(out_capabilities));
     out_capabilities.real_network = as_u8(caps.real_network);
     out_capabilities.secure_cookie_persistence = as_u8(caps.secure_cookie_persistence);
     out_capabilities.cookie_persistence = as_u8(caps.cookie_persistence);
