@@ -137,7 +137,7 @@ UBAANext::LibrarySeatService ServiceFactory::create_library_seat_write_service(b
 }
 
 UBAANext::LiveService ServiceFactory::create_live_service() {
-    return UBAANext::LiveService(http_client(), *m_ctx.cache, m_ctx.conn_mode);
+    return UBAANext::LiveService(http_client(), m_ctx.network_stack ? &m_ctx.network_stack->cookie_store() : nullptr, *m_ctx.cache, m_ctx.conn_mode);
 }
 
 UBAANext::CloudService ServiceFactory::create_cloud_service() {

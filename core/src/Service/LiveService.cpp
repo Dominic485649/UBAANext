@@ -12,18 +12,55 @@
 #include <map>
 #include <optional>
 #include <regex>
+#include <string_view>
 #include <utility>
 
 namespace UBAANext {
 namespace {
 
 constexpr const char *kLiveWeekScheduleUrl = "https://yjapi.msa.buaa.edu.cn/courseapi/v2/schedule/get-week-schedules";
+constexpr const char *kLiveCourseSearchUrl = "https://classroom.msa.buaa.edu.cn/courseapi/v2/course-live/search-live-course-list";
 constexpr const char *kLiveCourseDetailUrl = "https://yjapi.msa.buaa.edu.cn/courseapi/v2/course-live/search-live-course-list";
 constexpr const char *kLivePptTimelineUrl = "https://classroom.msa.buaa.edu.cn/pptnote/v1/schedule/search-ppt";
 constexpr const char *kLiveLivingroomUrl = "https://classroom.msa.buaa.edu.cn/livingroom";
+constexpr const char *kLiveLoginUrl = "https://yjapi.msa.buaa.edu.cn/casapi/index.php?r=auth/login&auType=cmc&tenant_code=21&forward=https%3A%2F%2Fclassroom.msa.buaa.edu.cn";
 
 std::string resolve_for_mode(const std::string &url, ConnectionMode mode) {
     return mode == ConnectionMode::WebVPN ? VpnCipher::to_vpn_url(url) : url;
+}
+
+std::string url_decode(std::string_view value) {
+    std::string out;
+    out.reserve(value.size());
+    const auto hex = [](char ch) -> int {
+        if (ch >= '0' && ch <= '9') return ch - '0';
+        if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+        if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+        return -1;
+    };
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        if (value[i] == '%' && i + 2 < value.size()) {
+            const int hi = hex(value[i + 1]);
+            const int lo = hex(value[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out.push_back(static_cast<char>((hi << 4) | lo));
+                i += 2;
+                continue;
+            }
+        }
+        out.push_back(value[i]);
+    }
+    return out;
+}
+
+std::optional<std::string> extract_live_jwt(std::string raw) {
+    if (raw.empty()) return std::nullopt;
+    static const std::regex jwt_pattern(R"(eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+)");
+    for (const auto &candidate : {raw, url_decode(raw)}) {
+        std::smatch match;
+        if (std::regex_search(candidate, match, jwt_pattern)) return match[0].str();
+    }
+    return std::nullopt;
 }
 
 bool valid_date(const std::string &date) {
@@ -145,6 +182,34 @@ void apply_classroom_headers(HttpRequest &request, ConnectionMode mode, const st
     request.headers["Origin"] = resolve_for_mode("https://classroom.msa.buaa.edu.cn", mode);
 }
 
+std::optional<std::string> live_token_from_cookie_store(ICookieStore *store) {
+    if (!store) return std::nullopt;
+    const auto read = [](const CookieJar &jar) -> std::optional<std::string> {
+        for (const auto *host : {"msa.buaa.edu.cn", "yjapi.msa.buaa.edu.cn", "classroom.msa.buaa.edu.cn", "d.buaa.edu.cn"}) {
+            auto raw = jar.get_cookie(host, "_token");
+            if (raw) {
+                if (auto token = extract_live_jwt(*raw)) return token;
+            }
+        }
+        if (auto raw = jar.get_cookie("_token")) {
+            if (auto token = extract_live_jwt(*raw)) return token;
+        }
+        return std::nullopt;
+    };
+    if (const auto *current = store->current()) {
+        if (auto token = read(*current)) return token;
+    }
+    auto loaded = store->load();
+    if (!loaded) return std::nullopt;
+    return read(*loaded);
+}
+
+void apply_optional_live_authorization(HttpRequest &request, ICookieStore *store) {
+    if (auto token = live_token_from_cookie_store(store)) {
+        request.headers["Authorization"] = "Bearer " + *token;
+    }
+}
+
 std::string header_value(const HttpResponse &response, const std::string &name) {
     for (const auto &[key, value] : response.headers) {
         if (key.size() != name.size()) continue;
@@ -239,7 +304,36 @@ std::string file_name_from_url(const std::string &url, const std::string &fallba
 } // namespace
 
 LiveService::LiveService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode)
-    : m_http_client(http_client), m_cache(cache), m_mode(mode) {}
+    : LiveService(http_client, nullptr, cache, mode) {}
+
+LiveService::LiveService(IHttpClient &http_client, ICookieStore *cookie_store, ICacheStore &cache, ConnectionMode mode)
+    : m_http_client(http_client), m_cookie_store(cookie_store), m_cache(cache), m_mode(mode) {}
+
+Result<std::string> LiveService::bearer_token(bool force_refresh) {
+    if (!force_refresh && m_token && !m_token->empty()) return *m_token;
+    if (!m_cookie_store) return make_error(ErrorCode::UnsupportedCookiePersistence, "课堂资源需要 CookieStore 读取 live token");
+    if (!force_refresh) {
+        if (auto cached = live_token_from_cookie_store(m_cookie_store)) {
+            m_token = *cached;
+            return *m_token;
+        }
+    }
+
+    HttpRequest request;
+    request.method = HttpMethod::Get;
+    request.url = resolve_for_mode(kLiveLoginUrl, m_mode);
+    apply_classroom_headers(request, m_mode);
+    auto response = m_http_client.send(request);
+    if (!response) return make_error(response.error().code, "课堂资源登录激活失败: " + Security::redact_sensitive_text(response.error().message));
+    if (response->status_code < 200 || response->status_code >= 400) {
+        return make_error(ErrorCode::NetworkError, "课堂资源登录激活返回: " + std::to_string(response->status_code));
+    }
+    if (auto activated = live_token_from_cookie_store(m_cookie_store)) {
+        m_token = *activated;
+        return *m_token;
+    }
+    return make_error(ErrorCode::SessionExpired, "课堂资源未获得 live token，请重新登录");
+}
 
 Result<Model::LiveWeekSchedule> LiveService::get_week_schedule(const LiveWeekQuery &query) {
     (void)m_cache;
@@ -295,20 +389,25 @@ Result<std::vector<Model::LiveResource>> LiveService::resources(const Model::Liv
 
     const int page = query.page <= 0 ? 1 : query.page;
     const int size = query.size <= 0 ? 100 : std::min(query.size, 200);
-    const auto url = append_query(kLiveCourseDetailUrl,
-                                  {{"all", "1"},
+    const auto url = append_query(kLiveCourseSearchUrl,
+                                  {{"course_student_type", ""},
+                                   {"has_frame", "1"},
+                                   {"need_time_quantum", "1"},
                                    {"page", std::to_string(page)},
                                    {"per_page", std::to_string(size)},
                                    {"search_time", query.date},
-                                   {"show_all", "1"},
-                                   {"show_delete", "2"},
-                                   {"with_room_data", "1"},
-                                   {"with_sub_data", "1"}});
+                                   {"sub_live_status", ""},
+                                   {"sub_public", ""},
+                                   {"tenant", "21"},
+                                   {"unique_course", "1"},
+                                   {"with_sub_data", "1"},
+                                   {"with_sub_duration", "1"}});
 
     HttpRequest request;
     request.method = HttpMethod::Get;
     request.url = resolve_for_mode(url, m_mode);
     apply_classroom_headers(request, m_mode);
+    apply_optional_live_authorization(request, m_cookie_store);
 
     auto response = m_http_client.send(request);
     if (!response) return make_error(response.error().code, response.error().message);
@@ -345,19 +444,22 @@ Result<Model::LiveResourceDetail> LiveService::detail(const std::string &course_
     request.method = HttpMethod::Get;
     request.url = resolve_for_mode(url, m_mode);
     apply_classroom_headers(request, m_mode);
-
+    auto token = bearer_token();
     std::optional<Model::LiveResourceDetail> parsed_detail;
-    auto response = m_http_client.send(request);
-    if (response && response->status_code == 200 && !Protocol::is_session_expired_response(*response, {}, false)) {
-        auto root = nlohmann::json::parse(response->body, nullptr, false);
-        if (!root.is_discarded() && classroom_success(root)) {
-            auto item = find_detail_item(extract_detail_candidates(root), course_id, sub_id);
-            if (item) parsed_detail = Parser::parse_live_resource_detail(*item);
+    if (token) {
+        request.headers["Authorization"] = "Bearer " + *token;
+        auto response = m_http_client.send(request);
+        if (response && response->status_code == 200 && !Protocol::is_session_expired_response(*response, {}, false)) {
+            auto root = nlohmann::json::parse(response->body, nullptr, false);
+            if (!root.is_discarded() && classroom_success(root)) {
+                auto item = find_detail_item(extract_detail_candidates(root), course_id, sub_id);
+                if (item) parsed_detail = Parser::parse_live_resource_detail(*item);
+            }
+        } else if (!response) {
+            return make_error(response.error().code, response.error().message);
+        } else if (Protocol::is_session_expired_response(*response, {}, false)) {
+            return make_error(ErrorCode::SessionExpired, "课堂资源会话已过期，请重新登录");
         }
-    } else if (!response) {
-        return make_error(response.error().code, response.error().message);
-    } else if (Protocol::is_session_expired_response(*response, {}, false)) {
-        return make_error(ErrorCode::SessionExpired, "课堂资源会话已过期，请重新登录");
     }
 
     if (!parsed_detail && !date.empty()) {
@@ -373,7 +475,13 @@ Result<Model::LiveResourceDetail> LiveService::detail(const std::string &course_
         }
     }
 
-    if (!parsed_detail) return make_error(ErrorCode::ParseError, "未找到指定课堂资源详情");
+    if (!parsed_detail) {
+        Model::LiveResourceDetail fallback;
+        fallback.course_id = course_id;
+        fallback.sub_id = sub_id;
+        fallback.source = "livingroom";
+        parsed_detail = fallback;
+    }
     parsed_detail->course_id = parsed_detail->course_id.empty() ? course_id : parsed_detail->course_id;
     parsed_detail->sub_id = parsed_detail->sub_id.empty() ? sub_id : parsed_detail->sub_id;
 
@@ -407,6 +515,7 @@ Result<std::vector<Model::LivePptSlide>> LiveService::ppt_slides(const std::stri
         request.method = HttpMethod::Get;
         request.url = resolve_for_mode(url, m_mode);
         apply_classroom_headers(request, m_mode);
+        apply_optional_live_authorization(request, m_cookie_store);
         auto response = m_http_client.send(request);
         if (!response) return make_error(response.error().code, response.error().message);
         if (Protocol::is_session_expired_response(*response, {}, false)) return make_error(ErrorCode::SessionExpired, "课堂 PPT 会话已过期，请重新登录");

@@ -32,6 +32,33 @@ public:
     um::HttpRequest last_request;
 };
 
+class LiveFixtureCookieStore : public um::ICookieStore {
+public:
+    um::Result<um::CookieJar> load() override {
+        return jar;
+    }
+
+    um::Result<void> save(const um::CookieJar &cookies) override {
+        jar = cookies;
+        return {};
+    }
+
+    um::Result<void> save_current() override {
+        return {};
+    }
+
+    um::Result<void> clear() override {
+        jar.clear();
+        return {};
+    }
+
+    const um::CookieJar *current() const override {
+        return &jar;
+    }
+
+    um::CookieJar jar;
+};
+
 } // namespace
 
 TEST_CASE("parse_live_week_schedule_days 解析 reference 周课表 envelope list", "[LiveParser]") {
@@ -159,6 +186,27 @@ TEST_CASE("LiveService 业务失败消息会脱敏", "[service][live][security]"
     CHECK(result.error().message.find("secret-token") == std::string::npos);
     CHECK(result.error().message.find("bearer-secret") == std::string::npos);
     CHECK(result.error().message.find("[REDACTED]") != std::string::npos);
+}
+
+TEST_CASE("LiveService resources 从 _token cookie 添加 Bearer token", "[service][live][token]") {
+    LiveFixtureHttpClient http_client;
+    http_client.body = R"JSON({"code":0,"result":{"list":[{"course_id":"course-1","sub_id":"sub-1","title":"计算机网络","sub_status":6}]}})JSON";
+    LiveFixtureCookieStore cookies;
+    const std::string jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig_123";
+    cookies.jar.set_cookie("msa.buaa.edu.cn",
+                           "_token",
+                           "a%3A2%3A%7Bi%3A0%3Bs%3A6%3A%22_token%22%3Bi%3A1%3Bs%3A52%3A%22" + jwt + "%22%3B%7D");
+    um::MemoryCacheStore cache;
+    um::LiveService service(http_client, &cookies, cache, um::ConnectionMode::Direct);
+
+    um::Model::LiveResourceQuery query;
+    query.date = "2026-06-08";
+    auto result = service.resources(query);
+
+    REQUIRE(result);
+    REQUIRE(result->size() == 1);
+    REQUIRE(http_client.last_request.headers.count("Authorization") == 1);
+    CHECK(http_client.last_request.headers.at("Authorization") == "Bearer " + jwt);
 }
 
 TEST_CASE("parse_live_resources 映射 BBUAA 课堂资源和 sub_status", "[LiveParser][live-resource]") {

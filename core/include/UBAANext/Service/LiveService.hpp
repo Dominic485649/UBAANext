@@ -4,9 +4,11 @@
 #include <UBAANext/Base/Result.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Model/Live.hpp>
+#include <UBAANext/Net/CookieStore.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,6 +22,7 @@ struct LiveWeekQuery {
 class LiveService {
 public:
     LiveService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
+    LiveService(IHttpClient &http_client, ICookieStore *cookie_store, ICacheStore &cache, ConnectionMode mode);
 
     /** ReadOnlyCandidate: fetches classroom live schedules for a date range, usually a Monday-Sunday week. */
     Result<Model::LiveWeekSchedule> get_week_schedule(const LiveWeekQuery &query);
@@ -40,9 +43,13 @@ public:
     Result<Model::LiveBinaryResource> download_binary(const std::string &url, const std::string &name = {});
 
 private:
+    Result<std::string> bearer_token(bool force_refresh = false);
+
     IHttpClient &m_http_client;
+    ICookieStore *m_cookie_store = nullptr;
     ICacheStore &m_cache;
     ConnectionMode m_mode;
+    std::optional<std::string> m_token;
 };
 
 } // namespace UBAANext

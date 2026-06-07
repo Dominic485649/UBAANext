@@ -19,8 +19,8 @@
 
 | 功能 | Core | CLI | 测试 |
 | --- | --- | --- | --- |
-| 按日期搜索课堂资源 | `Model::LiveResourceQuery`、`LiveService::resources` | `ubaa live resources --date <yyyy-MM-dd>` | parser 状态映射、CLI mock JSON |
-| 课堂资源详情解析 | `LiveResourceDetail`、`parse_live_resource_detail`、`parse_live_livingroom_html` | `ubaa live detail --course-id <id> --sub-id <id>` | sub_content/video_list/livingroom HTML 单元测试 |
+| 按日期搜索课堂资源 | `Model::LiveResourceQuery`、`LiveService::resources` 使用 classroom 搜索入口；有 `_token` 时附加 Bearer | `ubaa live resources --date <yyyy-MM-dd>` | parser 状态映射、CLI mock JSON、真实 VPN resources |
+| 课堂资源详情解析 | `LiveResourceDetail`、`parse_live_resource_detail`、`parse_live_livingroom_html`；yjapi 详情优先 Bearer，livingroom 降级 | `ubaa live detail --course-id <id> --sub-id <id>` | sub_content/video_list/livingroom HTML 单元测试、真实 VPN detail |
 | PPT 时间轴与 PPTX 生成 | `LivePptSlide`、`parse_live_ppt_slides`、`build_live_pptx` | `ubaa live download --include ppt` | PPTX ZIP/OOXML 结构测试，CLI mock 实际生成 PPTX |
 | 视频下载与 HLS fallback | `LiveDownloadResult`、`prepare_download` | MP4 直接写文件；HLS 尝试 `ffmpeg`，失败写 `.m3u8.url` | CLI mock 下载、overwrite 拒绝/允许 |
 | 与课表合并入口 | `LiveResourceQuery::from_course` | `--from-course` 对当天教务课表做保守过滤 | 真实 smoke 只读路径覆盖 |
@@ -35,6 +35,7 @@
 ## 真实性测试边界
 
 - 默认验证：`cmake --build --preset windows-ninja-msvc-debug` 与 `ctest --test-dir build/windows-ninja-msvc-debug --output-on-failure`，不访问真实课堂资源后端。
+- 真实只读验证：`.env` 提供凭据后，VPN 模式 `live week`、`live resources`、`live detail` 可执行；真实下载仍需额外开启 `UBAANEXT_LIVE_DOWNLOAD=1`。
 - 显式真实 smoke：设置 `UBAANEXT_LIVE=1`、真实凭据和 `UBAANEXT_APP_DATA_DIR` 后运行 `tools/live-smoke.ps1 -Level L1`。
 - 课堂资源真实下载：额外设置 `UBAANEXT_LIVE_DOWNLOAD=1`；建议先用 `UBAANEXT_LIVE_DOWNLOAD_INCLUDE=ppt`，需要视频时再改为 `ppt,video`。
 - 报告未成功项时需区分：缺失凭据、校园网不可达、资源为空、PPT 无 GUID、图片下载失败、视频为 HLS 且无 `ffmpeg`、只生成 sidecar、临时目录清理失败。
