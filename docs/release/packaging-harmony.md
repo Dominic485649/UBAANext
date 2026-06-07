@@ -25,7 +25,7 @@
 
 - `UBAANEXT_BUILD_CLI`：host/Windows 默认开启，OpenHarmony/DevEco preset 关闭。
 - `UBAANEXT_BUILD_BINDINGS`：默认关闭，OpenHarmony preset 开启。
-- `UBAANextBindingsC`：最小 C ABI shared target，输出 `ubaanext_c`，当前只暴露 version 和 capabilities。
+- `UBAANextBindingsC`：C ABI shared target，输出 `ubaanext_c`。当前已暴露 version/capability、context/session、学期/周次/课表/成绩/考试/Todo/签到今日/YGDK、FeatureRecord 只读投影、课堂资源 `live week/resources/detail`，以及 TD 本地 status/users/count cache 和带确认的本地图片删除。
 - CMake install/export package 骨架：安装 public headers、targets 和 package config。
 
 当前 Windows package smoke 已验证：外部消费项目可通过 `find_package(UBAANext CONFIG REQUIRED)` 链接 `UBAANext::UBAANextBindingsC`，但消费侧必须同时提供与 SDK 同 ABI、同 triplet、同依赖来源的 CURL/OpenSSL/nlohmann-json 前缀。若 SDK 由 vcpkg manifest mode 在构建目录内解析依赖，消费 smoke 也应把对应 `vcpkg_installed/<triplet>` 放入 `CMAKE_PREFIX_PATH`；仅依赖全局 vcpkg installed 目录可能因依赖未安装、triplet 不一致或 config target 不一致而失败。
@@ -45,7 +45,7 @@ DevEco 项目验证时必须确认：
 - HAP 包含正确 ABI 目录下的 NAPI/native `.so`。
 - HAP 不包含 CLI exe、测试二进制、fixtures、凭据、cookie/session dump、本地配置或开发机路径。
 - `secure_store=false`、`cookie_persistence=false`、`live_login=false`、`write_operations=true` 等 capability 不被 UI 壳隐藏。
-- NAPI smoke 只调用 version/capability/mock-offline，不调用真实登录、真实写或通用上传。
+- NAPI smoke 只调用 version/capability/mock-offline、Live 只读 envelope 和 TD 本地确认门，不调用真实登录、真实远端写、课堂资源下载落盘或通用上传。
 - redaction 结果能穿过 C ABI/NAPI，不泄露 username、password、cookie、token、ticket、session、captcha、authorization、URL query、本地路径、上传文件名、成绩、锁码、预约、打卡或座位敏感原文。
 
 ## 状态声明

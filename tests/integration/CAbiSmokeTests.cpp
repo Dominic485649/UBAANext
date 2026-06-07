@@ -1,43 +1,40 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include <UBAANext/Bindings/C/UbaaNative.h>
-
-#include <nlohmann/json.hpp>
-
 #include <array>
+#include <catch2/catch_test_macros.hpp>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <string>
 
-namespace {
+namespace
+{
 
-class NativeJsonResult {
-public:
+class NativeJsonResult
+{
+  public:
     explicit NativeJsonResult(const char *value) : m_value(value) {}
     NativeJsonResult(const NativeJsonResult &) = delete;
     NativeJsonResult &operator=(const NativeJsonResult &) = delete;
 
-    ~NativeJsonResult() {
-        ubaanext_release_result(m_value);
-    }
+    ~NativeJsonResult() { ubaanext_release_result(m_value); }
 
-    [[nodiscard]] const char *get() const {
-        return m_value;
-    }
+    [[nodiscard]] const char *get() const { return m_value; }
 
-    [[nodiscard]] nlohmann::json parse() const {
+    [[nodiscard]] nlohmann::json parse() const
+    {
         REQUIRE(m_value != nullptr);
         return nlohmann::json::parse(m_value);
     }
 
-private:
+  private:
     const char *m_value = nullptr;
 };
 
-void require_success_envelope(const nlohmann::json &json) {
+void require_success_envelope(const nlohmann::json &json)
+{
     REQUIRE(json["ok"] == true);
     REQUIRE(json.contains("data"));
     REQUIRE(json["data"].is_object());
@@ -45,7 +42,8 @@ void require_success_envelope(const nlohmann::json &json) {
     REQUIRE(json["error"].is_null());
 }
 
-void require_error_envelope(const nlohmann::json &json) {
+void require_error_envelope(const nlohmann::json &json)
+{
     REQUIRE(json["ok"] == false);
     REQUIRE(json.contains("data"));
     REQUIRE(json["data"].is_null());
@@ -55,7 +53,8 @@ void require_error_envelope(const nlohmann::json &json) {
     REQUIRE(json["error"].contains("message"));
 }
 
-void set_env_var(const char *name, const std::filesystem::path &value) {
+void set_env_var(const char *name, const std::filesystem::path &value)
+{
 #ifdef _WIN32
     REQUIRE(_putenv_s(name, value.string().c_str()) == 0);
 #else
@@ -63,7 +62,8 @@ void set_env_var(const char *name, const std::filesystem::path &value) {
 #endif
 }
 
-void configure_td_app_data_for_test() {
+void configure_td_app_data_for_test()
+{
     const auto root = std::filesystem::temp_directory_path() / "ubaanext-cabi-smoke";
 #if defined(__OHOS__)
     set_env_var("UBAANEXT_HARMONY_APPDATA", root / "harmony-appdata");
@@ -76,7 +76,8 @@ void configure_td_app_data_for_test() {
 
 } // namespace
 
-TEST_CASE("C ABI version and capability smoke", "[cabi][integration]") {
+TEST_CASE("C ABI version and capability smoke", "[cabi][integration]")
+{
     const char *version = ubaanext_version();
     REQUIRE(version != nullptr);
     CHECK(std::string{version}.empty() == false);
@@ -88,7 +89,8 @@ TEST_CASE("C ABI version and capability smoke", "[cabi][integration]") {
     REQUIRE(ubaanext_get_capabilities(&capabilities) == UBAANEXT_STATUS_OK);
 
     const auto *reserved = reinterpret_cast<const std::uint8_t *>(capabilities.reserved);
-    for (std::size_t index = 0; index < sizeof(capabilities.reserved); ++index) {
+    for (std::size_t index = 0; index < sizeof(capabilities.reserved); ++index)
+    {
         INFO("reserved byte index: " << index);
         CHECK(reserved[index] == 0U);
     }
@@ -105,13 +107,16 @@ TEST_CASE("C ABI version and capability smoke", "[cabi][integration]") {
     CHECK(version_info["data"]["version"].get<std::string>().empty() == false);
 }
 
-TEST_CASE("C ABI context mode and mock readonly smoke", "[cabi][integration]") {
-    CHECK(ubaanext_context_set_connection_mode(nullptr, "mock") == UBAANEXT_STATUS_INVALID_ARGUMENT);
+TEST_CASE("C ABI context mode and mock readonly smoke", "[cabi][integration]")
+{
+    CHECK(ubaanext_context_set_connection_mode(nullptr, "mock") ==
+          UBAANEXT_STATUS_INVALID_ARGUMENT);
 
     UbaaNextContext *context = ubaanext_context_create();
     REQUIRE(context != nullptr);
 
-    CHECK(ubaanext_context_set_connection_mode(context, "not-a-mode") == UBAANEXT_STATUS_INVALID_CONNECTION_MODE);
+    CHECK(ubaanext_context_set_connection_mode(context, "not-a-mode") ==
+          UBAANEXT_STATUS_INVALID_CONNECTION_MODE);
 #if UBAANEXT_ENABLE_MOCKS
     REQUIRE(ubaanext_context_set_connection_mode(context, "mock") == UBAANEXT_STATUS_OK);
 
@@ -140,6 +145,19 @@ TEST_CASE("C ABI context mode and mock readonly smoke", "[cabi][integration]") {
     require_success_envelope(todos_json);
     REQUIRE(todos_json["data"].contains("todos"));
     REQUIRE(todos_json["data"]["todos"].is_array());
+
+    NativeJsonResult live_week{ubaanext_live_week(context, "2026-06-01", "2026-06-07")};
+    const auto live_week_json = live_week.parse();
+    require_success_envelope(live_week_json);
+    REQUIRE(live_week_json["data"].contains("liveWeek"));
+    REQUIRE(live_week_json["data"]["liveWeek"].contains("days"));
+    REQUIRE(live_week_json["data"]["liveWeek"]["days"].is_array());
+
+    NativeJsonResult live_resources{ubaanext_live_resources(context, "2026-06-08", "all", 0)};
+    const auto live_resources_json = live_resources.parse();
+    require_success_envelope(live_resources_json);
+    REQUIRE(live_resources_json["data"].contains("resources"));
+    REQUIRE(live_resources_json["data"]["resources"].is_array());
 
     NativeJsonResult evaluation{ubaanext_feature_list(context, "evaluation", "list")};
     const auto evaluation_json = evaluation.parse();
@@ -182,13 +200,15 @@ TEST_CASE("C ABI context mode and mock readonly smoke", "[cabi][integration]") {
     require_error_envelope(signin_write_json);
     CHECK(signin_write_json["error"]["code"] == "InvalidArgument");
 #else
-    CHECK(ubaanext_context_set_connection_mode(context, "mock") == UBAANEXT_STATUS_INVALID_CONNECTION_MODE);
+    CHECK(ubaanext_context_set_connection_mode(context, "mock") ==
+          UBAANEXT_STATUS_INVALID_CONNECTION_MODE);
 #endif
 
     ubaanext_context_release(context);
 }
 
-TEST_CASE("C ABI JSON failures keep envelope contract", "[cabi][integration]") {
+TEST_CASE("C ABI JSON failures keep envelope contract", "[cabi][integration]")
+{
     NativeJsonResult result{ubaanext_terms(nullptr)};
     const auto json = result.parse();
     require_error_envelope(json);
@@ -207,10 +227,21 @@ TEST_CASE("C ABI JSON failures keep envelope contract", "[cabi][integration]") {
     require_error_envelope(feature_show_json);
     CHECK(feature_show_json["error"]["code"] == "InvalidArgument");
 
+    NativeJsonResult live_detail{ubaanext_live_detail(context, nullptr, "sub-1", "2026-06-08")};
+    const auto live_detail_json = live_detail.parse();
+    require_error_envelope(live_detail_json);
+    CHECK(live_detail_json["error"]["code"] == "InvalidArgument");
+
+    NativeJsonResult td_delete{ubaanext_td_image_delete(context, "missing.jpg", 0, 0)};
+    const auto td_delete_json = td_delete.parse();
+    require_error_envelope(td_delete_json);
+    CHECK(td_delete_json["error"]["code"] == "InvalidArgument");
+
     ubaanext_context_release(context);
 }
 
-TEST_CASE("C ABI TD local readonly endpoints keep envelope contract", "[cabi][integration]") {
+TEST_CASE("C ABI TD local readonly endpoints keep envelope contract", "[cabi][integration]")
+{
     configure_td_app_data_for_test();
 
     UbaaNextContext *context = ubaanext_context_create();
@@ -233,6 +264,12 @@ TEST_CASE("C ABI TD local readonly endpoints keep envelope contract", "[cabi][in
     require_success_envelope(counts_json);
     REQUIRE(counts_json["data"].contains("tdCounts"));
     REQUIRE(counts_json["data"]["tdCounts"].is_array());
+
+    NativeJsonResult missing_delete{ubaanext_td_image_delete(context, "missing.jpg", 0, 1)};
+    const auto missing_delete_json = missing_delete.parse();
+    require_success_envelope(missing_delete_json);
+    REQUIRE(missing_delete_json["data"].contains("mutation"));
+    CHECK(missing_delete_json["data"]["mutation"]["accepted"] == false);
 
     ubaanext_context_release(context);
 }

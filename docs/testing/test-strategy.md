@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 单元测试 | Catch2 | Result、parser、service、session、平台边界、真实只读契约 |
 | CLI 集成测试 | Catch2 + `ubaa` 命令层 | JSON envelope、exit code、capability、参数校验、写操作确认门 |
-| C ABI smoke（可选） | Catch2 + `UBAANextBindingsC` | version、capability、context、connection mode、mock/offline JSON envelope |
+| C ABI smoke（可选） | Catch2 + `UBAANextBindingsC` | version、capability、context、connection mode、mock/offline JSON envelope、Live 只读接口、TD 本地图片删除确认门 |
 | Live smoke（默认关闭） | `tests/integration/LiveSmokeTests.cpp` / `tools/live-smoke.ps1` | 显式启用后的真实服务 smoke；L1 只读优先，写操作不自动执行 |
 
 ## 当前重点
@@ -34,7 +34,7 @@
 | `tests/unit/WriteOperationGateTests.cpp` | CLI/API 确认与平台 `write_operations` 双重写门控 |
 | `tests/unit/PlatformBoundaryTests.cpp` | Core/platform 分层、C ABI status、capability reserved、partial failure serializer 边界 |
 | `tests/integration/CliIntegrationTests.cpp` | CLI JSON envelope、help/golden、capability、参数校验、写操作确认门 |
-| `tests/integration/CAbiSmokeTests.cpp` | 启用 bindings 时的 C ABI version/capability/context/mock-offline smoke |
+| `tests/integration/CAbiSmokeTests.cpp` | 启用 bindings 时的 C ABI version/capability/context/mock-offline smoke、Live 只读 ABI、TD 本地图片删除确认门 |
 | `tests/integration/LiveSmokeTests.cpp` | 显式启用的 live smoke gate |
 | `tests/unit/SessionGuardsTests.cpp` | 登录失效和 SSO 响应识别 |
 | `tests/unit/SecurityRedactionTests.cpp` | CLI/core 共享敏感信息脱敏，覆盖 URL query、headers、本地路径、移动端路径、raw HTML 和业务敏感字段 |
@@ -67,6 +67,8 @@ ctest --preset windows-ninja-msvc-debug --output-on-failure -R "C ABI"
 - `UbaaNextCapabilities.reserved` 全部置零。
 - context create/release 和非法 mode。
 - mock 构建下 `mock` mode 的只读 JSON envelope，例如 `ubaanext_terms(...)`。
+- `ubaanext_live_week(...)`、`ubaanext_live_resources(...)` 的 mock/offline envelope，以及 `ubaanext_live_detail(...)` 缺少必要 ID 时的 `InvalidArgument`。
+- `ubaanext_td_image_delete(...)` 未确认时失败；在隔离 TD app data 下删除不存在图片时返回 `accepted:false`，证明本地 mutation 不触发真实 TD 网络。
 
 NAPI smoke 应建立在同一合同上：version、capability object、mock/offline readonly API、`UbaaError` 映射、partial failure item 不被过滤。不得运行真实登录、真实网络或真实写。
 
