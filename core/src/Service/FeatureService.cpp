@@ -224,6 +224,31 @@ std::vector<Model::FeatureRecord> records_for(const std::string &domain, const s
     if (domain == "libbook") {
         return {make_record("libbook-1", operation == "libraries" ? "图书馆" : "座位预约", "available", {{"operation", operation}})};
     }
+    if (domain == "live") {
+        return {make_record("live-1", "课堂直播", "scheduled", {{"operation", operation}, {"source", "mock"}})};
+    }
+    if (domain == "file" || domain == "cloud") {
+        if (operation.rfind("roots", 0) == 0) {
+            return {make_record("cloud-root-user", "个人文档库", "root", {{"type", "user_doc_lib"}, {"docLibName", "个人文档库"}, {"source", "mock"}, {"operation", operation}}),
+                    make_record("cloud-root-shared", "共享文档库", "root", {{"type", "shared_user_doc_lib"}, {"docLibName", "共享文档库"}, {"source", "mock"}, {"operation", operation}})};
+        }
+        if (operation == "root") {
+            return {make_record("cloud-root-user", "个人文档库", "root", {{"type", "user_doc_lib"}, {"docLibName", "个人文档库"}, {"source", "mock"}})};
+        }
+        if (operation == "list") {
+            return {make_record("cloud-dir-1", "示例文件夹", "dir", {{"type", "dir"}, {"size", "-1"}, {"parentId", "cloud-root-user"}, {"source", "mock"}}),
+                    make_record("cloud-file-1", "示例文件.txt", "file", {{"type", "file"}, {"size", "1024"}, {"parentId", "cloud-root-user"}, {"source", "mock"}})};
+        }
+        if (operation == "size") {
+            return {make_record("cloud-size", "Cloud item size", "ok", {{"bytes", "1024"}, {"fileCount", "1"}, {"dirCount", "1"}, {"source", "mock"}})};
+        }
+        if (operation == "recycle") {
+            return {make_record("cloud-recycle-1", "回收站示例文件", "recycle-file", {{"type", "file"}, {"size", "512"}, {"source", "mock"}})};
+        }
+        if (operation == "shares") {
+            return {make_record("cloud-share-1", "示例分享", "shared", {{"itemId", "cloud-file-1"}, {"expiresAt", "never"}, {"permissions", "read"}, {"source", "mock"}})};
+        }
+    }
     return {};
 }
 #endif

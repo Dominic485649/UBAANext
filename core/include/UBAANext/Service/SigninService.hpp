@@ -22,9 +22,21 @@ public:
 
     /** ReadOnlyCandidate: fetches today's sign-in courses through the iClass session path. */
     Result<std::vector<Model::SigninCourse>> list_today_courses();
+    /** ReadOnlyCandidate: fetches one explicit date's sign-in schedule through the iClass session path. */
+    Result<std::vector<Model::SigninCourse>> list_schedule(const std::string &date);
+    /** ReadOnlyCandidate: fetches all sign-in courses for one term. */
+    Result<std::vector<Model::SigninTermCourse>> list_term_courses(const std::string &term_code);
+    /** ReadOnlyCandidate: fetches all sign-in schedule details for one course id. */
+    Result<std::vector<Model::SigninCourse>> list_course_schedule(const std::string &course_id);
 
     /** ReadOnlyCandidate: returns CLI/UI feature records for today's sign-in state. */
     Result<std::vector<Model::FeatureRecord>> list_today();
+    /** ReadOnlyCandidate: returns CLI/UI records for an explicit date's sign-in schedule. */
+    Result<std::vector<Model::FeatureRecord>> schedule_records(const std::string &date);
+    /** ReadOnlyCandidate: returns CLI/UI records for all term courses. */
+    Result<std::vector<Model::FeatureRecord>> term_course_records(const std::string &term_code);
+    /** ReadOnlyCandidate: returns CLI/UI records for one course's sign-in details. */
+    Result<std::vector<Model::FeatureRecord>> course_schedule_records(const std::string &course_id);
 
     /** WriteGated: installs the explicit confirmation and platform write capability gate. */
     void set_write_operation_gate(WriteOperationGate gate);
@@ -49,6 +61,9 @@ private:
     Result<std::pair<std::string, std::string>> login_iclass(const std::string &login_name);
     Result<std::pair<std::string, std::string>> ensure_iclass_session(bool force_refresh = false);
     Result<std::vector<Model::SigninCourse>> list_today_courses(bool allow_retry);
+    Result<std::vector<Model::SigninCourse>> list_schedule(const std::string &date, bool allow_retry);
+    Result<std::vector<Model::SigninTermCourse>> list_term_courses(const std::string &term_code, bool allow_retry);
+    Result<std::vector<Model::SigninCourse>> list_course_schedule(const std::string &course_id, bool allow_retry);
     Result<Model::MutationResult> perform_signin_once(const std::string &course_id, bool allow_retry);
 };
 

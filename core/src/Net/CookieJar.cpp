@@ -70,6 +70,16 @@ bool domain_matches(std::string_view request_host, std::string_view cookie_host)
     return request.substr(suffix_pos) == cookie && request[suffix_pos - 1] == '.';
 }
 
+bool path_matches(std::string_view request_path, std::string_view cookie_path) {
+    if (cookie_path.empty() || cookie_path == "/") {
+        return true;
+    }
+    if (request_path.empty()) {
+        request_path = "/";
+    }
+    return request_path.size() >= cookie_path.size() && request_path.substr(0, cookie_path.size()) == cookie_path;
+}
+
 } // namespace
 
 void CookieJar::set_cookie(std::string name, std::string value) {
@@ -130,9 +140,13 @@ std::string CookieJar::to_header() const {
 }
 
 std::string CookieJar::to_header(std::string_view host) const {
+    return to_header(host, {});
+}
+
+std::string CookieJar::to_header(std::string_view host, std::string_view path) const {
     std::vector<std::pair<CookieKey, std::string>> matches;
     for (const auto &[key, value] : m_cookies) {
-        if (domain_matches(host, key.host)) {
+        if (domain_matches(host, key.host) && (path.empty() || path_matches(path, key.path))) {
             matches.push_back({key, value});
         }
     }

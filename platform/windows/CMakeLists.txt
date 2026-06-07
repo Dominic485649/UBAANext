@@ -2,6 +2,7 @@ if(WIN32)
     add_library(UBAANextPlatformWindows STATIC
         src/DpapiSecureStore.cpp
         src/WindowsAppDataPathProvider.cpp
+        src/WindowsNetworkEnvironment.cpp
         src/WindowsPlatformCapabilities.cpp
     )
 
@@ -18,6 +19,7 @@ if(WIN32)
             UBAANextPlatformOpenSSL
             UBAANextPlatformTcp
             crypt32
+            ws2_32
     )
 
     set_target_properties(UBAANextPlatformWindows PROPERTIES

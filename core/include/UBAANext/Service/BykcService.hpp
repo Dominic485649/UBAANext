@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,11 @@ struct BykcCourseQuery {
     std::string sub_category;
     std::string campus;
     std::string keyword;
+};
+
+struct BykcSignLocation {
+    double lat = 0.0;
+    double lng = 0.0;
 };
 
 class BykcService {
@@ -58,7 +64,7 @@ public:
     /** WriteGated remote mutation: yes. Course unselection requires the write gate and course id. */
     Result<Model::MutationResult> unselect_course(const std::string &course_id);
     /** WriteGated remote mutation: yes. BYKC sign-in requires the write gate, course id, and sign type. */
-    Result<Model::MutationResult> sign_course(const std::string &course_id, int sign_type);
+    Result<Model::MutationResult> sign_course(const std::string &course_id, int sign_type, std::optional<BykcSignLocation> location = std::nullopt);
 
 private:
     IHttpClient &m_http_client;

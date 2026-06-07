@@ -48,6 +48,9 @@ enum class TextStyle {
     Warning,
     Error,
     Muted,
+    Identifier,
+    Highlight,
+    Important,
 };
 
 bool is_stdout_terminal() {
@@ -93,6 +96,9 @@ std::string style_code(TextStyle style) {
     case TextStyle::Warning: return "\033[33m";
     case TextStyle::Error: return "\033[31m";
     case TextStyle::Muted: return "\033[90m";
+    case TextStyle::Identifier: return "\033[1;36m";
+    case TextStyle::Highlight: return "\033[1;35m";
+    case TextStyle::Important: return "\033[1;33m";
     case TextStyle::Plain: break;
     }
     return {};
@@ -228,6 +234,61 @@ std::string render_row(const std::vector<std::string> &cells,
     return line;
 }
 
+std::string lowercase_ascii(std::string text);
+
+bool contains_ansi(std::string_view text) {
+    return text.find("\033[") != std::string_view::npos;
+}
+
+bool contains_any(std::string_view text, const std::vector<std::string_view> &needles) {
+    for (auto needle : needles) {
+        if (text.find(needle) != std::string_view::npos) return true;
+    }
+    return false;
+}
+
+TextStyle style_for_cell(const std::string &label, const std::string &value) {
+    if (value.empty() || value == "-") return TextStyle::Muted;
+    const auto normalized_label = lowercase_ascii(label);
+    const auto normalized_value = lowercase_ascii(value);
+
+    if (contains_any(normalized_value, {"error", "failed", "failure", "invalid", "expired", "denied", "rejected"}) ||
+        contains_any(value, {"错误", "失败", "过期", "拒绝", "不可用", "无效"})) {
+        return TextStyle::Error;
+    }
+    if (contains_any(normalized_value, {"warning", "pending", "waiting", "running", "fallback", "plaintext", "confirm"}) ||
+        contains_any(value, {"警告", "待", "确认", "明文", "风险", "fallback"})) {
+        return TextStyle::Warning;
+    }
+    if (normalized_value == "true" || normalized_value == "yes" || normalized_value == "current" || normalized_value == "ok" ||
+        normalized_value == "success" || normalized_value == "completed" || normalized_value == "saved" ||
+        contains_any(value, {"成功", "已保存", "已登录", "完成"})) {
+        return TextStyle::Success;
+    }
+    if (normalized_value == "false" || normalized_value == "no") return TextStyle::Warning;
+
+    if (contains_any(normalized_label, {"id", "code", "student", "serial", "floor", "seat", "booking", "order", "token"})) {
+        return TextStyle::Identifier;
+    }
+    if (contains_any(normalized_label, {"name", "title", "course", "display", "teacher", "classroom", "room", "location", "capability"})) {
+        return TextStyle::Highlight;
+    }
+    if (contains_any(normalized_label, {"time", "date", "section", "score", "credit", "gpa", "status", "selected", "current", "enabled"})) {
+        return TextStyle::Important;
+    }
+    return TextStyle::Plain;
+}
+
+std::string emphasize_cell(const std::string &column, const std::string &value, const TableRow &cleaned_row, std::size_t column_index) {
+    if (contains_ansi(value)) return value;
+    std::string label = column;
+    if ((column == "Value" || column == "Enabled") && !cleaned_row.empty()) {
+        if (cleaned_row.size() >= 2 && column_index == 1) label = cleaned_row[0];
+        if (cleaned_row.size() >= 3 && column_index == 2) label = cleaned_row[1];
+    }
+    return colorize(value, style_for_cell(label, value));
+}
+
 void render_table(const std::string &title,
                   const std::vector<TableColumn> &columns,
                   const std::vector<TableRow> &rows) {
@@ -243,11 +304,17 @@ void render_table(const std::string &title,
     for (const auto &column : columns) widths.push_back(display_width(column.name));
 
     for (const auto &row : rows) {
+        TableRow cleaned;
+        cleaned.reserve(columns.size());
+        for (std::size_t i = 0; i < columns.size(); ++i) {
+            const auto value = i < row.size() ? row[i] : std::string{};
+            cleaned.push_back(clean_cell(value, columns[i].max_width));
+        }
+
         TableRow normalized;
         normalized.reserve(columns.size());
         for (std::size_t i = 0; i < columns.size(); ++i) {
-            const auto value = i < row.size() ? row[i] : std::string{};
-            normalized.push_back(clean_cell(value, columns[i].max_width));
+            normalized.push_back(emphasize_cell(columns[i].name, cleaned[i], cleaned, i));
             widths[i] = std::max(widths[i], display_width(normalized.back()));
         }
         normalized_rows.push_back(std::move(normalized));
@@ -276,7 +343,7 @@ std::string value_or_dash(const std::string &value) {
 }
 
 std::string bool_text(bool value) {
-    return value ? "true" : "false";
+    return value ? success_text("true") : colorize("false", TextStyle::Warning);
 }
 
 std::string range_text(int start, int end) {

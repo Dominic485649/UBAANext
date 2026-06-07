@@ -15,6 +15,8 @@
 namespace UBAANext {
 
 static const char *SSO_LOGIN_URL = "https://sso.buaa.edu.cn/login";
+static const char *SSO_WEBVPN_GATEWAY_LOGIN_URL = "https://sso.buaa.edu.cn/login?service=https%3A%2F%2Fd.buaa.edu.cn%2Flogin%3Fcas_login%3Dtrue";
+static const char *WEBVPN_VERIFY_URL = "https://d.buaa.edu.cn/";
 static const char *UC_ACTIVATE_URL = "https://uc.buaa.edu.cn/api/login?target=https%3A%2F%2Fuc.buaa.edu.cn%2F%23%2Fuser%2Flogin";
 static const char *UC_STATUS_URL = "https://uc.buaa.edu.cn/api/uc/status";
 static const char *UC_USERINFO_URL = "https://uc.buaa.edu.cn/api/uc/userinfo";
@@ -213,14 +215,15 @@ Result<HttpResponse> AuthService::follow_redirects(
                 location = (slash == std::string::npos) ? location : current_url.substr(0, slash + 1) + location;
             }
         }
-        if (!is_allowed_redirect_url(location)) {
+        const auto logical_location = VpnCipher::from_vpn_url(location);
+        if (!is_allowed_redirect_url(logical_location)) {
             return make_error(ErrorCode::NetworkError, "拒绝不安全的重定向地址");
         }
-        current_url = location;
+        current_url = mode == ConnectionMode::Direct ? location : logical_location;
 
         HttpRequest req;
         req.method = HttpMethod::Get;
-        req.url = resolve_url(location, mode);
+        req.url = mode == ConnectionMode::Direct ? location : resolve_url(logical_location, mode);
         req.headers["Accept"] = "text/html,application/xhtml+xml,application/json,*/*";
         req.headers["User-Agent"] = "UBAANext/0.4";
         disable_transport_redirects(req);
@@ -232,6 +235,91 @@ Result<HttpResponse> AuthService::follow_redirects(
         current = *result;
     }
     return current;
+}
+
+Result<void> AuthService::activate_webvpn_session(const std::string &username,
+                                                 const std::string &password,
+                                                 const std::string &captcha) {
+    const auto login_url = resolve_url(SSO_WEBVPN_GATEWAY_LOGIN_URL, ConnectionMode::WebVPN);
+    const auto login_logical_url = VpnCipher::from_vpn_url(login_url);
+
+    HttpRequest login_page_req;
+    login_page_req.method = HttpMethod::Get;
+    login_page_req.url = login_url;
+    login_page_req.headers["Accept"] = "text/html,application/xhtml+xml,*/*";
+    login_page_req.headers["User-Agent"] = "UBAANext/0.4";
+    disable_transport_redirects(login_page_req);
+
+    auto page_result = m_http_client.send(login_page_req);
+    if (!page_result) {
+        return make_error(ErrorCode::NetworkError, "无法访问 WebVPN 登录页: " + page_result.error().message);
+    }
+
+    if (page_result->status_code >= 300 && page_result->status_code < 400) {
+        auto final_response = follow_redirects(*page_result, ConnectionMode::Direct, 10, login_logical_url);
+        if (!final_response) return make_error(ErrorCode::NetworkError, final_response.error().message);
+        if (final_response->status_code == 200 && !extract_execution(final_response->body).empty()) {
+            page_result = *final_response;
+        } else {
+            return Result<void>{};
+        }
+    }
+
+    auto execution = extract_execution(page_result->body);
+    if (execution.empty()) {
+        if (page_result->status_code == 200 && page_result->body.find("wengine_vpn") != std::string::npos) {
+            return Result<void>{};
+        }
+        return make_error(ErrorCode::ParseError, "无法从 WebVPN 登录页提取 execution token");
+    }
+
+    HttpRequest login_req;
+    login_req.method = HttpMethod::Post;
+    login_req.url = login_url;
+    login_req.headers["Content-Type"] = "application/x-www-form-urlencoded";
+    login_req.headers["Accept"] = "text/html,application/xhtml+xml,*/*";
+    login_req.headers["User-Agent"] = "UBAANext/0.4";
+    login_req.headers["Referer"] = login_url;
+    login_req.body = build_login_form(page_result->body, username, password, execution, captcha);
+    disable_transport_redirects(login_req);
+
+    auto login_result = m_http_client.send(login_req);
+    if (!login_result) {
+        return make_error(ErrorCode::NetworkError, "WebVPN CAS 登录请求失败: " + login_result.error().message);
+    }
+
+    auto final_response = follow_redirects(*login_result, ConnectionMode::Direct, 10, login_logical_url);
+    if (!final_response) return make_error(ErrorCode::NetworkError, final_response.error().message);
+    if (final_response->status_code == 200) {
+        auto err = detect_error(final_response->body);
+        if (!err.empty()) return make_error(ErrorCode::AuthFailed, err);
+        if (is_ignorable_password_expiry_page(final_response->body)) {
+            auto ignored = follow_redirects(*final_response, ConnectionMode::Direct, 10, login_logical_url);
+            if (!ignored) return make_error(ErrorCode::NetworkError, ignored.error().message);
+            final_response = *ignored;
+        }
+        if (!extract_execution(final_response->body).empty()) {
+            return make_error(ErrorCode::AuthFailed, "WebVPN 登录失败（用户名或密码错误）");
+        }
+    }
+
+    HttpRequest verify_req;
+    verify_req.method = HttpMethod::Get;
+    verify_req.url = WEBVPN_VERIFY_URL;
+    verify_req.headers["Accept"] = "text/html,application/xhtml+xml,*/*";
+    verify_req.headers["User-Agent"] = "UBAANext/0.4";
+    disable_transport_redirects(verify_req);
+    auto verify_result = m_http_client.send(verify_req);
+    if (!verify_result) return make_error(ErrorCode::NetworkError, "WebVPN 会话验证失败: " + verify_result.error().message);
+    if (verify_result->status_code >= 300 && verify_result->status_code < 400) {
+        auto verified = follow_redirects(*verify_result, ConnectionMode::Direct, 6, WEBVPN_VERIFY_URL);
+        if (!verified) return make_error(ErrorCode::NetworkError, verified.error().message);
+        verify_result = *verified;
+    }
+    if (verify_result->status_code >= 400) {
+        return make_error(ErrorCode::AuthFailed, "WebVPN 会话验证返回 " + std::to_string(verify_result->status_code));
+    }
+    return Result<void>{};
 }
 
 Result<Model::Account> AuthService::login_real(
@@ -420,6 +508,10 @@ activate_uc:
         m_session.set_account(account);
 
         (void)Protocol::Byxt::ensure_session(m_http_client, mode);
+        if (mode == ConnectionMode::WebVPN) {
+            auto webvpn = activate_webvpn_session(username, password, captcha);
+            if (!webvpn) return make_error(webvpn.error().code, webvpn.error().message);
+        }
 
         return account;
     }

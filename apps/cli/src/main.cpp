@@ -5,14 +5,22 @@
  * 命令树：
  *   version [--json]
  *   help [--json]
- *   login [--mock] <id> <pw> [--mode vpn|direct] [--save-password]
- *   relogin [--mock] [<id> <pw>|--saved] [--mode vpn|direct] [--confirm]
+ *   login [--mock] <id> <pw> [--mode vpn|direct]
+ *   relogin [--mock] [--mode vpn|direct] [--confirm]
  *   mode [vpn|direct] [--json]
  *   whoami [--json]
  *   logout [--json]
  *   course today [--mock] [--mode vpn|direct] [--json]
  *   course date --date <yyyy-MM-dd> [--mock] [--mode vpn|direct] [--json]
  *   course week --week <n> [--mock] [--mode vpn|direct] [--json]
+ *   live week --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd> [--mock] [--mode vpn|direct] [--json]
+ *   file roots [--root all|user|shared|department|group] [--mock] [--mode vpn|direct] [--json]
+ *   file root [--mock] [--mode vpn|direct] [--json]
+ *   file list --id <docid> [--token <share-token>] [--mock] [--mode vpn|direct] [--json]
+ *   file size --id <docid> [--token <share-token>] [--mock] [--mode vpn|direct] [--json]
+ *   file recycle [--mock] [--mode vpn|direct] [--json]
+ *   file shares [--mock] [--mode vpn|direct] [--json]
+ *   file upload --path <path> [--confirm] [--json]
  *   exam list [--mock] [--mode vpn|direct] [--json]
  *   classroom query --campus <id> --date <yyyy-MM-dd> [--mock] [--mode vpn|direct] [--json]
  *   term list [--mock] [--mode vpn|direct] [--json]
@@ -57,6 +65,7 @@
 #include <UBAANext/Service/TdService.hpp>
 #include <UBAANext/Service/WriteOperationGate.hpp>
 #include <UBAANext/Storage/TdStore.hpp>
+#include <UBAANext/Upload/UploadSource.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -110,6 +119,18 @@ struct CliArgs;
 ExitCode cmd_feature_show(ServiceFactory &factory, OutputFormatter &out,
                           const std::string &domain, const std::string &operation,
                           const std::string &id, const std::string &key);
+ExitCode cmd_feature_list(ServiceFactory &factory, OutputFormatter &out,
+                          const std::string &domain, const std::string &operation,
+                          const std::string &key);
+ExitCode cmd_feature_mutate(ServiceFactory &factory, OutputFormatter &out,
+                            const std::string &domain, const std::string &operation,
+                            const std::string &id, bool confirmed);
+template <typename T>
+ExitCode print_records_result(ServiceFactory &factory, OutputFormatter &out,
+                              const std::string &key,
+                              const um::Result<std::vector<T>> &result);
+ExitCode print_mutation_result(ServiceFactory &factory, OutputFormatter &out,
+                               const um::Result<um::Model::MutationResult> &result);
 
 // ── CLI 参数结构 ──────────────────────────────────────────────
 
@@ -128,6 +149,8 @@ struct CliArgs {
     std::string config_key;
     std::string config_value;
     std::string mode;  // empty means use saved config; otherwise "vpn" or "direct"
+    std::string root;
+    std::string scope;
     std::string term;
     std::string id;
     std::string course_id;
@@ -145,6 +168,15 @@ struct CliArgs {
     std::string captcha;
     std::string token;
     std::string item_id;
+    std::string parent_id;
+    std::string dest_id;
+    std::string share_id;
+    std::string permissions;
+    std::string expires_at;
+    std::string share_password;
+    std::string batch_id;
+    std::string requirement;
+    std::string reason;
     std::string place;
     std::string photo_path;
     std::string seat_id;
@@ -162,18 +194,19 @@ struct CliArgs {
     bool include_history = false;
     bool pending_only = false;
     bool share = false;
+    bool is_dir = false;
     bool has_lat = false;
     bool has_lng = false;
     double lat = 0.0;
     double lng = 0.0;
     int sign_type = 0;
+    int volunteer_index = 0;
     std::string start_time;
     std::string end_time;
+    std::string start_date;
+    std::string end_date;
     std::string storey_id;
     bool confirmed = false;
-    bool relogin = false;
-    bool saved_credentials = false;
-    bool save_password = false;
     std::string student_id;
     std::string card_id;
     std::string td_campus;
@@ -186,6 +219,7 @@ struct CliArgs {
     int wait_min = um::Model::Td::default_wait_time_min_minutes;
     int wait_max = um::Model::Td::default_wait_time_max_minutes;
     int poll_seconds = 0;
+    int share_limit = -1;
     bool overwrite = false;
     bool once = false;
     bool refresh = false;
@@ -229,6 +263,10 @@ struct CliArgs {
 
 [[nodiscard]] bool is_valid_mode(const std::string &mode) {
     return mode == "vpn" || mode == "direct";
+}
+
+[[nodiscard]] bool is_valid_cloud_root(const std::string &root) {
+    return root == "all" || root == "user" || root == "shared" || root == "department" || root == "group";
 }
 
 [[nodiscard]] bool looks_like_option(std::string_view value) {
@@ -427,6 +465,18 @@ CliArgs parse_args(int argc, char *argv[]) {
             read_string_option(argc, argv, i, "--start-time", args.start_time, args);
         } else if (arg == "--end-time") {
             read_string_option(argc, argv, i, "--end-time", args.end_time, args);
+        } else if (arg == "--start-date") {
+            if (!read_string_option(argc, argv, i, "--start-date", args.start_date, args)) continue;
+            if (!is_valid_date(args.start_date)) {
+                args.error_message = UBAANextCli::Console::format("--start-date 格式无效 '{}'，应为 yyyy-MM-dd", args.start_date);
+                args.parse_error = true;
+            }
+        } else if (arg == "--end-date") {
+            if (!read_string_option(argc, argv, i, "--end-date", args.end_date, args)) continue;
+            if (!is_valid_date(args.end_date)) {
+                args.error_message = UBAANextCli::Console::format("--end-date 格式无效 '{}'，应为 yyyy-MM-dd", args.end_date);
+                args.parse_error = true;
+            }
         } else if (arg == "--storey-id") {
             read_string_option(argc, argv, i, "--storey-id", args.storey_id, args);
         } else if (arg == "--space-id") {
@@ -443,8 +493,66 @@ CliArgs parse_args(int argc, char *argv[]) {
             read_string_option(argc, argv, i, "--captcha", args.captcha, args);
         } else if (arg == "--token") {
             read_string_option(argc, argv, i, "--token", args.token, args);
-        } else if (arg == "--item-id") {
-            read_string_option(argc, argv, i, "--item-id", args.item_id, args);
+        } else if (arg == "--root") {
+            if (!read_string_option(argc, argv, i, "--root", args.root, args)) continue;
+            if (!is_valid_cloud_root(args.root)) {
+                args.error_message = UBAANextCli::Console::format("--root 值无效 '{}'，应为 all、user、shared、department 或 group", args.root);
+                args.parse_error = true;
+            }
+        } else if (arg == "--scope") {
+            read_string_option(argc, argv, i, "--scope", args.scope, args);
+        } else if (arg == "--requirement") {
+            read_string_option(argc, argv, i, "--requirement", args.requirement, args);
+        } else if (arg == "--reason") {
+            read_string_option(argc, argv, i, "--reason", args.reason, args);
+        } else if (arg == "--batch-id") {
+            read_string_option(argc, argv, i, "--batch-id", args.batch_id, args);
+        } else if (arg == "--index") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--index", value, args)) continue;
+            if (auto v = parse_int(value)) {
+                if (*v <= 0 || *v > 100) {
+                    args.error_message = "--index 值必须在 1-100 之间";
+                    args.parse_error = true;
+                } else {
+                    args.volunteer_index = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--index 值无效 '{}'", value);
+                args.parse_error = true;
+            }
+        } else if (arg == "--item-id" || arg == "--file-id") {
+            const auto option = std::string(arg);
+            read_string_option(argc, argv, i, option.c_str(), args.item_id, args);
+        } else if (arg == "--parent-id") {
+            read_string_option(argc, argv, i, "--parent-id", args.parent_id, args);
+        } else if (arg == "--dest-id" || arg == "--dest-parent-id") {
+            const auto option = std::string(arg);
+            read_string_option(argc, argv, i, option.c_str(), args.dest_id, args);
+        } else if (arg == "--share-id") {
+            read_string_option(argc, argv, i, "--share-id", args.share_id, args);
+        } else if (arg == "--permissions") {
+            read_string_option(argc, argv, i, "--permissions", args.permissions, args);
+        } else if (arg == "--expires-at") {
+            read_string_option(argc, argv, i, "--expires-at", args.expires_at, args);
+        } else if (arg == "--share-password") {
+            read_string_option(argc, argv, i, "--share-password", args.share_password, args);
+        } else if (arg == "--is-dir") {
+            args.is_dir = true;
+        } else if (arg == "--limited-times") {
+            std::string_view value;
+            if (!read_option_value(argc, argv, i, "--limited-times", value, args)) continue;
+            if (auto v = parse_int(value)) {
+                if (*v < -1) {
+                    args.error_message = "--limited-times 值必须为 -1 或非负数";
+                    args.parse_error = true;
+                } else {
+                    args.share_limit = *v;
+                }
+            } else {
+                args.error_message = UBAANextCli::Console::format("--limited-times 值无效 '{}'", value);
+                args.parse_error = true;
+            }
         } else if (arg == "--place") {
             read_string_option(argc, argv, i, "--place", args.place, args);
         } else if (arg == "--photo") {
@@ -606,11 +714,14 @@ CliArgs parse_args(int argc, char *argv[]) {
         } else if (arg == "--confirm" || arg == "--yes" || arg == "-y") {
             args.confirmed = true;
         } else if (arg == "--relogin") {
-            args.relogin = true;
+            args.error_message = "login --relogin 已取消；请使用 relogin [-y|--confirm|--yes] 复用 login 保存的账号密码";
+            args.parse_error = true;
         } else if (arg == "--saved" || arg == "--use-saved" || arg == "--saved-credentials") {
-            args.saved_credentials = true;
+            args.error_message = "relogin --saved 已取消；请直接使用 relogin [-y|--confirm|--yes]";
+            args.parse_error = true;
         } else if (arg == "--save-password") {
-            args.save_password = true;
+            args.error_message = "login --save-password 已取消；login <账号> <密码> 成功后会默认保存账号密码";
+            args.parse_error = true;
         } else if (arg == "--base-url") {
             args.config_key = "base-url";
             read_string_option(argc, argv, i, "--base-url", args.config_value, args);
@@ -620,10 +731,13 @@ CliArgs parse_args(int argc, char *argv[]) {
         } else if (arg.rfind("--", 0) == 0) {
             args.error_message = UBAANextCli::Console::format("未知选项: '{}'", arg);
             args.parse_error = true;
-        } else if ((args.command == "login" || args.command == "relogin") && args.username.empty()) {
+        } else if (args.command == "login" && args.username.empty()) {
             args.username = arg;
-        } else if ((args.command == "login" || args.command == "relogin") && args.password.empty()) {
+        } else if (args.command == "login" && args.password.empty()) {
             args.password = arg;
+        } else if (args.command == "relogin") {
+            args.error_message = "relogin 不再接受账号或密码；请使用 relogin [-y|--confirm|--yes] 复用 login 保存的账号密码";
+            args.parse_error = true;
         } else if (args.command == "td" && args.subcommand == "image" && args.action == "add" && args.photo_path.empty()) {
             args.photo_path = arg;
         } else if (args.command == "td" && args.student_id.empty() &&
@@ -746,6 +860,46 @@ ExitCode confirm_sensitive_operation_or_exit(CliArgs &args, OutputFormatter &out
     return part;
 }
 
+class FileUploadSource final : public um::IUploadSource {
+public:
+    explicit FileUploadSource(std::filesystem::path path)
+        : m_path(std::move(path)), m_input(m_path, std::ios::binary) {}
+
+    [[nodiscard]] bool is_open() const { return m_input.is_open(); }
+
+    [[nodiscard]] std::string name() const override { return m_path.filename().string(); }
+
+    [[nodiscard]] std::string content_type() const override { return mime_for_upload_path(m_path); }
+
+    [[nodiscard]] um::Result<std::uint64_t> size() override {
+        std::error_code ec;
+        const auto length = std::filesystem::file_size(m_path, ec);
+        if (ec) return um::make_error(um::ErrorCode::InvalidArgument, "无法读取上传文件大小");
+        return static_cast<std::uint64_t>(length);
+    }
+
+    [[nodiscard]] um::Result<void> rewind() override {
+        if (!m_input.is_open()) return um::make_error(um::ErrorCode::InvalidArgument, "无法读取上传文件");
+        m_input.clear();
+        m_input.seekg(0, std::ios::beg);
+        if (!m_input) return um::make_error(um::ErrorCode::InvalidArgument, "无法回退上传文件流");
+        return {};
+    }
+
+    [[nodiscard]] um::Result<std::size_t> read(unsigned char *buffer, std::size_t max_bytes) override {
+        if (max_bytes == 0) return static_cast<std::size_t>(0);
+        if (!m_input.is_open()) return um::make_error(um::ErrorCode::InvalidArgument, "无法读取上传文件");
+        m_input.read(reinterpret_cast<char *>(buffer), static_cast<std::streamsize>(max_bytes));
+        const auto count = static_cast<std::size_t>(m_input.gcount());
+        if (m_input.bad()) return um::make_error(um::ErrorCode::InvalidArgument, "读取上传文件失败");
+        return count;
+    }
+
+private:
+    std::filesystem::path m_path;
+    std::ifstream m_input;
+};
+
 // ── 上下文构建 ──────────────────────────────────────────────────
 
 AppContext build_context(bool mock, const std::string &mode, const CliConfig &config) {
@@ -792,6 +946,15 @@ bool command_requires_session(const CliArgs &args) {
     if (args.command == "term") {
         return args.subcommand == "list";
     }
+    if (args.command == "live") {
+        return args.subcommand == "week" && !args.start_date.empty() && !args.end_date.empty();
+    }
+    if (args.command == "file") {
+        return args.subcommand == "roots" || args.subcommand == "root" ||
+               (args.subcommand == "list" && !args.id.empty()) ||
+               (args.subcommand == "size" && !args.id.empty()) ||
+               args.subcommand == "recycle" || args.subcommand == "shares";
+    }
     if (args.command == "user" || args.command == "todo") {
         return true;
     }
@@ -807,7 +970,10 @@ bool command_requires_session(const CliArgs &args) {
                args.subcommand == "orders" || (args.subcommand == "order" && args.action == "lock-code");
     }
     if (args.command == "signin") {
-        return args.subcommand == "today";
+        return args.subcommand == "today" ||
+               (args.subcommand == "schedule" && !args.date.empty()) ||
+               (args.subcommand == "courses" && !args.term.empty()) ||
+               (args.subcommand == "course" && args.action == "schedule" && (!args.course_id.empty() || !args.id.empty()));
     }
     if (args.command == "ygdk") {
         return args.subcommand == "overview" || args.subcommand == "records";
@@ -815,11 +981,18 @@ bool command_requires_session(const CliArgs &args) {
     if (args.command == "evaluation") {
         return args.subcommand == "list";
     }
+    if (args.command == "srs") {
+        return args.subcommand == "config" || args.subcommand == "selected" ||
+               args.subcommand == "preselected" || (args.subcommand == "course" && args.action == "query");
+    }
     if (args.command == "judge") {
         return args.subcommand == "assignments";
     }
     if (args.command == "spoc") {
-        return args.subcommand == "assignments";
+        return args.subcommand == "assignments" ||
+               args.subcommand == "week" ||
+               (args.subcommand == "schedule" && !args.start_date.empty() && !args.end_date.empty()) ||
+               (args.subcommand == "courses" && !args.term.empty());
     }
     return false;
 }
@@ -841,47 +1014,55 @@ ExitCode restore_session_for_command(const CliArgs &args, ServiceFactory &factor
 }
 
 bool real_session_persistence_available(const AppContext &ctx) {
-    return ctx.mock_mode || ctx.capabilities.secure_store;
+    return ctx.credential_persistence_available;
 }
 
-/** Credential reuse storage: persists only after explicit --save-password and only in secure/mock stores. */
+/** Credential reuse storage: login saves credentials by default; relogin reuses them without --saved. */
 bool can_store_saved_credentials(const AppContext &ctx) {
-    return ctx.mock_mode || ctx.capabilities.secure_store;
+    return ctx.credential_persistence_available;
 }
 
-/** Sensitive session persistence error: real login must fail closed when secure store is unavailable. */
+/** Sensitive session persistence error: login must fail closed only when no durable credential/session store exists. */
 um::Error unsupported_session_persistence_error() {
     return {um::ErrorCode::UnsupportedSecureStore,
-            "当前平台没有可用安全存储，已拒绝保存真实登录会话；请启用平台安全存储后重试"};
+            "当前平台没有可用的持久化登录存储，已拒绝保存真实登录会话；请启用平台安全存储或允许明文 fallback 后重试"};
 }
 
-/** Sensitive stored credentials: only manual relogin may reuse credentials explicitly saved in secure/mock store. */
-um::Result<void> load_saved_credentials_if_requested(CliArgs &args, const AppContext &ctx) {
-    if (!args.saved_credentials) return {};
-    if (args.command != "relogin" && !args.relogin) {
-        return um::make_error(um::ErrorCode::InvalidArgument, "--saved 只能与 relogin 或 login --relogin 配合使用");
-    }
+/** Sensitive stored credentials: relogin always reuses credentials saved by the last successful login. */
+um::Result<void> load_saved_credentials_for_relogin(CliArgs &args, AppContext &ctx) {
+    if (args.command != "relogin") return {};
     if (!args.username.empty() || !args.password.empty()) {
-        return um::make_error(um::ErrorCode::InvalidArgument, "--saved 会复用已保存账号密码，不能同时手动传入账号或密码");
+        return um::make_error(um::ErrorCode::InvalidArgument, "relogin 不再接受账号或密码；请使用 relogin [-y|--confirm|--yes] 复用 login 保存的账号密码");
     }
     if (!can_store_saved_credentials(ctx)) {
-        return um::make_error(um::ErrorCode::UnsupportedSecureStore, "当前平台没有可用安全存储，不能复用已保存账号密码");
+        return um::make_error(um::ErrorCode::UnsupportedSecureStore, "当前平台没有可用的持久化登录存储，不能复用已保存账号密码");
     }
     const auto username = ctx.store->get_string("login.username");
     const auto password = ctx.store->get_string("login.password");
     if (!username || !password || username->empty() || password->empty()) {
-        return um::make_error(um::ErrorCode::InvalidArgument, "没有可复用的已保存账号密码；请先使用 login <账号> <密码> --save-password 显式保存");
+        return um::make_error(um::ErrorCode::InvalidArgument, "没有可复用的已保存账号密码；请先使用 login <账号> <密码> 登录并保存");
     }
     args.username = *username;
     args.password = *password;
+    const auto connection_mode = ctx.store->get_string("login.connection_mode");
+    if (args.mode.empty() && connection_mode) {
+        if (*connection_mode == "direct") {
+            ctx.conn_mode = um::ConnectionMode::Direct;
+        } else if (*connection_mode == "vpn" || *connection_mode == "webvpn") {
+            ctx.conn_mode = um::ConnectionMode::WebVPN;
+#if UBAANEXT_ENABLE_MOCKS
+        } else if (*connection_mode == "mock" && ctx.mock_mode) {
+            ctx.conn_mode = um::ConnectionMode::Mock;
+#endif
+        }
+    }
     return {};
 }
 
-/** Sensitive stored credentials: opt-in only; never saves passwords in unsupported real stores. */
-um::Result<void> save_credentials_if_requested(const CliArgs &args, AppContext &ctx) {
-    if (!args.save_password) return {};
+/** Sensitive stored credentials: login/relogin save credentials after successful authentication. */
+um::Result<void> save_credentials_after_success(const CliArgs &args, AppContext &ctx) {
     if (!can_store_saved_credentials(ctx)) {
-        return um::make_error(um::ErrorCode::UnsupportedSecureStore, "当前平台没有可用安全存储，已拒绝保存登录密码；请启用平台安全存储后重试");
+        return um::make_error(um::ErrorCode::UnsupportedSecureStore, "当前平台没有可用的持久化登录存储，已拒绝保存登录凭据");
     }
     ctx.store->set_string("login.username", args.username);
     ctx.store->set_string("login.password", args.password);
@@ -889,6 +1070,15 @@ um::Result<void> save_credentials_if_requested(const CliArgs &args, AppContext &
     auto flushed = ctx.store->flush();
     if (!flushed) return um::make_error(flushed.error().code, flushed.error().message);
     return {};
+}
+
+void print_credential_storage_notice(const AppContext &ctx, OutputFormatter &out) {
+    if (out.is_json()) return;
+    if (ctx.credential_persistence_plaintext_fallback) {
+        out.print_fields("Credential Storage", {{"Warning", "账号密码已保存到明文/弱保护本地存储；请保护本机用户目录"}});
+    } else if (ctx.credential_persistence_secure) {
+        out.print_fields("Credential Storage", {{"Status", "账号密码已保存到安全/加密本地存储"}});
+    }
 }
 
 /** Sensitive local mutation: clears platform cookies and local cookie file; does not prove remote logout. */
@@ -913,29 +1103,24 @@ ExitCode cmd_capability_show(ServiceFactory &factory, OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
-/** Sensitive re-login preparation: manual relogin clears local session/cookies/cache before saving the new session. */
+/** Sensitive re-login preparation: relogin always clears local session/cookies/cache before saving the new session. */
 ExitCode prepare_relogin_if_needed(CliArgs &args, ServiceFactory &factory, OutputFormatter &out, um::AuthService &auth) {
-    const bool wants_relogin = args.command == "relogin" || args.relogin;
+    const bool wants_relogin = args.command == "relogin";
     const auto existing = auth.restore_session();
-    if (!existing) {
+    if (!wants_relogin) {
+        if (existing) {
+            out.print_error({um::ErrorCode::InvalidArgument,
+                             "已存在本地登录会话；如需重新登录，请使用 'ubaa relogin --confirm' 复用已保存账号密码"});
+            return ExitCode::InvalidArgument;
+        }
         return ExitCode::Ok;
     }
-    if (!wants_relogin) {
-        out.print_error({um::ErrorCode::InvalidArgument,
-                         "已存在本地登录会话；如需手动重新登录，请使用 'ubaa relogin <账号> <密码> --confirm'，或为 login 传入 --relogin --confirm"});
-        return ExitCode::InvalidArgument;
-    }
+
     if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "relogin"); confirm != ExitCode::Ok) return confirm;
     auto logged_out = auth.logout();
     if (!logged_out) {
         out.print_error(logged_out.error());
         return map_error_to_exit_code(logged_out.error());
-    }
-    if (!args.save_password) {
-        factory.context().store->remove("login.username");
-        factory.context().store->remove("login.password");
-        factory.context().store->remove("login.connection_mode");
-        (void)factory.context().store->flush();
     }
     clear_real_cookies(factory);
     factory.context().cache->clear();
@@ -945,23 +1130,19 @@ ExitCode prepare_relogin_if_needed(CliArgs &args, ServiceFactory &factory, Outpu
 /** Sensitive input CLI handler: performs login/session persistence; credentials must stay redacted and mock mode is not live proof. */
 ExitCode cmd_login(CliArgs &args, ServiceFactory &factory, OutputFormatter &out, bool mock) {
     if (args.username.empty()) {
-        out.print_error({um::ErrorCode::InvalidArgument, args.saved_credentials
-                             ? "relogin --saved 需要先存在已保存账号密码"
+        out.print_error({um::ErrorCode::InvalidArgument, args.command == "relogin"
+                             ? "没有可复用的已保存账号密码；请先使用 login <账号> <密码> 登录并保存"
                              : "login 需要账号: ubaa login <账号> <密码>"});
         return ExitCode::InvalidArgument;
     }
     if (args.password.empty()) {
-        out.print_error({um::ErrorCode::InvalidArgument, args.saved_credentials
-                             ? "relogin --saved 需要先存在已保存账号密码"
+        out.print_error({um::ErrorCode::InvalidArgument, args.command == "relogin"
+                             ? "没有可复用的已保存账号密码；请先使用 login <账号> <密码> 登录并保存"
                              : "login 需要密码: ubaa login <账号> <密码>"});
         return ExitCode::InvalidArgument;
     }
 
     auto auth = factory.create_auth_service();
-    if (args.saved_credentials) {
-        args.save_password = true;
-        args.relogin = true;
-    }
     if (auto prepared = prepare_relogin_if_needed(args, factory, out, auth); prepared != ExitCode::Ok) return prepared;
 
 #if UBAANEXT_ENABLE_MOCKS
@@ -971,11 +1152,12 @@ ExitCode cmd_login(CliArgs &args, ServiceFactory &factory, OutputFormatter &out,
             out.print_error(result.error());
             return ExitCode::General;
         }
-        if (auto saved = save_credentials_if_requested(args, factory.context()); !saved) {
+        if (auto saved = save_credentials_after_success(args, factory.context()); !saved) {
             out.print_error(saved.error());
             return map_error_to_exit_code(saved.error());
         }
         out.print_login_result("登录成功（模拟）。", *result);
+        print_credential_storage_notice(factory.context(), out);
         return ExitCode::Ok;
     }
 #else
@@ -998,12 +1180,13 @@ ExitCode cmd_login(CliArgs &args, ServiceFactory &factory, OutputFormatter &out,
 
     save_real_cookies(factory);
 
-    if (auto saved = save_credentials_if_requested(args, factory.context()); !saved) {
+    if (auto saved = save_credentials_after_success(args, factory.context()); !saved) {
         out.print_error(saved.error());
         return map_error_to_exit_code(saved.error());
     }
 
     out.print_login_result("登录成功。", *result);
+    print_credential_storage_notice(factory.context(), out);
     return ExitCode::Ok;
 }
 
@@ -1119,6 +1302,31 @@ ExitCode cmd_course_week(const CliArgs &args, ServiceFactory &factory, OutputFor
 
     save_real_cookies(factory);
     out.print_courses(*result, args.week);
+    return ExitCode::Ok;
+}
+
+/** ReadOnlyCandidate CLI handler: classroom live week schedule uses typed LiveService in real mode and FeatureService in mock mode. */
+ExitCode cmd_live_week(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.start_date.empty() || args.end_date.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "live week 需要 --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        return cmd_feature_list(factory, out, "live", "week:" + args.start_date + ":" + args.end_date, "schedules");
+    }
+#endif
+    um::LiveWeekQuery query;
+    query.start_date = args.start_date;
+    query.end_date = args.end_date;
+    auto service = factory.create_live_service();
+    auto result = service.week_schedule_records(query);
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    save_real_cookies(factory);
+    out.print_records("schedules", *result);
     return ExitCode::Ok;
 }
 
@@ -2114,6 +2322,18 @@ um::Model::FeatureRecord spoc_detail_to_record(const um::Model::SpocAssignmentDe
     return record;
 }
 
+um::Model::FeatureRecord spoc_week_to_record(const um::Model::SpocWeek &week) {
+    um::Model::FeatureRecord record;
+    record.id = week.term_code;
+    record.title = week.term_code;
+    record.status = "current";
+    record.fields["term"] = week.term_code;
+    record.fields["startDate"] = week.start_date;
+    record.fields["endDate"] = week.end_date;
+    record.fields["rawDateRange"] = week.raw_date_range;
+    return record;
+}
+
 /** MockOnly compatibility CLI handler: routes legacy FeatureRecord lists and does not prove typed service coverage. */
 ExitCode cmd_feature_list(ServiceFactory &factory, OutputFormatter &out,
                           const std::string &domain, const std::string &operation,
@@ -2209,6 +2429,67 @@ ExitCode cmd_spoc_assignment_show(const CliArgs &args, ServiceFactory &factory, 
     save_real_cookies(factory);
     out.print_record("assignment", spoc_detail_to_record(*result));
     return ExitCode::Ok;
+}
+
+/** ReadOnlyCandidate CLI handler: current SPOC teaching week from typed service. */
+ExitCode cmd_spoc_week(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "spoc", "week", "weeks");
+#endif
+    auto service = factory.create_spoc_service();
+    auto result = service.current_week();
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    save_real_cookies(factory);
+    out.print_record("week", spoc_week_to_record(*result));
+    return ExitCode::Ok;
+}
+
+/** ReadOnlyCandidate CLI handler: SPOC calendar schedule for an explicit week/date range. */
+ExitCode cmd_spoc_schedule(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.start_date.empty() || args.end_date.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "spoc schedule 需要 --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "spoc", "schedule:" + args.start_date + ":" + args.end_date, "schedules");
+#endif
+    auto service = factory.create_spoc_service();
+    return print_records_result(factory, out, "schedules", service.week_schedule_records(args.start_date, args.end_date));
+}
+
+/** ReadOnlyCandidate CLI handler: SPOC courses for a term. */
+ExitCode cmd_spoc_courses(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.term.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "spoc courses 需要 --term <term-code>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "spoc", "courses:" + args.term, "courses");
+#endif
+    auto service = factory.create_spoc_service();
+    return print_records_result(factory, out, "courses", service.course_records(args.term));
+}
+
+/** WriteGated CLI handler: submits an uploaded SPOC file id to one homework. */
+ExitCode cmd_spoc_homework_submit(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "spoc homework submit"); confirm != ExitCode::Ok) return confirm;
+    um::Model::SpocHomeworkSubmission submission;
+    submission.assignment_id = args.id.empty() ? args.assignment_id : args.id;
+    submission.course_id = args.course_id;
+    submission.file_id = args.item_id;
+    submission.file_name = args.image_name;
+    if (submission.assignment_id.empty() || submission.course_id.empty() || submission.file_id.empty() || submission.file_name.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "spoc homework submit 需要 --id <assignment-id> --course-id <course-id> --file-id <file-id> --name <file-name>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "spoc", "homework-submit", submission.assignment_id, args.confirmed);
+#endif
+    auto service = factory.create_spoc_write_service(args.confirmed, "spoc homework submit");
+    return print_mutation_result(factory, out, service.submit_homework(submission));
 }
 
 /** ReadOnlyCandidate CLI handler: XiJi assignments use typed service in real mode and mock FeatureService in mock mode. */
@@ -2462,11 +2743,15 @@ ExitCode cmd_bykc_sign(CliArgs &args, ServiceFactory &factory, OutputFormatter &
         out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 需要 --course-id 和 --sign-type"});
         return ExitCode::InvalidArgument;
     }
+    if (args.has_lat != args.has_lng || !args.has_lat) {
+        out.print_error({um::ErrorCode::InvalidArgument, "bykc sign 需要显式 --lat 和 --lng；不会默认伪造位置"});
+        return ExitCode::InvalidArgument;
+    }
 #if UBAANEXT_ENABLE_MOCKS
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "bykc", "sign:" + std::to_string(args.sign_type), args.course_id.empty() ? args.id : args.course_id, args.confirmed);
 #endif
     auto service = factory.create_bykc_write_service(args.confirmed, "bykc sign");
-    return print_mutation_result(factory, out, service.sign_course(args.course_id.empty() ? args.id : args.course_id, args.sign_type));
+    return print_mutation_result(factory, out, service.sign_course(args.course_id.empty() ? args.id : args.course_id, args.sign_type, um::BykcSignLocation{args.lat, args.lng}));
 }
 
 /** ReadOnlyCandidate CLI handler: venue site list; mock mode remains FeatureService compatibility. */
@@ -2720,19 +3005,391 @@ ExitCode cmd_todo_list(const CliArgs &args, ServiceFactory &factory, OutputForma
     return print_records_result(factory, out, "todos", service.list_todos(query));
 }
 
-/**
- * Placeholder CLI handler for future file uploads.
- * Returns NotImplemented after confirmation and never reads local files or performs network I/O.
- */
-ExitCode cmd_file_upload_placeholder(CliArgs &args, OutputFormatter &out) {
+um::CloudRootKind cloud_root_kind_from_arg(const std::string &root) {
+    if (root == "user") return um::CloudRootKind::User;
+    if (root == "shared") return um::CloudRootKind::Shared;
+    if (root == "department") return um::CloudRootKind::Department;
+    if (root == "group") return um::CloudRootKind::Group;
+    return um::CloudRootKind::All;
+}
+
+/** ReadOnlyCandidate CLI handler: BUAA cloud document libraries, backed by AnyShare OAuth2 token in real mode. */
+ExitCode cmd_file_roots(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        return cmd_feature_list(factory, out, "file", "roots:" + (args.root.empty() ? std::string("all") : args.root), "cloudRoots");
+    }
+#endif
+    auto service = factory.create_cloud_service();
+    return print_records_result(factory, out, "cloudRoots", service.root_records(cloud_root_kind_from_arg(args.root)));
+}
+
+/** ReadOnlyCandidate CLI handler: BUAA cloud user document library root. */
+ExitCode cmd_file_root(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "file", "root", "user-root", "cloudRoot");
+#endif
+    auto service = factory.create_cloud_service();
+    return print_record_result(factory, out, "cloudRoot", service.user_root_record());
+}
+
+/** ReadOnlyCandidate CLI handler: BUAA cloud directory listing; optional --token is only used as x-as-authorization. */
+ExitCode cmd_file_list(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "file list 需要 --id <docid>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "file", "list", "cloudFiles");
+#endif
+    um::CloudListQuery query;
+    query.doc_id = args.id;
+    query.token = args.token;
+    auto service = factory.create_cloud_service();
+    return print_records_result(factory, out, "cloudFiles", service.list_records(query));
+}
+
+/** ReadOnlyCandidate CLI handler: BUAA cloud item size summary. */
+ExitCode cmd_file_size(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "file size 需要 --id <docid>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "file", "size", args.id, "cloudSize");
+#endif
+    um::CloudListQuery query;
+    query.doc_id = args.id;
+    query.token = args.token;
+    auto service = factory.create_cloud_service();
+    return print_record_result(factory, out, "cloudSize", service.size_record(query));
+}
+
+/** ReadOnlyCandidate CLI handler: BUAA cloud recycle bin listing; no delete/restore operations are exposed. */
+ExitCode cmd_file_recycle(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "file", "recycle", "cloudRecycle");
+#endif
+    auto service = factory.create_cloud_service();
+    return print_records_result(factory, out, "cloudRecycle", service.recycle_records());
+}
+
+/** ReadOnlyCandidate CLI handler: BUAA cloud share history; create/update/delete share remains intentionally absent. */
+ExitCode cmd_file_shares(ServiceFactory &factory, OutputFormatter &out) {
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "file", "shares", "cloudShares");
+#endif
+    auto service = factory.create_cloud_service();
+    return print_records_result(factory, out, "cloudShares", service.share_records());
+}
+
+std::string file_arg_id(const CliArgs &args) {
+    return args.item_id.empty() ? args.id : args.item_id;
+}
+
+std::vector<std::string> split_csv_values(const std::string &text) {
+    std::vector<std::string> values;
+    std::string current;
+    for (char ch : text) {
+        if (ch == ',') {
+            if (!current.empty()) values.push_back(current);
+            current.clear();
+        } else if (!std::isspace(static_cast<unsigned char>(ch))) {
+            current.push_back(ch);
+        }
+    }
+    if (!current.empty()) values.push_back(current);
+    return values;
+}
+
+um::Result<um::Model::CloudSharePermission> parse_cloud_permissions(const std::string &text) {
+    um::Model::CloudSharePermission permission;
+    if (text.empty()) return permission;
+    permission = {};
+    for (auto value : split_csv_values(text)) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        if (value == "create") permission.create = true;
+        else if (value == "modify") permission.modify = true;
+        else if (value == "download") permission.download = true;
+        else if (value == "preview") permission.preview = true;
+        else if (value == "display") permission.display = true;
+        else if (value == "upload") {
+            permission.create = true;
+            permission.modify = true;
+        } else {
+            return um::make_error(um::ErrorCode::InvalidArgument, "未知云盘分享权限: " + value);
+        }
+    }
+    return permission;
+}
+
+um::Result<um::CloudShareRequest> make_cloud_share_request(const CliArgs &args) {
+    auto permission = parse_cloud_permissions(args.permissions);
+    if (!permission) return um::make_error(permission.error().code, permission.error().message);
+    um::CloudShareRequest share;
+    share.item_id = file_arg_id(args);
+    share.title = args.image_name;
+    share.is_dir = args.is_dir;
+    share.expires_at = args.expires_at.empty() ? "1970-01-01T08:00:00+08:00" : args.expires_at;
+    share.password = args.share_password.empty() ? args.password : args.share_password;
+    share.limit = args.share_limit;
+    share.permission = *permission;
+    return share;
+}
+
+um::CloudItemRef make_cloud_item_ref(const CliArgs &args) {
+    um::CloudItemRef item;
+    item.doc_id = file_arg_id(args);
+    item.name = args.image_name;
+    item.is_dir = args.is_dir;
+    item.token = args.token;
+    return item;
+}
+
+um::Result<std::vector<um::CloudItemRef>> parse_cloud_item_refs(const CliArgs &args) {
+    std::vector<um::CloudItemRef> refs;
+    if (!args.input.empty()) {
+        for (const auto &raw : split_csv_values(args.input)) {
+            auto value = raw;
+            um::CloudItemRef ref;
+            const auto sep = value.find(':');
+            if (sep == std::string::npos) {
+                ref.doc_id = value;
+            } else {
+                ref.doc_id = value.substr(0, sep);
+                auto type = value.substr(sep + 1);
+                std::transform(type.begin(), type.end(), type.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+                ref.is_dir = type == "dir" || type == "folder";
+            }
+            ref.token = args.token;
+            if (ref.doc_id.empty()) return um::make_error(um::ErrorCode::InvalidArgument, "file batch-download-url 的 --input 包含空 id");
+            refs.push_back(std::move(ref));
+        }
+    } else if (!file_arg_id(args).empty()) {
+        refs.push_back(make_cloud_item_ref(args));
+    }
+    if (refs.empty()) return um::make_error(um::ErrorCode::InvalidArgument, "file batch-download-url 需要 --input 或 --id");
+    return refs;
+}
+
+ExitCode cmd_file_suggest_name(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    const auto parent_id = args.parent_id.empty() ? args.id : args.parent_id;
+    if (parent_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "file suggest-name 需要 --parent-id <docid>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.image_name.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "file suggest-name 需要 --name <name>"});
+        return ExitCode::InvalidArgument;
+    }
+    auto service = factory.create_cloud_service();
+    auto result = service.suggest_name(parent_id, args.image_name);
+    if (!result) {
+        out.print_error(result.error());
+        return map_error_to_exit_code(result.error());
+    }
+    um::Model::FeatureRecord record;
+    record.id = parent_id;
+    record.title = *result;
+    record.status = "suggested";
+    record.fields = {{"parentId", parent_id}, {"inputName", args.image_name}, {"name", *result}};
+    return print_record_result(factory, out, "cloudName", record);
+}
+
+ExitCode cmd_file_mkdir(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file mkdir"); confirm != ExitCode::Ok) return confirm;
+    const auto parent_id = args.parent_id.empty() ? args.id : args.parent_id;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file mkdir");
+    return print_mutation_result(factory, out, service.create_dir(parent_id, args.image_name));
+}
+
+ExitCode cmd_file_rename(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file rename"); confirm != ExitCode::Ok) return confirm;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file rename");
+    return print_mutation_result(factory, out, service.rename_item(file_arg_id(args), args.image_name));
+}
+
+ExitCode cmd_file_move(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file move"); confirm != ExitCode::Ok) return confirm;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file move");
+    return print_mutation_result(factory, out, service.move_item(file_arg_id(args), args.dest_id));
+}
+
+ExitCode cmd_file_copy(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file copy"); confirm != ExitCode::Ok) return confirm;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file copy");
+    return print_mutation_result(factory, out, service.copy_item(make_cloud_item_ref(args), args.dest_id));
+}
+
+ExitCode cmd_file_delete(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file delete"); confirm != ExitCode::Ok) return confirm;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file delete");
+    return print_mutation_result(factory, out, service.delete_item(file_arg_id(args)));
+}
+
+ExitCode cmd_file_recycle_delete(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file recycle-delete"); confirm != ExitCode::Ok) return confirm;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file recycle-delete");
+    return print_mutation_result(factory, out, service.delete_recycle_item(file_arg_id(args)));
+}
+
+ExitCode cmd_file_recycle_restore(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file recycle-restore"); confirm != ExitCode::Ok) return confirm;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file recycle-restore");
+    return print_mutation_result(factory, out, service.restore_recycle_item(file_arg_id(args)));
+}
+
+ExitCode cmd_file_share_record(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    auto service = factory.create_cloud_service();
+    return print_records_result(factory, out, "cloudShares", service.share_record_records(file_arg_id(args)));
+}
+
+ExitCode cmd_file_share_parse(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    const auto share_id = args.share_id.empty() ? args.id : args.share_id;
+    const auto password = args.share_password.empty() ? args.password : args.share_password;
+    auto service = factory.create_cloud_service();
+    return print_record_result(factory, out, "cloudShare", service.parsed_share_record(share_id, password));
+}
+
+ExitCode cmd_file_share_create(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file share-create"); confirm != ExitCode::Ok) return confirm;
+    auto request = make_cloud_share_request(args);
+    if (!request) {
+        out.print_error(request.error());
+        return map_error_to_exit_code(request.error());
+    }
+    auto service = factory.create_cloud_write_service(args.confirmed, "file share-create");
+    return print_mutation_result(factory, out, service.share_item(*request));
+}
+
+ExitCode cmd_file_share_update(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file share-update"); confirm != ExitCode::Ok) return confirm;
+    auto request = make_cloud_share_request(args);
+    if (!request) {
+        out.print_error(request.error());
+        return map_error_to_exit_code(request.error());
+    }
+    const auto share_id = args.share_id.empty() ? args.id : args.share_id;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file share-update");
+    return print_mutation_result(factory, out, service.share_update(share_id, *request));
+}
+
+ExitCode cmd_file_share_delete(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file share-delete"); confirm != ExitCode::Ok) return confirm;
+    const auto share_id = args.share_id.empty() ? args.id : args.share_id;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file share-delete");
+    return print_mutation_result(factory, out, service.share_delete(share_id));
+}
+
+ExitCode cmd_file_download_url(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    auto service = factory.create_cloud_service();
+    return print_record_result(factory, out, "cloudDownload", service.download_url_record(make_cloud_item_ref(args)));
+}
+
+ExitCode cmd_file_batch_download_url(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    auto refs = parse_cloud_item_refs(args);
+    if (!refs) {
+        out.print_error(refs.error());
+        return map_error_to_exit_code(refs.error());
+    }
+    auto service = factory.create_cloud_service();
+    return print_record_result(factory, out, "cloudDownload", service.batch_download_url_record(*refs, args.image_name));
+}
+
+ExitCode cmd_file_upload(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "file upload"); confirm != ExitCode::Ok) return confirm;
+    if (args.parent_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "file upload 需要 --parent-id <docid>"});
+        return ExitCode::InvalidArgument;
+    }
     if (args.photo_path.empty()) {
         out.print_error({um::ErrorCode::InvalidArgument, "file upload 需要 --path <path>"});
         return ExitCode::InvalidArgument;
     }
-    um::Error error{um::ErrorCode::NotImplemented, "file upload 当前仅保留稳定 CLI 接口，真实上传语义尚未实现"};
-    out.print_error(error);
-    return map_error_to_exit_code(error);
+    FileUploadSource source(std::filesystem::path(args.photo_path));
+    if (!source.is_open()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "无法读取上传文件"});
+        return ExitCode::InvalidArgument;
+    }
+    um::CloudUploadRequest request;
+    request.parent_id = args.parent_id;
+    request.name = args.image_name;
+    request.token = args.token;
+    auto service = factory.create_cloud_write_service(args.confirmed, "file upload");
+    return print_mutation_result(factory, out, service.upload_file(request, source));
+}
+
+std::string normalize_srs_scope(std::string scope) {
+    std::transform(scope.begin(), scope.end(), scope.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (scope.empty() || scope == "suggest" || scope == "tjkc") return "TJKC";
+    if (scope == "within" || scope == "within-plan" || scope == "fankc") return "FANKC";
+    if (scope == "outside" || scope == "outside-plan" || scope == "fawkc") return "FAWKC";
+    if (scope == "retake" || scope == "cxkc") return "CXKC";
+    if (scope == "english" || scope == "yykc") return "YYKC";
+    if (scope == "pe" || scope == "tykc") return "TYKC";
+    if (scope == "general" || scope == "xgkc") return "XGKC";
+    if (scope == "research" || scope == "kykt") return "KYKT";
+    if (scope == "all" || scope == "allkc") return "ALLKC";
+    std::transform(scope.begin(), scope.end(), scope.begin(), [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+    return scope;
+}
+
+um::Model::SrsCourseFilter make_srs_filter(const CliArgs &args) {
+    um::Model::SrsCourseFilter filter;
+    filter.scope = normalize_srs_scope(args.scope);
+    filter.page = args.page;
+    filter.size = args.size;
+    filter.campus = args.campus > 0 ? args.campus : 1;
+    filter.display_conflict = args.all;
+    filter.requirement = args.requirement;
+    filter.category = args.category;
+    filter.keyword = args.keyword;
+    return filter;
+}
+
+um::Model::SrsCourseOperation make_srs_operation(const CliArgs &args) {
+    um::Model::SrsCourseOperation operation;
+    operation.scope = normalize_srs_scope(args.scope);
+    operation.class_id = file_arg_id(args);
+    operation.secret = args.token;
+    operation.batch_id = args.batch_id;
+    operation.volunteer_index = args.volunteer_index;
+    return operation;
+}
+
+ExitCode cmd_srs(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.subcommand == "config") {
+        auto service = factory.create_srs_service();
+        return print_records_result(factory, out, "srsConfig", service.config());
+    }
+    if (args.subcommand == "batch") {
+        auto service = factory.create_srs_service();
+        return print_record_result(factory, out, "srsBatch", service.batch());
+    }
+    if (args.subcommand == "preselected") {
+        auto service = factory.create_srs_service();
+        return print_records_result(factory, out, "srsCourses", service.preselected());
+    }
+    if (args.subcommand == "selected") {
+        auto service = factory.create_srs_service();
+        return print_records_result(factory, out, "srsCourses", service.selected());
+    }
+    if (args.subcommand == "course" && args.action == "query") {
+        auto service = factory.create_srs_service();
+        return print_records_result(factory, out, "srsCourses", service.courses(make_srs_filter(args)));
+    }
+    if (args.subcommand == "course" && (args.action == "preselect" || args.action == "select" || args.action == "drop")) {
+        const auto operation_name = "srs course " + args.action;
+        auto mutable_args = args;
+        if (auto confirm = confirm_sensitive_operation_or_exit(mutable_args, out, operation_name); confirm != ExitCode::Ok) return confirm;
+        auto service = factory.create_srs_write_service(mutable_args.confirmed, operation_name);
+        const auto operation = make_srs_operation(mutable_args);
+        if (args.action == "preselect") return print_mutation_result(factory, out, service.preselect_course(operation));
+        if (args.action == "select") return print_mutation_result(factory, out, service.select_course(operation));
+        return print_mutation_result(factory, out, service.drop_course(operation));
+    }
+    out.print_error({um::ErrorCode::InvalidArgument, "未知的 srs 子命令: " + args.subcommand});
+    return ExitCode::InvalidArgument;
 }
 
 /** ReadOnlyCandidate CLI handler: today's sign-in list uses typed service in real mode and mock FeatureService in mock mode. */
@@ -2742,6 +3399,46 @@ ExitCode cmd_signin_today(ServiceFactory &factory, OutputFormatter &out) {
 #endif
     auto service = factory.create_signin_service();
     return print_records_result(factory, out, "signin", service.list_today());
+}
+
+/** ReadOnlyCandidate CLI handler: sign-in schedule for an explicit date. */
+ExitCode cmd_signin_schedule(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.date.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "signin schedule 需要 --date <yyyy-MM-dd>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "signin", "schedule:" + args.date, "signin");
+#endif
+    auto service = factory.create_signin_service();
+    return print_records_result(factory, out, "signin", service.schedule_records(args.date));
+}
+
+/** ReadOnlyCandidate CLI handler: all sign-in courses for one term. */
+ExitCode cmd_signin_courses(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.term.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "signin courses 需要 --term <term-code>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "signin", "courses:" + args.term, "courses");
+#endif
+    auto service = factory.create_signin_service();
+    return print_records_result(factory, out, "courses", service.term_course_records(args.term));
+}
+
+/** ReadOnlyCandidate CLI handler: sign-in details for one course id. */
+ExitCode cmd_signin_course_schedule(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    const auto id = args.course_id.empty() ? args.id : args.course_id;
+    if (id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "signin course schedule 需要 --course-id <course-id>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_list(factory, out, "signin", "course-schedule:" + id, "signin");
+#endif
+    auto service = factory.create_signin_service();
+    return print_records_result(factory, out, "signin", service.course_schedule_records(id));
 }
 
 /**
@@ -2760,6 +3457,26 @@ ExitCode cmd_signin_do(CliArgs &args, ServiceFactory &factory, OutputFormatter &
 #endif
     auto service = factory.create_signin_write_service(args.confirmed, "signin do");
     return print_mutation_result(factory, out, service.perform_signin(id));
+}
+
+/** WriteGated CLI handler: BUAA gateway login/logout, fail-closed outside campus network. */
+ExitCode cmd_wifi(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.subcommand != "login" && args.subcommand != "logout") {
+        out.print_error({um::ErrorCode::InvalidArgument, "未知的 wifi 子命令: " + args.subcommand});
+        return ExitCode::InvalidArgument;
+    }
+    const auto operation = "wifi " + args.subcommand;
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, operation); confirm != ExitCode::Ok) return confirm;
+    um::Model::WifiCredentials credentials;
+    credentials.username = args.username;
+    credentials.password = args.password;
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "wifi", args.subcommand, args.username.empty() ? "saved-account" : args.username, args.confirmed);
+#endif
+    auto service = factory.create_wifi_write_service(args.confirmed, operation, std::move(credentials));
+    return args.subcommand == "login"
+        ? print_mutation_result(factory, out, service.login())
+        : print_mutation_result(factory, out, service.logout());
 }
 
 /** Sensitive output CLI handler: YGDK overview may expose sports/health context. */
@@ -2809,6 +3526,23 @@ ExitCode cmd_evaluation_list(ServiceFactory &factory, OutputFormatter &out) {
     return print_records_result(factory, out, "evaluations", service.list_evaluations());
 }
 
+std::string evaluation_target_id(const CliArgs &args) {
+    return args.id.empty() ? args.course_id : args.id;
+}
+
+ExitCode cmd_evaluation_form(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    const auto target_id = evaluation_target_id(args);
+    if (target_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "evaluation form 需要 --id <evaluation-id> 或 --course-id <course-code>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_show(factory, out, "evaluation", "form", target_id, "evaluation");
+#endif
+    auto service = factory.create_evaluation_service();
+    return print_record_result(factory, out, "evaluation", service.form_record(target_id));
+}
+
 /** WriteGated CLI handler: evaluation submit is a remote mutation requiring --confirm/--yes/-y and write_operations. */
 ExitCode cmd_evaluation_submit(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "evaluation submit"); confirm != ExitCode::Ok) return confirm;
@@ -2816,7 +3550,24 @@ ExitCode cmd_evaluation_submit(CliArgs &args, ServiceFactory &factory, OutputFor
     if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "evaluation", "submit", args.id, args.confirmed);
 #endif
     auto service = factory.create_evaluation_write_service(args.confirmed, "evaluation submit");
-    return print_mutation_result(factory, out, service.submit_evaluations(args.id));
+    return print_mutation_result(factory, out, service.submit_evaluations(evaluation_target_id(args)));
+}
+
+ExitCode cmd_evaluation_form_submit(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "evaluation form submit"); confirm != ExitCode::Ok) return confirm;
+    const auto target_id = evaluation_target_id(args);
+    if (target_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "evaluation form submit 需要 --id <evaluation-id> 或 --course-id <course-code>"});
+        return ExitCode::InvalidArgument;
+    }
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) return cmd_feature_mutate(factory, out, "evaluation", "form-submit", target_id, args.confirmed);
+#endif
+    auto service = factory.create_evaluation_write_service(args.confirmed, "evaluation form submit");
+    um::Model::EvaluationSubmission submission;
+    submission.target_id = target_id;
+    submission.reason = args.reason;
+    return print_mutation_result(factory, out, service.submit_form(submission));
 }
 
 // ── 主入口 ──────────────────────────────────────────────────
@@ -2856,7 +3607,7 @@ int run_cli(int argc, char *argv[]) {
     auto ctx = build_context(args.mock, config.mode, config);
     ServiceFactory factory(ctx);
 
-    if (auto loaded = load_saved_credentials_if_requested(args, ctx); !loaded) {
+    if (auto loaded = load_saved_credentials_for_relogin(args, ctx); !loaded) {
         out.print_error(loaded.error());
         return static_cast<int>(map_error_to_exit_code(loaded.error()));
     }
@@ -2918,6 +3669,12 @@ int run_cli(int argc, char *argv[]) {
         return static_cast<int>(ExitCode::InvalidArgument);
     }
 
+    if (args.command == "live") {
+        if (args.subcommand == "week") return static_cast<int>(cmd_live_week(args, factory, out));
+        out.print_error({um::ErrorCode::InvalidArgument, "未知的 live 子命令: " + args.subcommand});
+        return static_cast<int>(ExitCode::InvalidArgument);
+    }
+
     if (args.command == "config") {
         if (args.subcommand == "show") return static_cast<int>(cmd_config_show(out, config));
         if (args.subcommand == "set")  return static_cast<int>(cmd_config_set(args, out, config));
@@ -2965,8 +3722,12 @@ int run_cli(int argc, char *argv[]) {
     }
 
     if (args.command == "spoc") {
+        if (args.subcommand == "week") return static_cast<int>(cmd_spoc_week(factory, out));
+        if (args.subcommand == "schedule") return static_cast<int>(cmd_spoc_schedule(args, factory, out));
+        if (args.subcommand == "courses") return static_cast<int>(cmd_spoc_courses(args, factory, out));
         if (args.subcommand == "assignments") return static_cast<int>(cmd_spoc_assignments(args, factory, out));
         if (args.subcommand == "assignment" && args.action == "show") return static_cast<int>(cmd_spoc_assignment_show(args, factory, out));
+        if (args.subcommand == "homework" && args.action == "submit") return static_cast<int>(cmd_spoc_homework_submit(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 spoc 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }
@@ -2981,9 +3742,16 @@ int run_cli(int argc, char *argv[]) {
 
     if (args.command == "signin") {
         if (args.subcommand == "today") return static_cast<int>(cmd_signin_today(factory, out));
+        if (args.subcommand == "schedule") return static_cast<int>(cmd_signin_schedule(args, factory, out));
+        if (args.subcommand == "courses") return static_cast<int>(cmd_signin_courses(args, factory, out));
+        if (args.subcommand == "course" && args.action == "schedule") return static_cast<int>(cmd_signin_course_schedule(args, factory, out));
         if (args.subcommand == "do") return static_cast<int>(cmd_signin_do(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 signin 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
+    }
+
+    if (args.command == "wifi") {
+        return static_cast<int>(cmd_wifi(args, factory, out));
     }
 
     if (args.command == "ygdk") {
@@ -2996,9 +3764,15 @@ int run_cli(int argc, char *argv[]) {
 
     if (args.command == "evaluation") {
         if (args.subcommand == "list") return static_cast<int>(cmd_evaluation_list(factory, out));
+        if (args.subcommand == "form" && args.action == "submit") return static_cast<int>(cmd_evaluation_form_submit(args, factory, out));
+        if (args.subcommand == "form") return static_cast<int>(cmd_evaluation_form(args, factory, out));
         if (args.subcommand == "submit") return static_cast<int>(cmd_evaluation_submit(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 evaluation 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
+    }
+
+    if (args.command == "srs") {
+        return static_cast<int>(cmd_srs(args, factory, out));
     }
 
     if (args.command == "bykc") {
@@ -3042,7 +3816,29 @@ int run_cli(int argc, char *argv[]) {
     }
 
     if (args.command == "file") {
-        if (args.subcommand == "upload") return static_cast<int>(cmd_file_upload_placeholder(args, out));
+        if (args.subcommand == "roots") return static_cast<int>(cmd_file_roots(args, factory, out));
+        if (args.subcommand == "root") return static_cast<int>(cmd_file_root(factory, out));
+        if (args.subcommand == "list") return static_cast<int>(cmd_file_list(args, factory, out));
+        if (args.subcommand == "size") return static_cast<int>(cmd_file_size(args, factory, out));
+        if (args.subcommand == "recycle") return static_cast<int>(cmd_file_recycle(factory, out));
+        if (args.subcommand == "shares") return static_cast<int>(cmd_file_shares(factory, out));
+        if (args.subcommand == "share-history") return static_cast<int>(cmd_file_shares(factory, out));
+        if (args.subcommand == "suggest-name") return static_cast<int>(cmd_file_suggest_name(args, factory, out));
+        if (args.subcommand == "mkdir") return static_cast<int>(cmd_file_mkdir(args, factory, out));
+        if (args.subcommand == "rename") return static_cast<int>(cmd_file_rename(args, factory, out));
+        if (args.subcommand == "move") return static_cast<int>(cmd_file_move(args, factory, out));
+        if (args.subcommand == "copy") return static_cast<int>(cmd_file_copy(args, factory, out));
+        if (args.subcommand == "delete") return static_cast<int>(cmd_file_delete(args, factory, out));
+        if (args.subcommand == "recycle-delete") return static_cast<int>(cmd_file_recycle_delete(args, factory, out));
+        if (args.subcommand == "recycle-restore") return static_cast<int>(cmd_file_recycle_restore(args, factory, out));
+        if (args.subcommand == "share-record") return static_cast<int>(cmd_file_share_record(args, factory, out));
+        if (args.subcommand == "share-create") return static_cast<int>(cmd_file_share_create(args, factory, out));
+        if (args.subcommand == "share-update") return static_cast<int>(cmd_file_share_update(args, factory, out));
+        if (args.subcommand == "share-delete") return static_cast<int>(cmd_file_share_delete(args, factory, out));
+        if (args.subcommand == "share-parse") return static_cast<int>(cmd_file_share_parse(args, factory, out));
+        if (args.subcommand == "download-url") return static_cast<int>(cmd_file_download_url(args, factory, out));
+        if (args.subcommand == "batch-download-url") return static_cast<int>(cmd_file_batch_download_url(args, factory, out));
+        if (args.subcommand == "upload") return static_cast<int>(cmd_file_upload(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 file 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }

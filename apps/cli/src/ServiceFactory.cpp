@@ -6,7 +6,9 @@
 #include "ServiceFactory.hpp"
 
 #include <UBAANext/Service/WriteOperationGate.hpp>
+#include <UBAANext/Storage/SecureStore.hpp>
 
+#include <optional>
 #include <utility>
 
 namespace UBAANextCli {
@@ -53,6 +55,22 @@ UBAANext::JudgeService ServiceFactory::create_judge_service() {
 
 UBAANext::SpocService ServiceFactory::create_spoc_service() {
     return UBAANext::SpocService(http_client(), *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::SpocService ServiceFactory::create_spoc_write_service(bool confirmed, const std::string &operation) {
+    auto service = create_spoc_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
+}
+
+UBAANext::SrsService ServiceFactory::create_srs_service() {
+    return UBAANext::SrsService(http_client(), m_ctx.network_stack ? &m_ctx.network_stack->cookie_store() : nullptr, *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::SrsService ServiceFactory::create_srs_write_service(bool confirmed, const std::string &operation) {
+    auto service = create_srs_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
 }
 
 UBAANext::SigninService ServiceFactory::create_signin_service() {
@@ -114,6 +132,42 @@ UBAANext::LibrarySeatService ServiceFactory::create_library_seat_service() {
 
 UBAANext::LibrarySeatService ServiceFactory::create_library_seat_write_service(bool confirmed, const std::string &operation) {
     auto service = create_library_seat_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
+}
+
+UBAANext::LiveService ServiceFactory::create_live_service() {
+    return UBAANext::LiveService(http_client(), *m_ctx.cache, m_ctx.conn_mode);
+}
+
+UBAANext::CloudService ServiceFactory::create_cloud_service() {
+    std::optional<UBAANext::CloudLoginCredentials> credentials;
+    if (m_ctx.store) {
+        const auto username = m_ctx.store->get_string("login.username");
+        const auto password = m_ctx.store->get_string("login.password");
+        if (username && password && !username->empty() && !password->empty()) {
+            credentials = UBAANext::CloudLoginCredentials{*username, *password};
+        }
+    }
+    return UBAANext::CloudService(http_client(), m_ctx.network_stack ? &m_ctx.network_stack->cookie_store() : nullptr, *m_ctx.cache, m_ctx.conn_mode, crypto_provider(), std::move(credentials));
+}
+
+UBAANext::CloudService ServiceFactory::create_cloud_write_service(bool confirmed, const std::string &operation) {
+    auto service = create_cloud_service();
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
+    return service;
+}
+
+UBAANext::WifiService ServiceFactory::create_wifi_write_service(bool confirmed, const std::string &operation, UBAANext::Model::WifiCredentials credentials) {
+    if (credentials.username.empty() && m_ctx.store) {
+        const auto username = m_ctx.store->get_string("login.username");
+        if (username) credentials.username = *username;
+    }
+    if (credentials.password.empty() && m_ctx.store) {
+        const auto password = m_ctx.store->get_string("login.password");
+        if (password) credentials.password = *password;
+    }
+    auto service = UBAANext::WifiService(http_client(), m_ctx.network_environment.get(), crypto_provider(), std::move(credentials));
     service.set_write_operation_gate(UBAANext::confirmed_write_operation(m_ctx.capabilities, operation, confirmed));
     return service;
 }

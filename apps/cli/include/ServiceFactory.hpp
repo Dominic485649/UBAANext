@@ -11,6 +11,7 @@
 
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Service/ClassroomService.hpp>
+#include <UBAANext/Service/CloudService.hpp>
 #include <UBAANext/Service/CourseService.hpp>
 #include <UBAANext/Service/ExamService.hpp>
 #include <UBAANext/Service/BykcService.hpp>
@@ -19,11 +20,14 @@
 #include <UBAANext/Service/GradeService.hpp>
 #include <UBAANext/Service/JudgeService.hpp>
 #include <UBAANext/Service/LibrarySeatService.hpp>
+#include <UBAANext/Service/LiveService.hpp>
 #include <UBAANext/Service/SigninService.hpp>
+#include <UBAANext/Service/SrsService.hpp>
 #include <UBAANext/Service/SpocService.hpp>
 #include <UBAANext/Service/TermService.hpp>
 #include <UBAANext/Service/TodoService.hpp>
 #include <UBAANext/Service/VenueReservationService.hpp>
+#include <UBAANext/Service/WifiService.hpp>
 #include <UBAANext/Service/YgdkService.hpp>
 
 namespace UBAANextCli {
@@ -46,6 +50,9 @@ public:
     [[nodiscard]] UBAANext::GradeService create_grade_service();
     [[nodiscard]] UBAANext::JudgeService create_judge_service();
     [[nodiscard]] UBAANext::SpocService create_spoc_service();
+    [[nodiscard]] UBAANext::SpocService create_spoc_write_service(bool confirmed, const std::string &operation);
+    [[nodiscard]] UBAANext::SrsService create_srs_service();
+    [[nodiscard]] UBAANext::SrsService create_srs_write_service(bool confirmed, const std::string &operation);
     [[nodiscard]] UBAANext::SigninService create_signin_service();
     [[nodiscard]] UBAANext::SigninService create_signin_write_service(bool confirmed, const std::string &operation);
     [[nodiscard]] UBAANext::YgdkService create_ygdk_service();
@@ -58,6 +65,10 @@ public:
     [[nodiscard]] UBAANext::VenueReservationService create_venue_reservation_write_service(bool confirmed, const std::string &operation);
     [[nodiscard]] UBAANext::LibrarySeatService create_library_seat_service();
     [[nodiscard]] UBAANext::LibrarySeatService create_library_seat_write_service(bool confirmed, const std::string &operation);
+    [[nodiscard]] UBAANext::LiveService create_live_service();
+    [[nodiscard]] UBAANext::CloudService create_cloud_service();
+    [[nodiscard]] UBAANext::CloudService create_cloud_write_service(bool confirmed, const std::string &operation);
+    [[nodiscard]] UBAANext::WifiService create_wifi_write_service(bool confirmed, const std::string &operation, UBAANext::Model::WifiCredentials credentials = {});
     [[nodiscard]] UBAANext::TodoService create_todo_service();
     [[nodiscard]] UBAANext::FeatureService create_feature_service();
 

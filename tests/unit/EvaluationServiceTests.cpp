@@ -107,6 +107,40 @@ TEST_CASE("EvaluationService 提交携带课程上下文字段", "[service][eval
     CHECK(body["pjjglist"][0]["pjxxlist"][0]["xxdalist"].size() == 1);
 }
 
+TEST_CASE("EvaluationService 获取表单摘要", "[service][evaluation]") {
+    EvaluationRedirectFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::EvaluationService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+
+    auto result = service.form_record("CS101");
+
+    REQUIRE(result);
+    CHECK(result->id == "task-1_questionnaire-1_CS101_teacher-1");
+    CHECK(result->fields.at("questionCount") == "1");
+    CHECK(result->fields.at("formResultId") == "pj-1");
+    CHECK(http_client.request_counts[kTopicUrl] == 1);
+}
+
+TEST_CASE("EvaluationService 指定表单提交复用默认填充", "[service][evaluation]") {
+    EvaluationRedirectFixtureHttpClient http_client;
+    UBAANext::MemoryCacheStore cache;
+    UBAANext::EvaluationService service(http_client, cache, UBAANext::ConnectionMode::Direct);
+    UBAANext::PlatformCapabilities capabilities;
+    capabilities.write_operations = true;
+    service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "evaluation form submit"));
+
+    UBAANext::Model::EvaluationSubmission submission;
+    submission.target_id = "task-1_questionnaire-1_CS101_teacher-1";
+    auto result = service.submit_form(submission);
+
+    REQUIRE(result);
+    CHECK(result->accepted);
+    REQUIRE(http_client.last_bodies.count(kSubmitUrl) == 1);
+    auto body = nlohmann::json::parse(http_client.last_bodies[kSubmitUrl]);
+    CHECK(body["pjjglist"][0]["kcdm"] == "CS101");
+    CHECK(body["pjjglist"][0]["pjxxlist"][0]["xxdalist"][0] == "a2");
+}
+
 TEST_CASE("EvaluationService 提交识别业务失败", "[service][evaluation]") {
     EvaluationRedirectFixtureHttpClient http_client;
     http_client.submit_response = R"JSON({"code":500,"msg":"已经评教","data":{}})JSON";

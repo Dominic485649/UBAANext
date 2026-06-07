@@ -71,6 +71,37 @@
             "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         },
         {
+            "name": "linux-ninja-debug",
+            "displayName": "Linux Ninja Debug",
+            "description": "Linux 上使用 Ninja 的 Debug 构建；Core 保持平台无关，平台能力由 Linux adapter 注入",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/linux-ninja-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "UBAANEXT_BUILD_CLI": "ON",
+                "UBAANEXT_BUILD_TESTS": "ON",
+                "UBAANEXT_ENABLE_MOCKS": "ON",
+                "UBAANEXT_CXX_STANDARD": "17"
+            },
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        },
+        {
+            "name": "linux-ninja-release",
+            "displayName": "Linux Ninja Release",
+            "description": "Linux 上使用 Ninja 的 Release CLI 构建",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/linux-ninja-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
+                "VCPKG_TARGET_TRIPLET": "x64-linux",
+                "UBAANEXT_BUILD_CLI": "ON",
+                "UBAANEXT_BUILD_TESTS": "OFF",
+                "UBAANEXT_CXX_STANDARD": "17"
+            },
+            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        },
+        {
             "name": "openharmony-clang-debug",
             "displayName": "OpenHarmony clang++ Debug",
             "description": "使用 DevEco Studio OpenHarmony Native SDK 的 Debug 构建；OHOS_NATIVE_HOME 指向 native SDK 根目录",
@@ -137,6 +168,16 @@
             "configuration": "Release"
         },
         {
+            "name": "linux-ninja-debug",
+            "displayName": "Linux Ninja Debug",
+            "configurePreset": "linux-ninja-debug"
+        },
+        {
+            "name": "linux-ninja-release",
+            "displayName": "Linux Ninja Release",
+            "configurePreset": "linux-ninja-release"
+        },
+        {
             "name": "openharmony-clang-debug",
             "displayName": "OpenHarmony clang++ Debug",
             "configurePreset": "openharmony-clang-debug"
@@ -162,6 +203,14 @@
             "displayName": "Windows MSVC Debug Tests",
             "configurePreset": "windows-msvc-debug",
             "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "linux-ninja-debug",
+            "displayName": "Linux Ninja Debug Tests",
+            "configurePreset": "linux-ninja-debug",
             "output": {
                 "outputOnFailure": true
             }

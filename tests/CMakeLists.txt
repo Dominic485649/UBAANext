@@ -41,6 +41,10 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/VenueReservationServiceTests.cpp
         unit/LibrarySeatParserTests.cpp
         unit/LibrarySeatServiceTests.cpp
+        unit/LiveServiceTests.cpp
+        unit/CloudServiceTests.cpp
+        unit/SrsServiceTests.cpp
+        unit/WifiServiceTests.cpp
         unit/ResponseUtilsTests.cpp
         unit/TdModelTests.cpp
         unit/TdStoreTests.cpp

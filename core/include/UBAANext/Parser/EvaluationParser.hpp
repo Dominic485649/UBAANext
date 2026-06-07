@@ -19,5 +19,9 @@ std::vector<Model::EvaluationTask> parse_evaluation_required_reviews(
     const std::string &term_code,
     const std::string &status);
 
+/** Fully migrated parser entry: extracts questionnaire metadata, choices, and submit context. */
+Model::EvaluationForm parse_evaluation_form(const nlohmann::json &topic,
+                                            const Model::EvaluationTask &task);
+
 } // namespace Parser
 } // namespace UBAANext

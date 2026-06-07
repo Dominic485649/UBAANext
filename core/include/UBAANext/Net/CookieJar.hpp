@@ -18,17 +18,10 @@
  *   3. 后续请求自动在请求头中附加 Cookie: JSESSIONID=abc123
  *   4. 服务器识别会话并返回正确的用户数据
  *
- * @attention PartiallyMigrated/Sensitive cookie storage: this jar stores session identifiers in memory and
- *   does not implement complete RFC 6265 matching. Serialized/header output must never be logged verbatim.
- *
- * @attention 本版本（v0.2）为简化实现，不支持以下特性：
- *   - Cookie 过期时间（expires / max-age）
- *   - 域名匹配（domain）
- *   - 路径匹配（path）
- *   - 安全标志（secure / httponly）
- *
- *   未来版本计划添加完整的 RFC 6265 支持。当前实现足以满足
- *   UBAANext 项目中会话管理的基本需求。
+ * @attention Sensitive cookie storage: this jar stores session identifiers in memory and implements
+ *   the host/domain and path matching required by the current campus services. It intentionally remains
+ *   a small RFC 6265 subset: expiration and Secure/HttpOnly/SameSite attributes are handled outside this
+ *   value object or ignored where not needed. Serialized/header output must never be logged verbatim.
  *
  * @author UBAANext Team
  * @version 0.2
@@ -97,16 +90,16 @@ public:
      *       但空名称的 Cookie 在 HTTP 规范中没有意义。
      */
     void set_cookie(std::string name, std::string value);
-    /** Sensitive input: host-scoped cookie storage is partially migrated and not full RFC 6265 matching. */
+    /** Sensitive input: host-scoped cookie storage. */
     void set_cookie(std::string host, std::string name, std::string value);
-    /** Sensitive input: host/path-scoped cookie storage is partially migrated and not full RFC 6265 matching. */
+    /** Sensitive input: host/path-scoped cookie storage. */
     void set_cookie(std::string host, std::string path, std::string name, std::string value);
 
     /**
      * @brief Sensitive output：根据名称检索 Cookie 值，调用方不得记录原值。
      */
     [[nodiscard]] std::optional<std::string> get_cookie(std::string_view name) const;
-    /** Sensitive output: host lookup is partially migrated and returned value must remain redacted. */
+    /** Sensitive output: host lookup returns a value that must remain redacted. */
     [[nodiscard]] std::optional<std::string> get_cookie(std::string_view host, std::string_view name) const;
 
     /**
@@ -126,6 +119,8 @@ public:
     [[nodiscard]] std::string to_header() const;
     /** Sensitive output: host-scoped Cookie header must not be logged verbatim. */
     [[nodiscard]] std::string to_header(std::string_view host) const;
+    /** Sensitive output: host/path-scoped Cookie header must not be logged verbatim. */
+    [[nodiscard]] std::string to_header(std::string_view host, std::string_view path) const;
 
     /** Sensitive output: serialized cookie lines may contain session identifiers. */
     [[nodiscard]] std::vector<std::string> serialize() const;

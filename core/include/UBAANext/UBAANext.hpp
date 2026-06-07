@@ -20,6 +20,7 @@
 #include <UBAANext/Model/Account.hpp>
 #include <UBAANext/Model/Bykc.hpp>
 #include <UBAANext/Model/Classroom.hpp>
+#include <UBAANext/Model/Cloud.hpp>
 #include <UBAANext/Model/Course.hpp>
 #include <UBAANext/Model/Evaluation.hpp>
 #include <UBAANext/Model/Exam.hpp>
@@ -27,11 +28,13 @@
 #include <UBAANext/Model/Judge.hpp>
 #include <UBAANext/Model/LibrarySeat.hpp>
 #include <UBAANext/Model/Signin.hpp>
+#include <UBAANext/Model/Srs.hpp>
 #include <UBAANext/Model/Spoc.hpp>
 #include <UBAANext/Model/Td.hpp>
 #include <UBAANext/Model/Term.hpp>
 #include <UBAANext/Model/VenueReservation.hpp>
 #include <UBAANext/Model/Week.hpp>
+#include <UBAANext/Model/Wifi.hpp>
 #include <UBAANext/Model/Ygdk.hpp>
 
 // ── 网络层 ───────────────────────────────────────────────────────
@@ -40,6 +43,7 @@
 #include <UBAANext/Net/HttpClient.hpp>
 #include <UBAANext/Net/HttpRequest.hpp>
 #include <UBAANext/Net/HttpResponse.hpp>
+#include <UBAANext/Net/NetworkEnvironment.hpp>
 #include <UBAANext/Net/NetworkStack.hpp>
 #include <UBAANext/Net/RedirectController.hpp>
 #include <UBAANext/Net/VpnCipher.hpp>
@@ -55,9 +59,11 @@
 #include <UBAANext/Storage/TdStore.hpp>
 
 #include <UBAANext/Upload/UploadPart.hpp>
+#include <UBAANext/Upload/UploadSource.hpp>
 
 // ── 加密 ───────────────────────────────────────────────────────────
 #include <UBAANext/Crypto/CryptoProvider.hpp>
+#include <UBAANext/Crypto/ProtocolCrypto.hpp>
 
 // ── 认证 ───────────────────────────────────────────────────────────
 #include <UBAANext/Auth/AuthService.hpp>
@@ -77,6 +83,7 @@
 
 // ── 解析 ──────────────────────────────────────────────────────────
 #include <UBAANext/Parser/BykcParser.hpp>
+#include <UBAANext/Parser/CloudParser.hpp>
 #include <UBAANext/Parser/EvaluationParser.hpp>
 #include <UBAANext/Parser/JsonParser.hpp>
 #include <UBAANext/Parser/JudgeParser.hpp>
@@ -89,6 +96,7 @@
 // ── 服务层 ─────────────────────────────────────────────────────────
 #include <UBAANext/Service/BykcService.hpp>
 #include <UBAANext/Service/ClassroomService.hpp>
+#include <UBAANext/Service/CloudService.hpp>
 #include <UBAANext/Service/CourseService.hpp>
 #include <UBAANext/Service/EvaluationService.hpp>
 #include <UBAANext/Service/ExamService.hpp>
@@ -98,11 +106,13 @@
 #include <UBAANext/Service/LibrarySeatService.hpp>
 #include <UBAANext/Service/ResponseUtils.hpp>
 #include <UBAANext/Service/SigninService.hpp>
+#include <UBAANext/Service/SrsService.hpp>
 #include <UBAANext/Service/SpocService.hpp>
 #include <UBAANext/Service/TermService.hpp>
 #include <UBAANext/Service/TdSchedulerService.hpp>
 #include <UBAANext/Service/TdService.hpp>
 #include <UBAANext/Service/TodoService.hpp>
 #include <UBAANext/Service/VenueReservationService.hpp>
+#include <UBAANext/Service/WifiService.hpp>
 #include <UBAANext/Service/WriteOperationGate.hpp>
 #include <UBAANext/Service/YgdkService.hpp>

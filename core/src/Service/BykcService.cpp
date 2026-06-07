@@ -167,87 +167,10 @@ std::string json_string(const nlohmann::json &json, const char *key) {
     return {};
 }
 
-struct BykcSignPoint {
-    double lat = 0.0;
-    double lng = 0.0;
-    double radius = 0.0;
-};
-
-struct BykcSignLocation {
-    double lat = 0.0;
-    double lng = 0.0;
-};
-
-bool json_double(const nlohmann::json &json, const char *key, double &value) {
-    if (!json.contains(key) || json[key].is_null()) return false;
-    try {
-        if (json[key].is_number()) {
-            value = json[key].get<double>();
-            return std::isfinite(value);
-        }
-        if (json[key].is_string()) {
-            const auto text = json[key].get<std::string>();
-            std::size_t consumed = 0;
-            value = std::stod(text, &consumed);
-            return consumed == text.size() && std::isfinite(value);
-        }
-    } catch (...) {
-        return false;
-    }
-    return false;
-}
-
-std::vector<BykcSignPoint> parse_sign_points(const std::string &sign_config) {
-    if (sign_config.empty()) return {};
-    auto config = nlohmann::json::parse(sign_config, nullptr, false);
-    if (config.is_string()) config = nlohmann::json::parse(config.get<std::string>(), nullptr, false);
-    if (config.is_discarded() || !config.is_object()) return {};
-    const auto list = config.contains("signPointList") && config["signPointList"].is_array()
-                          ? config["signPointList"]
-                          : (config.contains("signPoints") && config["signPoints"].is_array() ? config["signPoints"] : nlohmann::json::array());
-    std::vector<BykcSignPoint> points;
-    for (const auto &point : list) {
-        double lat = 0.0;
-        double lng = 0.0;
-        double radius = 0.0;
-        if (!json_double(point, "lat", lat) || !json_double(point, "lng", lng) || !json_double(point, "radius", radius)) continue;
-        if (radius <= 0.0 || lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0) continue;
-        points.push_back({lat, lng, radius});
-    }
-    return points;
-}
-
-double degrees_to_radians(double value) {
-    constexpr double pi = 3.14159265358979323846;
-    return value * pi / 180.0;
-}
-
-double radians_to_degrees(double value) {
-    constexpr double pi = 3.14159265358979323846;
-    return value * 180.0 / pi;
-}
-
-BykcSignLocation destination_point(const BykcSignPoint &point, double distance, double angle) {
-    constexpr double earth_radius_meters = 6371000.0;
-    const double angular_distance = distance / earth_radius_meters;
-    const double lat = degrees_to_radians(point.lat);
-    const double lng = degrees_to_radians(point.lng);
-    const double destination_lat = std::asin(std::sin(lat) * std::cos(angular_distance) + std::cos(lat) * std::sin(angular_distance) * std::cos(angle));
-    const double destination_lng = lng + std::atan2(std::sin(angle) * std::sin(angular_distance) * std::cos(lat), std::cos(angular_distance) - std::sin(lat) * std::sin(destination_lat));
-    return {radians_to_degrees(destination_lat), radians_to_degrees(destination_lng)};
-}
-
-Result<BykcSignLocation> random_sign_location_from_config(const std::string &sign_config) {
-    auto points = parse_sign_points(sign_config);
-    if (points.empty()) return make_error(ErrorCode::InvalidArgument, "博雅课程未返回签到范围，无法自动生成签到位置");
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<std::size_t> point_dist(0, points.size() - 1);
-    std::uniform_real_distribution<double> unit_dist(0.0, 1.0);
-    const auto &point = points[point_dist(gen)];
-    const auto distance = point.radius * std::sqrt(unit_dist(gen));
-    constexpr double two_pi = 6.28318530717958647692;
-    return destination_point(point, distance, unit_dist(gen) * two_pi);
+bool valid_sign_location(const BykcSignLocation &location) {
+    return std::isfinite(location.lat) && std::isfinite(location.lng) &&
+           location.lat >= -90.0 && location.lat <= 90.0 &&
+           location.lng >= -180.0 && location.lng <= 180.0;
 }
 
 Model::FeatureRecord make_record(std::string id, std::string title, std::string status, std::map<std::string, std::string> fields = {}) {
@@ -579,22 +502,24 @@ Result<Model::MutationResult> BykcService::unselect_course(const std::string &co
     return result;
 }
 
-Result<Model::MutationResult> BykcService::sign_course(const std::string &course_id, int sign_type) {
+Result<Model::MutationResult> BykcService::sign_course(const std::string &course_id, int sign_type, std::optional<BykcSignLocation> location) {
     auto allowed = require_write_operation(m_write_gate);
     if (!allowed) return make_error(allowed.error().code, allowed.error().message);
     auto id = parse_positive_id(course_id, "bykc course id");
     if (!id) return make_error(id.error().code, id.error().message);
     if (sign_type != 1 && sign_type != 2) return make_error(ErrorCode::InvalidArgument, "bykc sign 需要 --sign-type 1 或 2");
-    auto detail = course_detail(course_id);
-    if (!detail) return make_error(detail.error().code, detail.error().message);
-    auto location = random_sign_location_from_config(detail->sign_config);
-    if (!location) return make_error(location.error().code, location.error().message);
+    if (!location) return make_error(ErrorCode::InvalidArgument, "bykc sign 需要显式 --lat 和 --lng；不会默认伪造位置");
+    if (!valid_sign_location(*location)) return make_error(ErrorCode::InvalidArgument, "bykc sign 坐标超出合法范围");
     auto data = call_api_data("signCourseByUser", nlohmann::json{{"courseId", *id}, {"signLat", location->lat}, {"signLng", location->lng}, {"signType", sign_type}}, sign_type == 1 ? "签到失败" : "签退失败");
     if (!data) return make_error(data.error().code, data.error().message);
     Model::MutationResult result;
     result.accepted = true;
     result.message = sign_type == 1 ? "签到成功" : "签退成功";
-    result.summary = make_record(course_id, sign_type == 1 ? "博雅签到" : "博雅签退", sign_type == 1 ? "signed" : "signed-out", {{"raw", data->dump()}});
+    result.summary = make_record(course_id, sign_type == 1 ? "博雅签到" : "博雅签退", sign_type == 1 ? "signed" : "signed-out", {
+        {"lat", std::to_string(location->lat)},
+        {"lng", std::to_string(location->lng)},
+        {"raw", data->dump()},
+    });
     return result;
 }
 

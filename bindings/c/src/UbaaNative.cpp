@@ -8,6 +8,7 @@
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Model/Grade.hpp>
 #include <UBAANext/Model/Signin.hpp>
+#include <UBAANext/Model/Td.hpp>
 #include <UBAANext/Model/Term.hpp>
 #include <UBAANext/Model/Week.hpp>
 #include <UBAANext/Model/Ygdk.hpp>
@@ -17,6 +18,7 @@
 #include <UBAANext/Security/SecurityRedaction.hpp>
 #include <UBAANext/Service/CourseService.hpp>
 #include <UBAANext/Service/ExamService.hpp>
+#include <UBAANext/Service/FeatureService.hpp>
 #include <UBAANext/Service/GradeService.hpp>
 #include <UBAANext/Service/SigninService.hpp>
 #include <UBAANext/Service/TermService.hpp>
@@ -25,6 +27,7 @@
 #include <UBAANext/Service/YgdkService.hpp>
 #include <UBAANext/Storage/MemoryCacheStore.hpp>
 #include <UBAANext/Storage/SecureStore.hpp>
+#include <UBAANext/Storage/TdStore.hpp>
 #include <UBAANext/Version.hpp>
 
 #if UBAANEXT_ENABLE_MOCKS
@@ -33,15 +36,19 @@
 #endif
 
 #if defined(_WIN32)
+#    include <UBAANext/Platform/Windows/WindowsAppDataPathProvider.hpp>
 #    include <UBAANext/Platform/Windows/WindowsPlatformCapabilities.hpp>
 #elif defined(__OHOS__)
+#    include <UBAANext/Platform/Harmony/HarmonyAppDataPathProvider.hpp>
 #    include <UBAANext/Platform/Harmony/HarmonyPlatformCapabilities.hpp>
 #elif defined(__linux__)
+#    include <UBAANext/Platform/Linux/LinuxAppDataPathProvider.hpp>
 #    include <UBAANext/Platform/Linux/LinuxPlatformCapabilities.hpp>
 #endif
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -85,6 +92,19 @@ void write_capabilities(const UBAANext::PlatformCapabilities &caps, UbaaNextCapa
     out_capabilities.upload_bytes = as_u8(caps.upload_bytes);
     out_capabilities.live_login = as_u8(caps.live_login);
     out_capabilities.write_operations = as_u8(caps.write_operations);
+}
+
+[[nodiscard]] json capabilities_to_json(const UBAANext::PlatformCapabilities &caps) {
+    return json{{"realNetwork", caps.real_network},
+                {"secureCookiePersistence", caps.secure_cookie_persistence},
+                {"cookiePersistence", caps.cookie_persistence},
+                {"redirectControl", caps.redirect_control},
+                {"opensslCrypto", caps.openssl_crypto},
+                {"secureStore", caps.secure_store},
+                {"appDataPath", caps.app_data_path},
+                {"uploadBytes", caps.upload_bytes},
+                {"liveLogin", caps.live_login},
+                {"writeOperations", caps.write_operations}};
 }
 
 class VolatileSecureStore final : public UBAANext::ISecureStore {
@@ -139,6 +159,19 @@ struct UbaaNextContext {
 
     RuntimeBucket &real_bucket() {
         return mode == UBAANext::ConnectionMode::Direct ? direct : webvpn;
+    }
+
+    [[nodiscard]] UBAANext::Result<UBAANext::TdStore> td_store() const {
+#if defined(_WIN32)
+        UBAANext::Platform::Windows::WindowsAppDataPathProvider provider;
+#elif defined(__OHOS__)
+        UBAANext::Platform::Harmony::HarmonyAppDataPathProvider provider;
+#elif defined(__linux__)
+        UBAANext::Platform::Linux::LinuxAppDataPathProvider provider;
+#else
+        return UBAANext::make_error(UBAANext::ErrorCode::UnsupportedPlatform, "当前平台未提供 TD AppData 路径");
+#endif
+        return UBAANext::TdStore::from_app_data_dir(provider);
     }
 
     UBAANext::IHttpClient &http_client() {
@@ -203,6 +236,14 @@ namespace {
     return value == nullptr ? std::string{} : std::string{value};
 }
 
+[[nodiscard]] std::string int_text(int value) {
+    return std::to_string(value);
+}
+
+[[nodiscard]] std::string optional_int_text(const std::optional<int> &value) {
+    return value ? std::to_string(*value) : std::string{};
+}
+
 [[nodiscard]] UBAANext::Result<UBAANext::ConnectionMode> parse_connection_mode(const char *mode) {
     const auto value = c_string_or_empty(mode);
 #if UBAANEXT_ENABLE_MOCKS
@@ -236,6 +277,10 @@ namespace {
 
 [[nodiscard]] UBAANext::ExamService create_exam_service(UbaaNextContext &context) {
     return UBAANext::ExamService(context.http_client(), context.cache_store(), context.mode);
+}
+
+[[nodiscard]] UBAANext::FeatureService create_feature_service(UbaaNextContext &context) {
+    return UBAANext::FeatureService(context.http_client(), context.cache_store(), context.mode);
 }
 
 [[nodiscard]] UBAANext::TodoService create_todo_service(UbaaNextContext &context) {
@@ -356,6 +401,62 @@ namespace {
                 {"createdAt", record.created_at}};
 }
 
+[[nodiscard]] json td_user_to_record_json(const UBAANext::Model::Td::User &user) {
+    UBAANext::Model::FeatureRecord record;
+    record.id = user.student_id;
+    record.title = user.student_id;
+    record.status = "configured";
+    record.fields["cardId"] = user.card_id;
+    record.fields["entranceMachineId"] = int_text(user.entrance_machine_id);
+    record.fields["exitMachineId"] = int_text(user.exit_machine_id);
+    record.fields["entranceImage"] = user.entrance_image;
+    record.fields["exitImage"] = user.exit_image;
+    record.fields["rounds"] = int_text(user.rounds);
+    record.fields["waitMinMinutes"] = int_text(user.wait_time_min_minutes);
+    record.fields["waitMaxMinutes"] = int_text(user.wait_time_max_minutes);
+    record.fields["cachedTermCount"] = optional_int_text(user.cached_term_count);
+    return feature_record_to_json(record);
+}
+
+[[nodiscard]] json td_state_to_record_json(const UBAANext::Model::Td::UserState &state) {
+    UBAANext::Model::FeatureRecord record;
+    record.id = state.student_id;
+    record.title = state.date.empty() ? state.student_id : state.date;
+    record.status = state.status;
+    record.fields["studentId"] = state.student_id;
+    record.fields["date"] = state.date;
+    record.fields["nextAction"] = state.next_action;
+    record.fields["completedRounds"] = int_text(state.completed_rounds);
+    record.fields["termCount"] = optional_int_text(state.term_count);
+    record.fields["nextRunAt"] = state.next_run_at;
+    record.fields["lastError"] = UBAANext::Security::redact_sensitive_text(state.last_error);
+    record.fields["lastMessage"] = UBAANext::Security::redact_sensitive_text(state.last_message);
+    return feature_record_to_json(record);
+}
+
+[[nodiscard]] json td_count_record_json(const UBAANext::Model::Td::User &user,
+                                        const std::optional<UBAANext::Model::Td::UserState> &state) {
+    UBAANext::Model::FeatureRecord record;
+    record.id = user.student_id;
+    record.title = user.student_id;
+    if (state && state->term_count) {
+        record.status = "cached-state";
+        record.fields["termCount"] = std::to_string(*state->term_count);
+        record.fields["source"] = "state";
+    } else if (user.cached_term_count) {
+        record.status = "cached-user";
+        record.fields["termCount"] = std::to_string(*user.cached_term_count);
+        record.fields["source"] = "user";
+    } else {
+        record.status = "missing";
+        record.fields["termCount"] = "";
+        record.fields["source"] = "none";
+    }
+    record.fields["completedRounds"] = state ? int_text(state->completed_rounds) : std::string{};
+    record.fields["lastError"] = state ? UBAANext::Security::redact_sensitive_text(state->last_error) : std::string{};
+    return feature_record_to_json(record);
+}
+
 template <typename T, typename Serializer>
 [[nodiscard]] json array_json(const std::vector<T> &items, Serializer serializer) {
     json arr = json::array();
@@ -403,6 +504,14 @@ int32_t ubaanext_get_capabilities(UbaaNextCapabilities *out_capabilities) {
     return UBAANEXT_STATUS_OK;
 }
 
+const char *ubaanext_version_info(void) {
+    return json_result(success(json{{"version", UBAANEXT_VERSION_STRING}}));
+}
+
+const char *ubaanext_capabilities(void) {
+    return json_result(success(json{{"capabilities", capabilities_to_json(current_capabilities())}}));
+}
+
 UbaaNextContext *ubaanext_context_create(void) {
     try {
         UBAANext::Platform::OpenSSL::install_open_ssl_crypto_provider();
@@ -434,10 +543,16 @@ const char *ubaanext_auth_login(UbaaNextContext *context, const char *username, 
         if (!username || !password) {
             return error_result(UBAANext::ErrorCode::InvalidArgument, "用户名和密码不能为空");
         }
-        if (!ctx.capabilities.live_login) {
-            return error_result(UBAANext::ErrorCode::UnsupportedPlatform, "当前平台未启用真实登录能力");
-        }
         auto auth = create_auth_service(ctx);
+#if UBAANEXT_ENABLE_MOCKS
+        if (ctx.mode == UBAANext::ConnectionMode::Mock) {
+            return return_service_result(auth.login_mock(c_string_or_empty(username), c_string_or_empty(password)),
+                                         [](const UBAANext::Model::Account &account) { return json{{"account", account_to_json(account)}}; });
+        }
+#endif
+        if (!ctx.capabilities.live_login || !ctx.capabilities.cookie_persistence) {
+            return error_result(UBAANext::ErrorCode::UnsupportedPlatform, "当前平台未启用可持久化登录能力");
+        }
         return return_service_result(auth.login_real(c_string_or_empty(username), c_string_or_empty(password), ctx.mode, c_string_or_empty(captcha)),
                                      [](const UBAANext::Model::Account &account) { return json{{"account", account_to_json(account)}}; });
     });
@@ -462,6 +577,17 @@ const char *ubaanext_auth_restore_session(UbaaNextContext *context) {
 }
 
 const char *ubaanext_auth_get_session_state(UbaaNextContext *context) {
+    return with_context(context, [](UbaaNextContext &ctx) {
+        auto auth = create_auth_service(ctx);
+        auto restored = auth.restore_session();
+        const auto active = static_cast<bool>(restored);
+        json data{{"active", active}, {"mode", mode_to_string(ctx.mode)}};
+        data["account"] = active ? account_to_json(*restored) : json(nullptr);
+        return json_result(success(std::move(data)));
+    });
+}
+
+const char *ubaanext_auth_whoami(UbaaNextContext *context) {
     return with_context(context, [](UbaaNextContext &ctx) {
         auto auth = create_auth_service(ctx);
         auto restored = auth.restore_session();
@@ -587,6 +713,85 @@ const char *ubaanext_ygdk_records(UbaaNextContext *context, int32_t page, int32_
         return return_service_result(service.record_list(static_cast<int>(page), static_cast<int>(size)), [](const std::vector<UBAANext::Model::YgdkRecord> &records) {
             return json{{"records", array_json(records, ygdk_record_to_json)}};
         });
+    });
+}
+
+const char *ubaanext_feature_list(UbaaNextContext *context, const char *domain, const char *operation) {
+    return with_context(context, [domain, operation](UbaaNextContext &ctx) {
+        const auto domain_text = c_string_or_empty(domain);
+        const auto operation_text = c_string_or_empty(operation);
+        if (domain_text.empty() || operation_text.empty()) {
+            return error_result(UBAANext::ErrorCode::InvalidArgument, "feature list 需要 domain 和 operation");
+        }
+        auto service = create_feature_service(ctx);
+        return return_service_result(service.list(domain_text, operation_text), [](const std::vector<UBAANext::Model::FeatureRecord> &features) {
+            return json{{"features", array_json(features, feature_record_to_json)}};
+        });
+    });
+}
+
+const char *ubaanext_feature_show(UbaaNextContext *context, const char *domain, const char *operation, const char *id) {
+    return with_context(context, [domain, operation, id](UbaaNextContext &ctx) {
+        const auto domain_text = c_string_or_empty(domain);
+        const auto operation_text = c_string_or_empty(operation);
+        if (domain_text.empty() || operation_text.empty()) {
+            return error_result(UBAANext::ErrorCode::InvalidArgument, "feature show 需要 domain 和 operation");
+        }
+        auto service = create_feature_service(ctx);
+        return return_service_result(service.show(domain_text, operation_text, c_string_or_empty(id)), [](const UBAANext::Model::FeatureRecord &feature) {
+            return json{{"feature", feature_record_to_json(feature)}};
+        });
+    });
+}
+
+const char *ubaanext_td_status(UbaaNextContext *context) {
+    return with_context(context, [](UbaaNextContext &ctx) {
+        auto store = ctx.td_store();
+        if (!store) return json_result(failure(store.error()));
+        auto states = store->load_states();
+        if (!states) return json_result(failure(states.error()));
+        return json_result(success(json{{"tdStates", array_json(*states, td_state_to_record_json)}}));
+    });
+}
+
+const char *ubaanext_td_users(UbaaNextContext *context) {
+    return with_context(context, [](UbaaNextContext &ctx) {
+        auto store = ctx.td_store();
+        if (!store) return json_result(failure(store.error()));
+        auto users = store->load_users();
+        if (!users) return json_result(failure(users.error()));
+        return json_result(success(json{{"tdUsers", array_json(*users, td_user_to_record_json)}}));
+    });
+}
+
+const char *ubaanext_td_count_cache(UbaaNextContext *context, const char *student_id) {
+    return with_context(context, [student_id](UbaaNextContext &ctx) {
+        auto store = ctx.td_store();
+        if (!store) return json_result(failure(store.error()));
+        const auto id = c_string_or_empty(student_id);
+        if (!id.empty()) {
+            auto user = store->load_user(id);
+            if (!user) return json_result(failure(user.error()));
+            if (!*user) return error_result(UBAANext::ErrorCode::InvalidArgument, "TD 用户不存在");
+            auto state = store->load_state(id);
+            if (!state) return json_result(failure(state.error()));
+            return json_result(success(json{{"tdCount", td_count_record_json(**user, *state)}}));
+        }
+
+        auto users = store->load_users();
+        if (!users) return json_result(failure(users.error()));
+        auto states = store->load_states();
+        if (!states) return json_result(failure(states.error()));
+        json records = json::array();
+        for (const auto &user : *users) {
+            auto state_it = std::find_if(states->begin(), states->end(), [&](const UBAANext::Model::Td::UserState &state) {
+                return state.student_id == user.student_id;
+            });
+            std::optional<UBAANext::Model::Td::UserState> state;
+            if (state_it != states->end()) state = *state_it;
+            records.push_back(td_count_record_json(user, state));
+        }
+        return json_result(success(json{{"tdCounts", std::move(records)}}));
     });
 }
 

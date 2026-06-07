@@ -37,6 +37,12 @@ std::string today_yyyymmdd() {
     return out.str();
 }
 
+std::string compact_date_yyyymmdd(const std::string &date) {
+    if (date.size() == 8 && std::all_of(date.begin(), date.end(), [](unsigned char ch) { return std::isdigit(ch); })) return date;
+    if (date.size() == 10 && date[4] == '-' && date[7] == '-') return date.substr(0, 4) + date.substr(5, 2) + date.substr(8, 2);
+    return {};
+}
+
 std::string url_encode_form(const std::string &value) {
     std::ostringstream out;
     out << std::uppercase << std::hex;
@@ -122,10 +128,16 @@ Model::FeatureRecord make_record(std::string id,
 
 Model::FeatureRecord course_to_record(const Model::SigninCourse &course) {
     return make_record(course.id, course.name, course.status, {
+        {"courseId", course.course_id},
+        {"teacher", course.teacher},
         {"classBeginTime", course.class_begin_time},
         {"classEndTime", course.class_end_time},
         {"signStatus", course.sign_status},
     });
+}
+
+Model::FeatureRecord term_course_to_record(const Model::SigninTermCourse &course) {
+    return make_record(course.id, course.name, "available", {{"teacher", course.teacher}});
 }
 
 std::string json_string(const nlohmann::json &json, const char *key) {
@@ -353,8 +365,127 @@ Result<std::vector<Model::SigninCourse>> SigninService::list_today_courses(bool 
     return Parser::parse_signin_today_courses(json);
 }
 
+Result<std::vector<Model::SigninCourse>> SigninService::list_schedule(const std::string &date) {
+    return list_schedule(date, true);
+}
+
+Result<std::vector<Model::SigninCourse>> SigninService::list_schedule(const std::string &date, bool allow_retry) {
+    const auto compact_date = compact_date_yyyymmdd(date);
+    if (compact_date.empty()) return make_error(ErrorCode::InvalidArgument, "signin schedule 需要 --date <yyyy-MM-dd>");
+    auto session = ensure_iclass_session();
+    if (!session) return make_error(session.error().code, session.error().message);
+
+    HttpRequest request;
+    request.method = HttpMethod::Get;
+    request.url = resolve_for_mode("https://iclass.buaa.edu.cn:8347/app/course/get_stu_course_sched.action?dateStr=" + url_encode_form(compact_date), m_mode);
+    request.headers["Accept"] = "application/json, text/plain, */*";
+    request.headers["sessionId"] = session->second;
+    request.headers["User-Agent"] = "UBAANext/0.4";
+    auto response = m_http_client.send(request);
+    if (!response) return make_error(ErrorCode::NetworkError, "请求签到课表失败: " + response.error().message);
+    if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "签到课表请求返回: " + std::to_string(response->status_code));
+
+    auto json = nlohmann::json::parse(response->body, nullptr, false);
+    if (json.is_discarded()) return make_error(ErrorCode::ParseError, "解析签到课表 JSON 失败");
+    if (json.contains("STATUS") && !json_status_success(json)) {
+        if (!allow_retry) return Parser::parse_signin_schedule(json);
+        auto refreshed = ensure_iclass_session(true);
+        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+        return list_schedule(date, false);
+    }
+    return Parser::parse_signin_schedule(json);
+}
+
+Result<std::vector<Model::SigninTermCourse>> SigninService::list_term_courses(const std::string &term_code) {
+    return list_term_courses(term_code, true);
+}
+
+Result<std::vector<Model::SigninTermCourse>> SigninService::list_term_courses(const std::string &term_code, bool allow_retry) {
+    if (term_code.empty()) return make_error(ErrorCode::InvalidArgument, "signin courses 需要 --term <term-code>");
+    auto session = ensure_iclass_session();
+    if (!session) return make_error(session.error().code, session.error().message);
+
+    HttpRequest request;
+    request.method = HttpMethod::Get;
+    request.url = resolve_for_mode("https://iclass.buaa.edu.cn:8347/app/choosecourse/get_myall_course.action?user_type=1&xq_code=" + url_encode_form(term_code), m_mode);
+    request.headers["Accept"] = "application/json, text/plain, */*";
+    request.headers["sessionId"] = session->second;
+    request.headers["User-Agent"] = "UBAANext/0.4";
+    auto response = m_http_client.send(request);
+    if (!response) return make_error(ErrorCode::NetworkError, "请求签到课程失败: " + response.error().message);
+    if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "签到课程请求返回: " + std::to_string(response->status_code));
+
+    auto json = nlohmann::json::parse(response->body, nullptr, false);
+    if (json.is_discarded()) return make_error(ErrorCode::ParseError, "解析签到课程 JSON 失败");
+    if (json.contains("STATUS") && !json_status_success(json)) {
+        if (!allow_retry) return Parser::parse_signin_term_courses(json);
+        auto refreshed = ensure_iclass_session(true);
+        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+        return list_term_courses(term_code, false);
+    }
+    return Parser::parse_signin_term_courses(json);
+}
+
+Result<std::vector<Model::SigninCourse>> SigninService::list_course_schedule(const std::string &course_id) {
+    return list_course_schedule(course_id, true);
+}
+
+Result<std::vector<Model::SigninCourse>> SigninService::list_course_schedule(const std::string &course_id, bool allow_retry) {
+    if (course_id.empty()) return make_error(ErrorCode::InvalidArgument, "signin course schedule 需要 --course-id <course-id>");
+    auto session = ensure_iclass_session();
+    if (!session) return make_error(session.error().code, session.error().message);
+
+    HttpRequest request;
+    request.method = HttpMethod::Get;
+    request.url = resolve_for_mode("https://iclass.buaa.edu.cn:8347/app/my/get_my_course_sign_detail.action?courseId=" + url_encode_form(course_id), m_mode);
+    request.headers["Accept"] = "application/json, text/plain, */*";
+    request.headers["sessionId"] = session->second;
+    request.headers["User-Agent"] = "UBAANext/0.4";
+    auto response = m_http_client.send(request);
+    if (!response) return make_error(ErrorCode::NetworkError, "请求签到明细失败: " + response.error().message);
+    if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "签到明细请求返回: " + std::to_string(response->status_code));
+
+    auto json = nlohmann::json::parse(response->body, nullptr, false);
+    if (json.is_discarded()) return make_error(ErrorCode::ParseError, "解析签到明细 JSON 失败");
+    if (json.contains("STATUS") && !json_status_success(json)) {
+        if (!allow_retry) return Parser::parse_signin_course_schedule(json);
+        auto refreshed = ensure_iclass_session(true);
+        if (!refreshed) return make_error(refreshed.error().code, refreshed.error().message);
+        return list_course_schedule(course_id, false);
+    }
+    auto records = Parser::parse_signin_course_schedule(json);
+    for (auto &record : records) {
+        if (record.course_id.empty()) record.course_id = course_id;
+    }
+    return records;
+}
+
 Result<std::vector<Model::FeatureRecord>> SigninService::list_today() {
     auto result = list_today_courses();
+    if (!result) return make_error(result.error().code, result.error().message);
+    std::vector<Model::FeatureRecord> records;
+    for (const auto &course : *result) records.push_back(course_to_record(course));
+    return records;
+}
+
+Result<std::vector<Model::FeatureRecord>> SigninService::schedule_records(const std::string &date) {
+    auto result = list_schedule(date);
+    if (!result) return make_error(result.error().code, result.error().message);
+    std::vector<Model::FeatureRecord> records;
+    for (const auto &course : *result) records.push_back(course_to_record(course));
+    return records;
+}
+
+Result<std::vector<Model::FeatureRecord>> SigninService::term_course_records(const std::string &term_code) {
+    auto result = list_term_courses(term_code);
+    if (!result) return make_error(result.error().code, result.error().message);
+    std::vector<Model::FeatureRecord> records;
+    for (const auto &course : *result) records.push_back(term_course_to_record(course));
+    return records;
+}
+
+Result<std::vector<Model::FeatureRecord>> SigninService::course_schedule_records(const std::string &course_id) {
+    auto result = list_course_schedule(course_id);
     if (!result) return make_error(result.error().code, result.error().message);
     std::vector<Model::FeatureRecord> records;
     for (const auto &course : *result) records.push_back(course_to_record(course));

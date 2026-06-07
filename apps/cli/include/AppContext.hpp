@@ -9,6 +9,7 @@
 #include <UBAANext/Auth/AuthService.hpp>
 #include <UBAANext/Crypto/CryptoProvider.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
+#include <UBAANext/Net/NetworkEnvironment.hpp>
 #include <UBAANext/Net/NetworkStack.hpp>
 #include <UBAANext/Platform/PlatformCapabilities.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
@@ -35,6 +36,7 @@ struct AppContext {
     CliConfig config;                                           ///< CLI 配置
     std::unique_ptr<UBAANext::IHttpClient> http;                ///< HTTP 客户端（过渡期兼容）
     std::unique_ptr<UBAANext::INetworkStack> network_stack;     ///< 平台网络栈
+    std::unique_ptr<UBAANext::INetworkEnvironment> network_environment; ///< 本机网络环境探测
     UBAANext::PlatformCapabilities capabilities;                ///< 当前平台能力
     UBAANext::ICryptoProvider *crypto = nullptr;                ///< 平台加密 provider（过渡期可为空）
     std::filesystem::path cookie_file_path;                      ///< Cookie 持久化路径（legacy bridge）
@@ -42,6 +44,9 @@ struct AppContext {
     std::function<void()> clear_cookies;                         ///< Cookie 清理回调（legacy bridge）
     std::unique_ptr<UBAANext::ICacheStore> cache;               ///< 缓存存储
     std::unique_ptr<UBAANext::ISecureStore> store;              ///< 安全存储（开发态为 PlainFileStore）
+    bool credential_persistence_available = false;              ///< 是否可跨 CLI 进程保存 login 凭据
+    bool credential_persistence_secure = false;                 ///< login 凭据是否由平台/本地加密存储保护
+    bool credential_persistence_plaintext_fallback = false;     ///< 是否允许并正在使用明文 fallback
 };
 
 } // namespace UBAANextCli

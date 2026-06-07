@@ -51,21 +51,24 @@ nlohmann::json get_help_json() {
     add_command(commands, "help", "显示帮助信息；使用 help --json 查看机器可读命令目录");
 
     json login_options = {
-        option("account", "账号/学号位置参数", true, "account", {}, {}, "ubaa login <账号> <密码>"),
-        option("password", "密码位置参数", true, "password", {}, {}, {}, "密码不得出现在日志、错误或测试输出中"),
+        option("account", "账号/学号位置参数；登录成功后默认保存", true, "account", {}, {}, "ubaa login <账号> <密码>"),
+        option("password", "密码位置参数；不得出现在日志、错误或测试输出中", true, "password"),
         option("--username", "兼容旧写法：学号", false, "account"),
         option("--password", "兼容旧写法：密码", false, "password"),
 #if UBAANEXT_ENABLE_MOCKS
         option("--mock", "使用模拟数据", false),
 #endif
         option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
-        option("--relogin", "手动重新登录：已有本地会话时允许清理旧会话后登录", false),
-        option("--saved", "重新登录时复用此前显式保存的账号密码；仅限安全存储或 mock", false),
-        option("--save-password", "登录成功后显式保存账号密码，供后续 relogin --saved 复用", false),
-        option("--confirm", "与 --relogin、--saved 或 relogin 命令配合，确认清理旧本地会话；也可用 --yes 或 -y", false),
     };
-    add_command(commands, "login", "登录", login_options);
-    add_command(commands, "relogin", "手动重新登录并替换本地会话", login_options);
+    json relogin_options = {
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct；不传时复用 login 保存的连接模式", false, "vpn|direct"),
+        option("--confirm", "确认清理旧本地会话并复用已保存账号密码；也可用 --yes 或 -y", false),
+    };
+    add_command(commands, "login", "登录并默认保存账号密码", login_options);
+    add_command(commands, "relogin", "复用 login 保存的账号密码重新登录并替换本地会话", relogin_options);
 
     add_command(commands, "mode", "显示当前连接模式");
     add_command(commands, "mode vpn", "切换为 VPN 模式");
@@ -125,6 +128,171 @@ nlohmann::json get_help_json() {
     };
     add_command(commands, "term list", "显示学期列表", term_options);
     add_command(commands, "week list", "显示教学周列表", term_options);
+    add_command(commands, "live week", "显示课堂直播周课表", json{
+        option("--start-date", "周起始日期，格式 yyyy-MM-dd", true, "yyyy-MM-dd"),
+        option("--end-date", "周结束日期，格式 yyyy-MM-dd", true, "yyyy-MM-dd"),
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
+    add_command(commands, "file roots", "显示北航云盘文档库根目录；root-id 来自输出记录 id 字段", json{
+        option("--root", "根目录类型过滤: all|user|shared|department|group；默认 all", false, "all|user|shared|department|group"),
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
+    add_command(commands, "file root", "显示北航云盘个人文档库根目录；docid 来自输出记录 id 字段", json{
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
+    add_command(commands, "file list", "列出北航云盘目录内容；docid 来自 file roots 或 file root 输出记录 id 字段", json{
+        option("--id", "云盘目录 docid", true, "docid", "file roots 或 file root", "id"),
+        option("--token", "可选分享链接访问 token，仅作为 x-as-authorization 使用，不会写入本地存储", false, "share-token"),
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
+    add_command(commands, "file size", "显示北航云盘条目容量摘要；docid 来自 file list 或 file root 输出记录 id 字段", json{
+        option("--id", "云盘条目 docid", true, "docid", "file list 或 file root", "id"),
+        option("--token", "可选分享链接访问 token，仅作为 x-as-authorization 使用，不会写入本地存储", false, "share-token"),
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
+    add_command(commands, "file recycle", "列出北航云盘回收站；删除和恢复需使用显式写命令", json{
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
+    add_command(commands, "file shares", "列出北航云盘分享历史；创建、修改、删除需使用显式写命令", json{
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
+    add_command(commands, "file suggest-name", "获取指定目录下冲突时的建议名称", json{
+        option("--parent-id", "父目录 docid，来自 file root/list 输出记录 id 字段", true, "docid", "file root 或 file list", "id"),
+        option("--name", "期望名称", true, "name"),
+    });
+    add_command(commands, "file mkdir", "创建北航云盘目录", json{
+        option("--parent-id", "父目录 docid，来自 file root/list 输出记录 id 字段", true, "docid", "file root 或 file list", "id"),
+        option("--name", "目录名", true, "name"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file rename", "重命名北航云盘文件或目录", json{
+        option("--id", "条目 docid，来自 file list 输出记录 id 字段", true, "docid", "file list", "id"),
+        option("--name", "新名称", true, "name"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file move", "移动北航云盘文件或目录", json{
+        option("--id", "源条目 docid，来自 file list 输出记录 id 字段", true, "docid", "file list", "id"),
+        option("--dest-id", "目标父目录 docid，来自 file list/root 输出记录 id 字段", true, "docid", "file list 或 file root", "id"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file copy", "复制北航云盘文件或目录；带 --token 时可用于分享另存为", json{
+        option("--id", "源条目 docid，来自 file list 或 file share-parse 输出记录 id 字段", true, "docid", "file list 或 file share-parse", "id"),
+        option("--dest-id", "目标父目录 docid，来自 file list/root 输出记录 id 字段", true, "docid", "file list 或 file root", "id"),
+        option("--token", "分享访问 token，仅作为 x-as-authorization 使用", false, "share-token"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file delete", "删除北航云盘条目到回收站", json{
+        option("--id", "条目 docid，来自 file list 输出记录 id 字段", true, "docid", "file list", "id"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file recycle-delete", "彻底删除回收站条目", json{
+        option("--id", "回收站条目 docid，来自 file recycle 输出记录 id 字段", true, "docid", "file recycle", "id"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file recycle-restore", "恢复回收站条目", json{
+        option("--id", "回收站条目 docid，来自 file recycle 输出记录 id 字段", true, "docid", "file recycle", "id"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file share-record", "显示单个云盘条目的分享记录", json{
+        option("--id", "条目 docid，来自 file list 输出记录 id 字段", true, "docid", "file list", "id"),
+    });
+    add_command(commands, "file share-create", "创建公开分享链接", json{
+        option("--id", "条目 docid，来自 file list 输出记录 id 字段", true, "docid", "file list", "id"),
+        option("--name", "分享标题", true, "title"),
+        option("--is-dir", "条目是目录时传入", false),
+        option("--permissions", "权限列表: display,preview,download,create,modify,upload", false, "permissions"),
+        option("--expires-at", "过期时间；默认 1970-01-01T08:00:00+08:00 表示不过期", false, "datetime"),
+        option("--limited-times", "访问次数限制，-1 表示不限", false, "n"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file share-update", "更新公开分享链接", json{
+        option("--share-id", "分享 ID，来自 file shares 或 file share-record 输出记录 id 字段", true, "share-id", "file shares", "id"),
+        option("--id", "条目 docid，来自 file list 输出记录 id 字段", true, "docid", "file list", "id"),
+        option("--name", "分享标题", true, "title"),
+        option("--permissions", "权限列表: display,preview,download,create,modify,upload", false, "permissions"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file share-delete", "删除公开分享链接", json{
+        option("--share-id", "分享 ID，来自 file shares 或 file share-record 输出记录 id 字段", true, "share-id", "file shares", "id"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "file share-parse", "解析公开分享链接为可继续 list/copy/download 的条目", json{
+        option("--id", "分享 ID 或 https://bhpan.buaa.edu.cn/link/<id>", true, "share-id|url"),
+        option("--password", "分享密码；也可用 --share-password", false, "password"),
+    });
+    add_command(commands, "file download-url", "获取单个文件下载 URL；目录需加 --is-dir 以打包下载", json{
+        option("--id", "条目 docid，来自 file list 或 file share-parse 输出记录 id 字段", true, "docid", "file list 或 file share-parse", "id"),
+        option("--name", "打包下载文件名；单文件时可省略", false, "name"),
+        option("--is-dir", "条目是目录时传入", false),
+        option("--token", "分享访问 token，仅作为 x-as-authorization 使用", false, "share-token"),
+    });
+    add_command(commands, "file batch-download-url", "获取多个文件/目录的打包下载 URL", json{
+        option("--input", "逗号分隔 id[:file|dir] 列表；例如 a:file,b:dir", true, "items"),
+        option("--name", "zip 文件名", false, "name"),
+        option("--token", "分享访问 token，仅作为 x-as-authorization 使用", false, "share-token"),
+    });
+    add_command(commands, "file upload", "上传本地文件到北航云盘，支持秒传、小文件 PUT 和 20MiB 分片上传", json{
+        option("--parent-id", "目标父目录 docid，来自 file root/list 输出记录 id 字段", true, "docid", "file root 或 file list", "id"),
+        option("--path", "待上传文件路径；CLI 读取本地文件，Core 只消费上传流", true, "path"),
+        option("--name", "云盘内文件名；省略时使用本地文件名", false, "name"),
+        option("--token", "分享目录上传 token，仅作为 x-as-authorization 使用", false, "share-token"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "srs config", "显示选课系统配置和选课批次");
+    add_command(commands, "srs batch", "从选课页面解析当前预选批次 ID");
+    add_command(commands, "srs course query", "查询选课课程", json{
+        option("--scope", "课程范围: TJKC/FANKC/FAWKC/CXKC/YYKC/TYKC/XGKC/KYKT/ALLKC，也支持英文别名", false, "scope"),
+        option("--page", "页码", false, "n"),
+        option("--size", "每页数量", false, "n"),
+        option("--campus", "校区: 1 学院路，2 沙河", false, "1|2"),
+        option("--all", "显示冲突课程；默认隐藏冲突课程", false),
+        option("--requirement", "课程性质代码，例如 01/02/03/04", false, "code"),
+        option("--category", "课程类型代码，例如 A/FG/011/031", false, "code"),
+        option("--keyword", "关键词", false, "text"),
+    });
+    add_command(commands, "srs preselected", "查询预选结果");
+    add_command(commands, "srs selected", "查询已选课程");
+    add_command(commands, "srs course preselect", "预选课程", json{
+        option("--id", "教学班 JXBID，来自 srs course query 输出 id 字段", true, "clazzId", "srs course query", "id"),
+        option("--scope", "课程范围，来自 srs course query 输出 fields.scope", true, "scope", "srs course query", "fields.scope"),
+        option("--token", "secretVal，来自 srs course query 输出 fields.secretVal", true, "secretVal", "srs course query", "fields.secretVal"),
+        option("--batch-id", "批次 ID，来自 srs batch 或 srs config 输出 id 字段", true, "batchId", "srs batch", "id"),
+        option("--index", "志愿序号", true, "n"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "srs course select", "正选课程", json{
+        option("--id", "教学班 JXBID，来自 srs course query 输出 id 字段", true, "clazzId", "srs course query", "id"),
+        option("--scope", "课程范围，来自 srs course query 输出 fields.scope", true, "scope", "srs course query", "fields.scope"),
+        option("--token", "secretVal，来自 srs course query 输出 fields.secretVal", true, "secretVal", "srs course query", "fields.secretVal"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "srs course drop", "退选课程", json{
+        option("--id", "教学班 JXBID，来自 srs selected 输出 id 字段", true, "clazzId", "srs selected", "id"),
+        option("--scope", "课程范围，来自 srs selected 输出 fields.scope", true, "scope", "srs selected", "fields.scope"),
+        option("--token", "secretVal，来自 srs selected 输出 fields.secretVal", true, "secretVal", "srs selected", "fields.secretVal"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
 
     add_command(commands, "config show", "显示当前配置");
     add_command(commands, "capability show", "显示当前平台能力声明；capability 不代表真实登录、真实写 UI 或业务 API 完成");
@@ -210,12 +378,27 @@ nlohmann::json get_help_json() {
     };
     add_command(commands, "grade list", "显示指定学期成绩", grade_list_options);
     add_command(commands, "grade all", "显示全部成绩");
+    add_command(commands, "spoc week", "显示 SPOC 当前教学周和当前学期");
+    add_command(commands, "spoc schedule", "显示 SPOC 指定日期范围课表", json{
+        option("--start-date", "周起始日期，格式 yyyy-MM-dd", true, "yyyy-MM-dd"),
+        option("--end-date", "周结束日期，格式 yyyy-MM-dd", true, "yyyy-MM-dd"),
+    });
+    add_command(commands, "spoc courses", "显示 SPOC 学期课程；课程 ID 来自输出记录的 id 字段", json{
+        option("--term", "学期代码，通常来自 spoc week 输出记录的 fields.term", true, "term-code", "spoc week", "fields.term"),
+    });
     add_command(commands, "spoc assignments", "显示 SPOC 作业；详情 ID 来自输出记录的 id 字段", json{
         option("--pending-only", "只显示待处理作业", false),
         option("--include-expired", "包含已过期作业", false),
     });
     add_command(commands, "spoc assignment show", "显示 SPOC 作业详情", json{
         option("--id", "SPOC 作业 ID，来自 spoc assignments 输出记录的 id 字段", true, "assignment-id", "spoc assignments", "id", "spoc assignment show --id <assignment-id>"),
+    });
+    add_command(commands, "spoc homework submit", "提交 SPOC 作业；真实写操作必须确认", json{
+        option("--id", "SPOC 作业 ID，来自 spoc assignments 输出记录的 id 字段", true, "assignment-id", "spoc assignments", "id"),
+        option("--course-id", "课程 ID，来自 spoc assignments 输出记录的 fields.courseId 字段", true, "course-id", "spoc assignments", "fields.courseId"),
+        option("--file-id", "已上传文件 ID；来自后续 spoc upload 输出记录的 id 字段", true, "file-id"),
+        option("--name", "已上传文件名", true, "file-name"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y", true),
     });
     add_command(commands, "judge assignments", "显示希冀作业；详情 ID 来自输出记录的 id 字段", json{
         option("--course-id", "可选课程过滤 ID，通常来自 judge assignments 输出记录的 fields.courseId 字段", false, "course-id", "judge assignments", "fields.courseId"),
@@ -232,10 +415,28 @@ nlohmann::json get_help_json() {
         option("--input", "JSON、@file 或逗号分隔的希冀作业 ID；ID 来自 judge assignments 输出记录的 id 字段", true, "json|@file|ids", "judge assignments", "id"),
     });
     add_command(commands, "signin today", "显示今日课程签到；签到 ID 来自输出记录的 id 字段");
+    add_command(commands, "signin schedule", "显示指定日期课程签到；签到 ID 来自输出记录的 id 字段", json{
+        option("--date", "日期，格式 yyyy-MM-dd", true, "yyyy-MM-dd"),
+    });
+    add_command(commands, "signin courses", "显示指定学期的签到课程；课程 ID 来自输出记录的 id 字段", json{
+        option("--term", "学期代码", true, "term-code"),
+    });
+    add_command(commands, "signin course schedule", "显示单门课程的签到明细；签到 ID 来自输出记录的 id 字段", json{
+        option("--course-id", "课程 ID，来自 signin courses 输出记录的 id 字段", true, "course-id", "signin courses", "id"),
+    });
     add_command(commands, "signin do", "执行课程签到", json{
         option("--id", "签到任务 ID，来自 signin today 输出记录的 id 字段", false, "signin-id", "signin today", "id"),
         option("--course-id", "兼容课程 ID 写法，来自 signin today 输出记录的 id 字段", false, "course-id", "signin today", "id"),
         option("--confirm", "确认执行；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "wifi login", "登录 BUAA-WiFi/BUAA-Mobile 网关；必须在校园网环境并显式确认", json{
+        option("--username", "网关账号；未提供时使用保存的 login 账号", false, "account"),
+        option("--password", "网关密码；未提供时使用保存的 login 密码", false, "password"),
+        option("--confirm", "确认真实网关写操作；也可用 --yes 或 -y", true),
+    });
+    add_command(commands, "wifi logout", "登出 BUAA-WiFi/BUAA-Mobile 网关；必须在校园网环境并显式确认", json{
+        option("--username", "网关账号；未提供时使用保存的 login 账号", false, "account"),
+        option("--confirm", "确认真实网关写操作；也可用 --yes 或 -y", true),
     });
     add_command(commands, "bykc profile", "显示博雅资料");
     add_command(commands, "bykc courses", "显示博雅课程；课程 ID 来自输出记录的 id 字段", json{
@@ -264,6 +465,8 @@ nlohmann::json get_help_json() {
     add_command(commands, "bykc sign", "博雅签到/签退", json{
         option("--course-id", "博雅课程 ID，来自 bykc chosen 输出记录的 id 字段", true, "course-id", "bykc chosen", "id"),
         option("--sign-type", "签到类型：1 表示签到，2 表示签退", true, "1|2"),
+        option("--lat", "真实纬度；必须显式提供，不会默认伪造位置", true, "latitude"),
+        option("--lng", "真实经度；必须显式提供，不会默认伪造位置", true, "longitude"),
         option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
     });
     add_command(commands, "cgyy sites", "显示场馆列表；场馆 ID 来自输出记录的 id 字段");
@@ -346,19 +549,25 @@ nlohmann::json get_help_json() {
         option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
     });
     add_command(commands, "evaluation list", "显示评教任务；评教任务 ID 来自输出记录的 id 字段");
+    add_command(commands, "evaluation form", "显示指定评教表单摘要；题目数和表单上下文字段用于提交前确认", json{
+        option("--id", "评教任务 ID，来自 evaluation list 输出记录的 id 字段", false, "evaluation-id", "evaluation list", "id"),
+        option("--course-id", "兼容课程代码写法，来自 evaluation list 输出记录 fields.courseCode/kcdm", false, "course-code", "evaluation list", "fields.courseCode"),
+    });
     add_command(commands, "evaluation submit", "提交评教", json{
         option("--id", "评教任务 ID，来自 evaluation list 输出记录的 id 字段；省略时提交可处理的评教任务集合", false, "evaluation-id", "evaluation list", "id"),
+        option("--course-id", "兼容课程代码写法，来自 evaluation list 输出记录 fields.courseCode/kcdm", false, "course-code", "evaluation list", "fields.courseCode"),
+        option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
+    });
+    add_command(commands, "evaluation form submit", "提交指定评教表单；默认按 buaa-api 填充策略生成答案", json{
+        option("--id", "评教任务 ID，来自 evaluation list 输出记录的 id 字段", false, "evaluation-id", "evaluation list", "id"),
+        option("--course-id", "兼容课程代码写法，来自 evaluation list 输出记录 fields.courseCode/kcdm", false, "course-code", "evaluation list", "fields.courseCode"),
+        option("--reason", "满分或不及格提交时的 10-200 字原因；默认分数通常不需要", false, "text"),
         option("--confirm", "确认写操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
     });
     add_command(commands, "todo list", "显示待办聚合", json{
         option("--pending-only", "只显示待处理项目", false),
         option("--all", "包含非待处理项目", false),
     });
-    add_command(commands, "file upload", "保留的文件/附件上传接口，当前稳定返回 NotImplemented", json{
-        option("--path", "待上传文件路径", true, "path"),
-        option("--confirm", "确认执行上传类有副作用操作；也可用 --yes 或 -y，缺少时人类可读模式会询问 y/N", true),
-    });
-
     return {{"ok", true}, {"data", {{"commands", commands}, {"version", UBAANEXT_VERSION_STRING}}}, {"error", nullptr}};
 }
 
@@ -374,16 +583,11 @@ void print_usage() {
     Console::println("基础命令");
     Console::println("  version                                  显示版本");
     Console::println("  help                                     显示帮助；help --json 输出机器可读命令目录");
-    Console::println("  login <账号> <密码>                     登录（默认 VPN 模式，兼容 --username/--password）");
-    Console::println("  login <账号> <密码> --save-password     登录成功后显式保存密码，供后续 relogin --saved 复用");
-    Console::println("  relogin <账号> <密码> [-y|--confirm|--yes]  手动重新登录并替换本地会话");
-    Console::println("  relogin --saved [-y|--confirm|--yes]    复用已保存账号密码重新登录");
-    Console::println("  login --relogin <账号> <密码> [-y|--confirm|--yes]  兼容写法：手动重新登录");
+    Console::println("  login <账号> <密码>                     登录并默认保存账号密码（优先安全/加密存储，必要时允许明文 fallback）");
+    Console::println("  relogin [-y|--confirm|--yes]           复用 login 保存的账号密码重新登录并替换本地会话");
 #if UBAANEXT_ENABLE_MOCKS
-    Console::println("  login --mock <账号> <密码>              模拟登录");
-    Console::println("  login --mock <账号> <密码> --save-password  模拟登录并保存密码供 relogin --saved 使用");
-    Console::println("  relogin --mock <账号> <密码> [-y|--confirm|--yes]  模拟手动重新登录");
-    Console::println("  relogin --mock --saved [-y|--confirm|--yes]  模拟复用已保存账号密码重新登录");
+    Console::println("  login --mock <账号> <密码>              模拟登录并默认保存账号密码");
+    Console::println("  relogin --mock [-y|--confirm|--yes]    模拟复用已保存账号密码重新登录");
 #endif
     Console::println("  mode                                     显示当前连接模式");
     Console::println("  mode direct                              切换为直连模式");
@@ -423,17 +627,52 @@ void print_usage() {
     Console::println("  week list                                显示教学周列表");
 #endif
     Console::println("  user info                                显示用户信息");
+    Console::println("  live week --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>");
+    Console::println("                                           显示课堂直播周课表；通常使用教学周周一到周日日期");
+    Console::println("  file roots [--root all|user|shared|department|group]");
+    Console::println("                                           显示北航云盘文档库根目录；docid 在输出记录的 id 字段");
+    Console::println("  file root                                显示北航云盘个人文档库根目录");
+    Console::println("  file list --id <docid> [--token <share-token>]");
+    Console::println("                                           列出北航云盘目录内容；docid 来自 file roots 或 file root");
+    Console::println("  file size --id <docid> [--token <share-token>]");
+    Console::println("                                           显示北航云盘条目容量摘要；token 仅用于分享链接只读访问");
+    Console::println("  file recycle                             列出北航云盘回收站");
+    Console::println("  file shares                              列出北航云盘分享历史");
+    Console::println("  file suggest-name --parent-id <docid> --name <name>");
+    Console::println("                                           获取冲突时的建议名称");
+    Console::println("  file mkdir --parent-id <docid> --name <name> [-y|--confirm|--yes]");
+    Console::println("  file rename --id <docid> --name <name> [-y|--confirm|--yes]");
+    Console::println("  file move --id <docid> --dest-id <parent-docid> [-y|--confirm|--yes]");
+    Console::println("  file copy --id <docid> --dest-id <parent-docid> [--token <share-token>] [-y|--confirm|--yes]");
+    Console::println("  file delete --id <docid> [-y|--confirm|--yes]");
+    Console::println("  file recycle-delete --id <docid> [-y|--confirm|--yes]");
+    Console::println("  file recycle-restore --id <docid> [-y|--confirm|--yes]");
+    Console::println("  file share-record --id <docid>           显示单个条目的分享记录");
+    Console::println("  file share-create --id <docid> --name <title> [--is-dir] [--permissions <list>] [-y|--confirm|--yes]");
+    Console::println("  file share-update --share-id <id> --id <docid> --name <title> [--permissions <list>] [-y|--confirm|--yes]");
+    Console::println("  file share-delete --share-id <id> [-y|--confirm|--yes]");
+    Console::println("  file share-parse --id <share-id|url> [--password <password>]");
+    Console::println("  file download-url --id <docid> [--is-dir] [--name <name>] [--token <share-token>]");
+    Console::println("  file batch-download-url --input <id[:file|dir],...> [--name <zip-name>] [--token <share-token>]");
+    Console::println("  file upload --parent-id <docid> --path <path> [--name <name>] [--token <share-token>] [-y|--confirm|--yes]");
+    Console::println("                                           真实云盘上传；支持秒传、小文件 PUT 和 20MiB 分片上传");
     Console::println("  app version                              显示应用版本信息");
     Console::println("  app announcement                         显示公告");
     Console::println("  grade list [--term <term-code>] [--all]  显示指定学期成绩");
     Console::println("  grade all                                显示全部成绩");
 
     Console::println("\n作业与课程签到");
+    Console::println("  spoc week                                显示 SPOC 当前教学周和当前学期");
+    Console::println("  spoc schedule --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>");
+    Console::println("                                           显示 SPOC 周课表；日期通常来自 spoc week 输出");
+    Console::println("  spoc courses --term <term-code>          显示 SPOC 学期课程；term 通常来自 spoc week");
     Console::println("  spoc assignments [--pending-only] [--include-expired]");
     Console::println("                                           显示 SPOC 作业；详情 ID 在输出记录的 id 字段");
     Console::println("  spoc assignment show --id <assignment-id>");
     Console::println("                                           显示 SPOC 作业详情");
     Console::println("                                           来源: <assignment-id> 来自 spoc assignments 输出记录的 id 字段。");
+    Console::println("  spoc homework submit --id <assignment-id> --course-id <course-id> --file-id <file-id> --name <file-name> [-y|--confirm|--yes]");
+    Console::println("                                           提交已上传文件到 SPOC 作业；真实写操作必须确认");
     Console::println("  judge assignments [--course-id <course-id>] [--include-expired] [--include-history]");
     Console::println("                                           显示希冀作业；assignment-id 在输出记录的 id 字段");
     Console::println("  judge assignment show --assignment-id <assignment-id>");
@@ -443,8 +682,25 @@ void print_usage() {
     Console::println("  judge assignment details-batch --input <json|@file|ids>");
     Console::println("                                           批量显示希冀作业详情；ids 来自 judge assignments 输出记录的 id 字段");
     Console::println("  signin today                             显示今日课程签到；signin-id 在输出记录的 id 字段");
+    Console::println("  signin schedule --date <yyyy-MM-dd>      显示指定日期课程签到");
+    Console::println("  signin courses --term <term-code>        显示指定学期签到课程；course-id 在输出记录的 id 字段");
+    Console::println("  signin course schedule --course-id <course-id>");
+    Console::println("                                           显示单门课程签到明细；signin-id 在输出记录的 id 字段");
     Console::println("  signin do [--id <signin-id>|--course-id <course-id>] [-y|--confirm|--yes]");
     Console::println("                                           执行课程签到；来源: signin today 输出记录的 id 字段");
+    Console::println("  wifi login [--username <account>] [--password <password>] [-y|--confirm|--yes]");
+    Console::println("  wifi logout [--username <account>] [-y|--confirm|--yes]");
+    Console::println("                                           BUAA-WiFi/BUAA-Mobile 网关写操作；不会自动 smoke");
+    Console::println("  srs config                               显示选课系统配置和批次");
+    Console::println("  srs batch                                解析当前预选批次 ID");
+    Console::println("  srs course query [--scope <scope>] [--page <n>] [--size <n>] [--campus <1|2>] [--keyword <text>]");
+    Console::println("                                           查询选课课程；clazzId 在 id 字段，secretVal 在 fields.secretVal");
+    Console::println("  srs preselected                          查询预选结果");
+    Console::println("  srs selected                             查询已选课程");
+    Console::println("  srs course preselect --id <clazzId> --scope <scope> --token <secretVal> --batch-id <batchId> --index <n> [-y|--confirm|--yes]");
+    Console::println("  srs course select --id <clazzId> --scope <scope> --token <secretVal> [-y|--confirm|--yes]");
+    Console::println("  srs course drop --id <clazzId> --scope <scope> --token <secretVal> [-y|--confirm|--yes]");
+    Console::println("                                           真实选课/退选写操作不会自动 smoke，需要用户显式确认");
 
     Console::println("\n博雅课程 (bykc)");
     Console::println("  bykc profile                             显示博雅课程档案");
@@ -458,8 +714,8 @@ void print_usage() {
     Console::println("                                           选择博雅课程；来源: bykc courses 输出记录的 id 字段");
     Console::println("  bykc unselect --course-id <course-id> [-y|--confirm|--yes]");
     Console::println("                                           退选博雅课程；来源: bykc chosen 输出记录的 id 字段");
-    Console::println("  bykc sign --course-id <course-id> --sign-type <1|2> [-y|--confirm|--yes]");
-    Console::println("                                           博雅签到/签退；来源: bykc chosen 输出记录的 id 字段");
+    Console::println("  bykc sign --course-id <course-id> --sign-type <1|2> --lat <lat> --lng <lng> [-y|--confirm|--yes]");
+    Console::println("                                           博雅签到/签退；必须显式提供真实坐标，不会默认伪造位置");
 
     Console::println("\n场馆预约 (cgyy)");
     Console::println("  cgyy sites                               显示场馆列表；site-id 在输出记录的 id 字段");
@@ -496,8 +752,12 @@ void print_usage() {
     Console::println("  ygdk submit [--item-id <item-id>] --start-time <time> --end-time <time> --place <place> --photo <path> [-y|--confirm|--yes]");
     Console::println("                                           提交阳光打卡；item-id 来自 ygdk overview 输出中 status=item 的记录 id 字段");
     Console::println("  evaluation list                          显示评教任务；evaluation-id 在输出记录的 id 字段");
+    Console::println("  evaluation form --id <evaluation-id>");
+    Console::println("                                           显示评教表单摘要；来源: evaluation list 输出记录的 id 字段");
     Console::println("  evaluation submit [--id <evaluation-id>] [-y|--confirm|--yes]");
-    Console::println("                                           提交评教；来源: evaluation list 输出记录的 id 字段");
+    Console::println("                                           批量或指定提交评教；来源: evaluation list 输出记录的 id 字段");
+    Console::println("  evaluation form submit --id <evaluation-id> [--reason <text>] [-y|--confirm|--yes]");
+    Console::println("                                           提交指定评教表单；真实提交不会自动 smoke");
     Console::println("  todo list [--pending-only|--all]         显示待办聚合");
 
     Console::println("  td init [-y|--confirm|--yes]             初始化 TD 本地目录和默认配置");
@@ -529,7 +789,8 @@ void print_usage() {
     Console::println("  config set --key <key> --value <value> [-y|--confirm|--yes]");
     Console::println("                                           设置配置项；key 支持 mode、proxy、cache");
     Console::println("  cache clear [-y|--confirm|--yes]                    清除缓存");
-    Console::println("  file upload --path <path> [-y|--confirm|--yes]      保留接口，当前返回 NotImplemented");
+    Console::println("  file upload --parent-id <docid> --path <path> [-y|--confirm|--yes]");
+    Console::println("                                           上传本地文件到北航云盘，写操作必须确认");
 
     Console::println("\n常用选项");
     Console::println("  --json                                   JSON 格式输出");
@@ -553,16 +814,16 @@ void print_help(OutputFormatter &out) {
 }
 
 bool is_cli_command(const std::string &command) {
-    static constexpr std::array<std::string_view, 23> commands = {
-        "course", "exam", "classroom", "term", "week", "config", "mode", "cache",
+    static constexpr std::array<std::string_view, 26> commands = {
+        "course", "exam", "classroom", "term", "week", "live", "config", "mode", "cache",
         "user", "app", "grade", "spoc", "judge", "signin", "ygdk", "evaluation",
-        "bykc", "cgyy", "libbook", "todo", "file", "td", "capability",
+        "bykc", "cgyy", "libbook", "todo", "file", "wifi", "srs", "td", "capability",
     };
     return std::find(commands.begin(), commands.end(), std::string_view(command)) != commands.end();
 }
 
 bool is_command_with_action(const std::string &command) {
-    static constexpr std::array<std::string_view, 6> commands = {"spoc", "judge", "bykc", "cgyy", "libbook", "td"};
+    static constexpr std::array<std::string_view, 9> commands = {"spoc", "judge", "signin", "bykc", "cgyy", "libbook", "srs", "td", "evaluation"};
     return std::find(commands.begin(), commands.end(), std::string_view(command)) != commands.end();
 }
 

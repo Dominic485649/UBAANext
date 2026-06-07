@@ -25,6 +25,12 @@ public:
     /** PartiallyMigrated read path exposed as FeatureRecord; failures must propagate to Todo partial failure. */
     Result<std::vector<Model::FeatureRecord>> list_evaluations();
 
+    /** Fully migrated read path: fetches the questionnaire form and submit context for a pending task/course. */
+    Result<Model::EvaluationForm> get_form(const std::string &target_id);
+
+    /** Fully migrated read path exposed as FeatureRecord for CLI/ABI friendly output. */
+    Result<Model::FeatureRecord> form_record(const std::string &target_id);
+
     /** WriteGated: installs the explicit confirmation and platform write capability gate. */
     void set_write_operation_gate(WriteOperationGate gate);
 
@@ -33,6 +39,9 @@ public:
      * default platform capabilities keep this operation fail-closed.
      */
     Result<Model::MutationResult> submit_evaluations(const std::string &target_id);
+
+    /** WriteGated remote mutation: submits one explicit evaluation form target with default or supplied answers. */
+    Result<Model::MutationResult> submit_form(const Model::EvaluationSubmission &submission);
 
 private:
     IHttpClient &m_http_client;
@@ -43,6 +52,7 @@ private:
 
     Result<void> activate_session();
     Result<nlohmann::json> request_json(HttpMethod method, const std::string &url, const nlohmann::json &body = nlohmann::json{});
+    Result<Model::EvaluationForm> request_form(const Model::EvaluationTask &task);
     Result<std::string> current_xnxq();
 };
 

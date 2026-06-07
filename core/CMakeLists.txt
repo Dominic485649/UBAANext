@@ -12,11 +12,15 @@ add_library(UBAANextCore STATIC
     src/Service/JudgeService.cpp
     src/Service/SigninService.cpp
     src/Service/LibrarySeatService.cpp
+    src/Service/LiveService.cpp
+    src/Service/CloudService.cpp
+    src/Service/SrsService.cpp
     src/Service/SpocService.cpp
     src/Service/EvaluationService.cpp
     src/Service/TodoService.cpp
     src/Service/VenueReservationService.cpp
     src/Service/YgdkService.cpp
+    src/Service/WifiService.cpp
     src/Service/TdService.cpp
     src/Service/TdSchedulerService.cpp
     src/Service/BykcService.cpp
@@ -38,6 +42,7 @@ add_library(UBAANextCore STATIC
     src/Base/TimeUtils.cpp
     src/Security/SecurityRedaction.cpp
     src/Crypto/CryptoProvider.cpp
+    src/Crypto/ProtocolCrypto.cpp
     src/Storage/SecureStoreAdapter.cpp
     src/Storage/MemoryCacheStore.cpp
     src/Storage/TdStore.cpp
@@ -50,6 +55,8 @@ add_library(UBAANextCore STATIC
     src/Parser/YgdkParser.cpp
     src/Parser/VenueReservationParser.cpp
     src/Parser/LibrarySeatParser.cpp
+    src/Parser/LiveParser.cpp
+    src/Parser/CloudParser.cpp
 )
 
 target_include_directories(UBAANextCore

@@ -136,7 +136,81 @@ std::string normalize_status(const std::string &raw_status, bool has_content) {
     return "unknown";
 }
 
+std::pair<std::string, std::string> parse_spoc_date_range(const std::string &raw_value) {
+    std::vector<std::string> parts;
+    std::string current;
+    for (char ch : raw_value) {
+        if (ch == ',') {
+            parts.push_back(trim_ascii(current));
+            current.clear();
+        } else {
+            current.push_back(ch);
+        }
+    }
+    if (!current.empty() || !raw_value.empty()) parts.push_back(trim_ascii(current));
+    if (parts.size() >= 3) return {parts[1], parts[2]};
+    if (parts.size() >= 2) return {parts[0], parts[1]};
+    return {};
+}
+
+std::pair<std::string, std::string> parse_spoc_time_range(const std::string &raw_value) {
+    auto text = trim_ascii(raw_value);
+    if (text.empty()) return {};
+    auto space = text.find(' ');
+    auto dash = text.find('-', space == std::string::npos ? 0 : space + 1);
+    if (space == std::string::npos || dash == std::string::npos) return {};
+    const auto date = text.substr(0, space);
+    return {normalize_datetime(date + " " + text.substr(space + 1, dash - space - 1)),
+            normalize_datetime(date + " " + text.substr(dash + 1))};
+}
+
 } // namespace
+
+Model::SpocWeek parse_spoc_week(const nlohmann::json &content) {
+    Model::SpocWeek week;
+    week.term_code = json_string(content, "mrxq");
+    week.raw_date_range = json_string(content, "pjmrrq");
+    auto [start, end] = parse_spoc_date_range(week.raw_date_range);
+    week.start_date = std::move(start);
+    week.end_date = std::move(end);
+    return week;
+}
+
+std::vector<Model::SpocSchedule> parse_spoc_schedule(const nlohmann::json &content) {
+    auto list = content.is_array() ? content : nlohmann::json::array();
+    std::vector<Model::SpocSchedule> records;
+    for (const auto &item : list) {
+        if (!item.is_object()) continue;
+        Model::SpocSchedule record;
+        record.id = json_string(item, "id");
+        record.course_id = json_string(item, "kcid");
+        record.course_name = json_string(item, "kcmc");
+        record.teacher = json_string(item, "jsxm");
+        record.weekday = json_string(item, "weekday");
+        record.classroom = json_string(item, "skdd");
+        record.time_text = json_string(item, "kcsj");
+        auto [start, end] = parse_spoc_time_range(record.time_text);
+        record.start_time = std::move(start);
+        record.end_time = std::move(end);
+        if (record.id.empty()) record.id = record.course_id.empty() ? record.course_name + ":" + record.time_text : record.course_id + ":" + record.time_text;
+        if (!record.id.empty()) records.push_back(std::move(record));
+    }
+    return records;
+}
+
+std::vector<Model::SpocCourse> parse_spoc_courses(const nlohmann::json &content) {
+    auto list = content.is_array() ? content : nlohmann::json::array();
+    std::vector<Model::SpocCourse> records;
+    for (const auto &item : list) {
+        if (!item.is_object()) continue;
+        Model::SpocCourse record;
+        record.id = json_string(item, "kcid");
+        record.name = json_string(item, "kcmc");
+        record.teacher = json_string(item, "skjs");
+        if (!record.id.empty()) records.push_back(std::move(record));
+    }
+    return records;
+}
 
 std::vector<Model::SpocAssignmentSummary> parse_spoc_assignments_page(const nlohmann::json &page,
                                                                       const std::map<std::string, std::pair<std::string, std::string>> &courses,

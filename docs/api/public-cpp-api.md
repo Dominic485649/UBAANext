@@ -12,8 +12,13 @@
 
 - 学期、周次、课表、考试、成绩、教室查询。
 - Todo 聚合，只保留来源级 partial failure，不吞成空列表。
-- SPOC 列表和单详情；批量详情无原 UBAA 证据，保持 `Unverified`。
+- SPOC 教学周、周课表、课程列表、作业列表和单详情；批量详情无原 UBAA 证据，保持 `Unverified`。
 - Judge 列表、单详情和批量详情；批量详情保留 `status="error"` 单项记录。
+- Cloud roots/root/list/size/recycle/shares/share record/share parse/download URL。
+- SRS config/batch/course query/preselected/selected。
+- Signin today/schedule/courses/course schedule。
+- Evaluation list/form。
+- WiFi 仅暴露写门控服务，不作为默认只读能力。
 - BYKC `profile/courses/chosen/stats`。
 - CGYY `sites/purpose-types/day-info/orders/order detail/lock-code`，其中订单和锁码为高敏感输出。
 - LibrarySeat `libraries/areas/seats/reservations/area detail`。
@@ -26,17 +31,21 @@
 以下能力是远端写或会改变业务状态，必须保持 typed service 与 `WriteOperationGate`：
 
 - BYKC select/unselect/sign。
+- Cloud mkdir/rename/move/copy/delete/recycle delete/restore/share create/update/delete/upload。
+- SRS preselect/select/drop。
+- SPOC homework submit。
 - CGYY reserve/cancel。
 - LibrarySeat book/cancel。
 - YGDK submit，包括 `--photo` 本地文件读取与上传 bytes。
 - Signin submit。
-- Evaluation submit。
+- Evaluation submit/form submit。
+- WiFi login/logout。
 
 调用条件：用户显式确认、平台 `write_operations=true`、service 层 gate 通过。默认平台和默认 live smoke 不执行真实写。
 
-## Placeholder / Unsupported / Fallback
+## Unsupported / Fallback
 
-- `file upload` 是稳定占位接口，返回 `NotImplemented`，不读取本地文件，不触发远端请求。
+- `file upload` 已升级为真实 Cloud 上传；Core 只消费 `IUploadSource`，本地路径读取必须留在 CLI/Platform 层。
 - Harmony `UnsupportedSecureStore` 必须 fail-closed，不允许明文 fallback。
 - `UnsupportedCryptoProvider`、`UnsupportedSecureStore`、`VolatileSecureStore`、cookie/session fallback 不能标记为完成。
 - `FeatureService` 字符串 routing 仅用于 mock/offline 和兼容聚合，不作为长期 UI API，也不作为真实写入口。

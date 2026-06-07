@@ -5,8 +5,10 @@
 
 #include <curl/curl.h>
 
+#include <cctype>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -29,6 +31,16 @@ std::string trim(std::string value) {
     return value.substr(first, last - first + 1);
 }
 
+bool header_name_equals(std::string_view left, std::string_view right) {
+    if (left.size() != right.size()) return false;
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(left[i])) != std::tolower(static_cast<unsigned char>(right[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 struct HeaderCapture {
     std::unordered_map<std::string, std::string> headers;
     std::vector<std::string> set_cookie_values;
@@ -48,7 +60,7 @@ size_t write_header(char *ptr, size_t size, size_t nmemb, void *userdata) {
     if (name.empty()) {
         return size * nmemb;
     }
-    if (name == "Set-Cookie" || name == "set-cookie") {
+    if (header_name_equals(name, "Set-Cookie")) {
         capture->set_cookie_values.push_back(value);
     }
     auto existing = capture->headers.find(name);

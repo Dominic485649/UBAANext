@@ -5,6 +5,7 @@
 #include <UBAANext/Model/FeatureRecord.hpp>
 #include <UBAANext/Model/Spoc.hpp>
 #include <UBAANext/Net/HttpClient.hpp>
+#include <UBAANext/Service/WriteOperationGate.hpp>
 #include <UBAANext/Storage/CacheStore.hpp>
 
 #include <nlohmann/json.hpp>
@@ -23,6 +24,12 @@ class SpocService {
 public:
     SpocService(IHttpClient &http_client, ICacheStore &cache, ConnectionMode mode);
 
+    /** ReadOnlyCandidate: returns current SPOC teaching week and term code. */
+    Result<Model::SpocWeek> current_week();
+    /** ReadOnlyCandidate: lists SPOC calendar schedules for an explicit date range. */
+    Result<std::vector<Model::SpocSchedule>> week_schedule(const std::string &start_date, const std::string &end_date);
+    /** ReadOnlyCandidate: lists SPOC courses for an explicit term code. */
+    Result<std::vector<Model::SpocCourse>> courses(const std::string &term_code);
     /** ReadOnlyCandidate: lists SPOC assignments after CAS/token activation; live role/token drift remains possible. */
     Result<std::vector<Model::SpocAssignmentSummary>> list_assignment_summaries();
     /** ReadOnlyCandidate: filtered SPOC assignment list; pending/expired semantics remain partially migrated. */
@@ -36,11 +43,20 @@ public:
     Result<std::vector<Model::FeatureRecord>> list_assignments(const SpocAssignmentQuery &query);
     /** Sensitive output: single SPOC assignment record; missing ids are InvalidArgument. */
     Result<Model::FeatureRecord> show_assignment(const std::string &assignment_id);
+    /** ReadOnlyCandidate projections for CLI/Todo surfaces. */
+    Result<std::vector<Model::FeatureRecord>> week_schedule_records(const std::string &start_date, const std::string &end_date);
+    Result<std::vector<Model::FeatureRecord>> course_records(const std::string &term_code);
+
+    /** WriteGated: installs explicit confirmation and platform write capability gate. */
+    void set_write_operation_gate(WriteOperationGate gate);
+    /** WriteGated remote mutation: submits an already uploaded SPOC file to one homework. */
+    Result<Model::MutationResult> submit_homework(const Model::SpocHomeworkSubmission &submission);
 
 private:
     IHttpClient &m_http_client;
     ICacheStore &m_cache;
     ConnectionMode m_mode;
+    WriteOperationGate m_write_gate = disabled_write_operation("spoc homework submit");
     std::string m_token;
     std::string m_role_code;
 

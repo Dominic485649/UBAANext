@@ -70,6 +70,19 @@ std::string escape_json(const std::string &value) {
     return nlohmann::json(value).dump();
 }
 
+std::string url_encode_form(const std::string &value) {
+    std::ostringstream out;
+    out << std::uppercase << std::hex;
+    for (unsigned char ch : value) {
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
+            out << static_cast<char>(ch);
+        } else {
+            out << '%' << std::setw(2) << std::setfill('0') << static_cast<int>(ch);
+        }
+    }
+    return out.str();
+}
+
 std::string base64_encode(const std::string &data) {
     static constexpr char chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     std::string out;
@@ -230,6 +243,22 @@ Model::FeatureRecord detail_to_record(const Model::SpocAssignmentDetail &assignm
         {"submissionStatus", assignment.submission_status},
         {"submittedAt", assignment.submitted_at},
     });
+}
+
+Model::FeatureRecord schedule_to_record(const Model::SpocSchedule &schedule) {
+    return make_record(schedule.id, schedule.course_name, "scheduled", {
+        {"courseId", schedule.course_id},
+        {"teacher", schedule.teacher},
+        {"weekday", schedule.weekday},
+        {"classroom", schedule.classroom},
+        {"timeText", schedule.time_text},
+        {"startTime", schedule.start_time},
+        {"endTime", schedule.end_time},
+    });
+}
+
+Model::FeatureRecord course_to_record(const Model::SpocCourse &course) {
+    return make_record(course.id, course.name, "available", {{"teacher", course.teacher}});
 }
 
 } // namespace
@@ -401,6 +430,53 @@ Result<nlohmann::json> SpocService::post_envelope(const std::string &url, const 
     return result;
 }
 
+Result<Model::SpocWeek> SpocService::current_week() {
+    auto login = ensure_login();
+    if (!login) return make_error(login.error().code, login.error().message);
+    auto week = post_envelope("https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryOne",
+                              nlohmann::json{{"sqlid", "17275975753144ed8d6fe15425677f752c936d97de1bab76"}});
+    if (!week) return make_error(week.error().code, week.error().message);
+    auto parsed = Parser::parse_spoc_week(*week);
+    if (parsed.term_code.empty()) return make_error(ErrorCode::ParseError, "SPOC 当前周次缺少 mrxq 字段");
+    return parsed;
+}
+
+Result<std::vector<Model::SpocSchedule>> SpocService::week_schedule(const std::string &start_date, const std::string &end_date) {
+    if (start_date.empty() || end_date.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "spoc schedule 需要 --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>");
+    }
+    auto login = ensure_login();
+    if (!login) return make_error(login.error().code, login.error().message);
+    auto schedule = get_envelope("https://spoc.buaa.edu.cn/spocnewht/jxkj/queryRlData?rllx=1&zksrq=" + url_encode_form(start_date) + "&zjsrq=" + url_encode_form(end_date));
+    if (!schedule) return make_error(schedule.error().code, schedule.error().message);
+    return Parser::parse_spoc_schedule(*schedule);
+}
+
+Result<std::vector<Model::SpocCourse>> SpocService::courses(const std::string &term_code) {
+    if (term_code.empty()) return make_error(ErrorCode::InvalidArgument, "spoc courses 需要 --term <term-code>");
+    auto login = ensure_login();
+    if (!login) return make_error(login.error().code, login.error().message);
+    auto course_list = get_envelope("https://spoc.buaa.edu.cn/spocnewht/jxkj/queryKclb?xnxq=" + url_encode_form(term_code));
+    if (!course_list) return make_error(course_list.error().code, course_list.error().message);
+    return Parser::parse_spoc_courses(*course_list);
+}
+
+Result<std::vector<Model::FeatureRecord>> SpocService::week_schedule_records(const std::string &start_date, const std::string &end_date) {
+    auto schedules = week_schedule(start_date, end_date);
+    if (!schedules) return make_error(schedules.error().code, schedules.error().message);
+    std::vector<Model::FeatureRecord> records;
+    for (const auto &schedule : *schedules) records.push_back(schedule_to_record(schedule));
+    return records;
+}
+
+Result<std::vector<Model::FeatureRecord>> SpocService::course_records(const std::string &term_code) {
+    auto list = courses(term_code);
+    if (!list) return make_error(list.error().code, list.error().message);
+    std::vector<Model::FeatureRecord> records;
+    for (const auto &course : *list) records.push_back(course_to_record(course));
+    return records;
+}
+
 Result<std::vector<Model::SpocAssignmentSummary>> SpocService::list_assignment_summaries_once() {
     auto term = post_envelope("https://spoc.buaa.edu.cn/spocnewht/inco/ht/queryOne", nlohmann::json{{"param", current_term_param}});
     if (!term) return make_error(term.error().code, term.error().message);
@@ -488,6 +564,51 @@ Result<Model::FeatureRecord> SpocService::show_assignment(const std::string &ass
     auto detail = assignment_detail(assignment_id);
     if (!detail) return make_error(detail.error().code, detail.error().message);
     return detail_to_record(*detail);
+}
+
+void SpocService::set_write_operation_gate(WriteOperationGate gate) {
+    m_write_gate = std::move(gate);
+}
+
+Result<Model::MutationResult> SpocService::submit_homework(const Model::SpocHomeworkSubmission &submission) {
+    auto allowed = require_write_operation(m_write_gate);
+    if (!allowed) return make_error(allowed.error().code, allowed.error().message);
+    if (submission.assignment_id.empty() || submission.course_id.empty() || submission.file_id.empty() || submission.file_name.empty()) {
+        return make_error(ErrorCode::InvalidArgument, "spoc homework submit 需要 --id <assignment-id> --course-id <course-id> --file-id/--item-id <file-id> --name <file-name>");
+    }
+    auto login = ensure_login();
+    if (!login) return make_error(login.error().code, login.error().message);
+
+    const auto body = "ytjcs=2&tjfs=5&tjlx=5&sskcid=" + url_encode_form(submission.course_id) +
+                      "&kczyid=" + url_encode_form(submission.assignment_id) +
+                      "&scwjid_name=" + url_encode_form(submission.file_name) +
+                      "&scwjid=" + url_encode_form(submission.file_id);
+    HttpRequest request;
+    request.method = HttpMethod::Post;
+    request.url = resolve_for_mode("https://spoc.buaa.edu.cn/spocnewht/kczy/submitKcz2", m_mode);
+    apply_spoc_headers(request);
+    request.headers["Content-Type"] = "application/x-www-form-urlencoded";
+    request.headers["Token"] = "Inco-" + m_token;
+    request.headers["RoleCode"] = m_role_code;
+    request.body = body;
+    auto response = m_http_client.send(request);
+    if (!response) return make_error(ErrorCode::NetworkError, "提交 SPOC 作业失败: " + Security::redact_sensitive_text(response.error().message));
+    if (response_is_login(*response)) return make_error(ErrorCode::SessionExpired, "SPOC 会话已过期，请重新登录");
+    if (response->status_code != 200) return make_error(ErrorCode::NetworkError, "SPOC 作业提交返回: " + std::to_string(response->status_code));
+    auto json = nlohmann::json::parse(response->body, nullptr, false);
+    if (json.is_discarded()) return make_error(ErrorCode::ParseError, "解析 SPOC 作业提交 JSON 失败");
+    auto unwrapped = unwrap_envelope(json, response->body);
+    if (!unwrapped) return make_error(unwrapped.error().code, unwrapped.error().message);
+
+    Model::MutationResult result;
+    result.accepted = true;
+    result.message = "SPOC 作业提交成功";
+    result.summary = make_record(submission.assignment_id, submission.file_name, "submitted", {
+        {"courseId", submission.course_id},
+        {"fileId", submission.file_id},
+        {"fileName", submission.file_name},
+    });
+    return result;
 }
 
 } // namespace UBAANext

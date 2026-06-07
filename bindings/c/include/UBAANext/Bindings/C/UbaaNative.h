@@ -42,12 +42,14 @@ typedef struct UbaaNextContext UbaaNextContext;
  * Stable C ABI entry for embedding clients. Returns the native SDK version string without remote I/O, local file reads, or writes.
  */
 UBAANEXT_C_API const char *ubaanext_version(void);
+UBAANEXT_C_API const char *ubaanext_version_info(void);
 
 /**
  * Stable C ABI entry for embedding clients. Writes current platform capability flags; unsupported, fallback, and gated flags must not be treated as completion.
  * Returns UBAANEXT_STATUS_OK or UBAANEXT_STATUS_INVALID_ARGUMENT.
  */
 UBAANEXT_C_API int32_t ubaanext_get_capabilities(UbaaNextCapabilities *out_capabilities);
+UBAANEXT_C_API const char *ubaanext_capabilities(void);
 
 UBAANEXT_C_API UbaaNextContext *ubaanext_context_create(void);
 UBAANEXT_C_API void ubaanext_context_release(UbaaNextContext *context);
@@ -62,6 +64,7 @@ UBAANEXT_C_API const char *ubaanext_auth_login(UbaaNextContext *context, const c
 UBAANEXT_C_API const char *ubaanext_auth_logout(UbaaNextContext *context);
 UBAANEXT_C_API const char *ubaanext_auth_restore_session(UbaaNextContext *context);
 UBAANEXT_C_API const char *ubaanext_auth_get_session_state(UbaaNextContext *context);
+UBAANEXT_C_API const char *ubaanext_auth_whoami(UbaaNextContext *context);
 
 UBAANEXT_C_API const char *ubaanext_terms(UbaaNextContext *context);
 UBAANEXT_C_API const char *ubaanext_weeks(UbaaNextContext *context, const char *term_code);
@@ -75,6 +78,11 @@ UBAANEXT_C_API const char *ubaanext_signin_today(UbaaNextContext *context);
 UBAANEXT_C_API const char *ubaanext_signin_do(UbaaNextContext *context, const char *course_id, uint8_t confirmed);
 UBAANEXT_C_API const char *ubaanext_ygdk_overview(UbaaNextContext *context);
 UBAANEXT_C_API const char *ubaanext_ygdk_records(UbaaNextContext *context, int32_t page, int32_t size);
+UBAANEXT_C_API const char *ubaanext_feature_list(UbaaNextContext *context, const char *domain, const char *operation);
+UBAANEXT_C_API const char *ubaanext_feature_show(UbaaNextContext *context, const char *domain, const char *operation, const char *id);
+UBAANEXT_C_API const char *ubaanext_td_status(UbaaNextContext *context);
+UBAANEXT_C_API const char *ubaanext_td_users(UbaaNextContext *context);
+UBAANEXT_C_API const char *ubaanext_td_count_cache(UbaaNextContext *context, const char *student_id);
 
 #ifdef __cplusplus
 }

@@ -1,7 +1,9 @@
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(UBAANEXT_LINUX_SOURCES
         src/LinuxAppDataPathProvider.cpp
+        src/LinuxNetworkEnvironment.cpp
         src/LinuxPlatformCapabilities.cpp
+        src/LocalEncryptedFileStore.cpp
         src/SecretServiceSecureStore.cpp
         src/UnsupportedSecureStore.cpp
     )
@@ -22,6 +24,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             UBAANextPlatformCurl
             UBAANextPlatformOpenSSL
             UBAANextPlatformTcp
+            OpenSSL::Crypto
     )
     if(UBAANEXT_ENABLE_LINUX_LIBSECRET)
         find_package(PkgConfig REQUIRED)

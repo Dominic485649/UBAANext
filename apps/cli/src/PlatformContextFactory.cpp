@@ -12,9 +12,12 @@
 
 #if defined(_WIN32)
 #include <UBAANext/Platform/Windows/DpapiSecureStore.hpp>
+#include <UBAANext/Platform/Windows/WindowsNetworkEnvironment.hpp>
 #include <UBAANext/Platform/Windows/WindowsPlatformCapabilities.hpp>
 #elif defined(__linux__)
+#include <UBAANext/Platform/Linux/LinuxNetworkEnvironment.hpp>
 #include <UBAANext/Platform/Linux/LinuxPlatformCapabilities.hpp>
+#include <UBAANext/Platform/Linux/LocalEncryptedFileStore.hpp>
 #if UBAANEXT_ENABLE_LINUX_LIBSECRET
 #include <UBAANext/Platform/Linux/SecretServiceSecureStore.hpp>
 #endif
@@ -93,6 +96,25 @@ private:
     UBAANext::RedirectOptions m_defaults;
 };
 
+class StaticNetworkEnvironment final : public UBAANext::INetworkEnvironment {
+public:
+    StaticNetworkEnvironment(bool campus, std::string ip)
+        : m_campus(campus), m_ip(std::move(ip)) {}
+
+    [[nodiscard]] UBAANext::Result<bool> is_on_campus_network() override {
+        return m_campus;
+    }
+
+    [[nodiscard]] UBAANext::Result<std::string> local_ipv4() override {
+        if (m_ip.empty()) return UBAANext::make_error(UBAANext::ErrorCode::NetworkError, "未配置本机 IPv4");
+        return m_ip;
+    }
+
+private:
+    bool m_campus = false;
+    std::string m_ip;
+};
+
 class HttpClientNetworkStack final : public UBAANext::INetworkStack {
 public:
     explicit HttpClientNetworkStack(UBAANext::IHttpClient &http_client)
@@ -140,11 +162,26 @@ AppContext create_current_platform_context(const PlatformContextOptions &options
     if (options.mock) {
         ctx.http = std::make_unique<UBAANextMocks::MockHttpClient>();
         ctx.network_stack = std::make_unique<HttpClientNetworkStack>(*ctx.http);
+        ctx.network_environment = std::make_unique<StaticNetworkEnvironment>(true, "10.0.0.2");
         ctx.cache = std::make_unique<UBAANextMocks::MockCacheStore>();
 #if defined(_WIN32)
         ctx.store = std::make_unique<UBAANext::Platform::Windows::DpapiSecureStore>(options.session_file_path);
+        ctx.credential_persistence_available = true;
+        ctx.credential_persistence_secure = true;
+#elif defined(__linux__)
+        try {
+            ctx.store = std::make_unique<UBAANext::Platform::Linux::LocalEncryptedFileStore>(options.session_file_path);
+            ctx.credential_persistence_available = true;
+            ctx.credential_persistence_secure = false;
+        } catch (...) {
+            ctx.store = std::make_unique<PlainFileStore>(options.session_file_path);
+            ctx.credential_persistence_available = true;
+            ctx.credential_persistence_plaintext_fallback = true;
+        }
 #else
         ctx.store = std::make_unique<PlainFileStore>(options.session_file_path);
+        ctx.credential_persistence_available = true;
+        ctx.credential_persistence_plaintext_fallback = true;
 #endif
         return ctx;
     }
@@ -152,27 +189,51 @@ AppContext create_current_platform_context(const PlatformContextOptions &options
 
 #if defined(_WIN32)
     ctx.store = std::make_unique<UBAANext::Platform::Windows::DpapiSecureStore>(options.session_file_path);
+    ctx.credential_persistence_available = true;
+    ctx.credential_persistence_secure = true;
+    ctx.network_environment = std::make_unique<UBAANext::Platform::Windows::WindowsNetworkEnvironment>();
     ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>(*ctx.store);
     auto loaded_cookies = ctx.network_stack->cookie_store().load();
     (void)loaded_cookies;
     ctx.capabilities = UBAANext::Platform::Windows::WindowsPlatformCapabilities{}.capabilities();
 #elif defined(__linux__)
     ctx.capabilities = UBAANext::Platform::Linux::LinuxPlatformCapabilities{}.capabilities();
+    ctx.network_environment = std::make_unique<UBAANext::Platform::Linux::LinuxNetworkEnvironment>();
 #if UBAANEXT_ENABLE_LINUX_LIBSECRET
     ctx.store = std::make_unique<UBAANext::Platform::Linux::SecretServiceSecureStore>();
+    ctx.credential_persistence_available = true;
+    ctx.credential_persistence_secure = true;
     ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>(*ctx.store);
     auto loaded_cookies = ctx.network_stack->cookie_store().load();
     (void)loaded_cookies;
 #else
-    ctx.store = std::make_unique<VolatileSecureStore>();
-    ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>();
+    try {
+        ctx.store = std::make_unique<UBAANext::Platform::Linux::LocalEncryptedFileStore>(options.session_file_path);
+        ctx.credential_persistence_available = true;
+        // Local AES protects against accidental plaintext exposure, but it is not
+        // a platform keychain. Only libsecret-backed storage declares secure_store.
+        ctx.credential_persistence_secure = false;
+    } catch (...) {
+        ctx.store = std::make_unique<PlainFileStore>(options.session_file_path);
+        ctx.credential_persistence_available = true;
+        ctx.credential_persistence_plaintext_fallback = true;
+    }
+    ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>(*ctx.store);
+    auto loaded_cookies = ctx.network_stack->cookie_store().load();
+    (void)loaded_cookies;
+    ctx.capabilities.cookie_persistence = ctx.credential_persistence_available;
+    ctx.capabilities.secure_cookie_persistence = ctx.credential_persistence_secure;
+    ctx.capabilities.secure_store = ctx.credential_persistence_secure;
+    ctx.capabilities.live_login = ctx.credential_persistence_available;
 #endif
 #elif defined(__OHOS__)
     ctx.capabilities = UBAANext::Platform::Harmony::HarmonyPlatformCapabilities{}.capabilities();
     ctx.store = std::make_unique<VolatileSecureStore>();
+    ctx.network_environment = std::make_unique<UBAANext::FailClosedNetworkEnvironment>();
     ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>();
 #else
     ctx.store = std::make_unique<VolatileSecureStore>();
+    ctx.network_environment = std::make_unique<UBAANext::FailClosedNetworkEnvironment>();
     ctx.network_stack = std::make_unique<UBAANext::Platform::Curl::CurlNetworkStack>();
     ctx.capabilities.real_network = true;
     ctx.capabilities.secure_store = false;

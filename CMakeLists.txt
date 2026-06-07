@@ -25,6 +25,10 @@ set(CMAKE_CXX_STANDARD ${UBAANEXT_CXX_STANDARD})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(UBAANEXT_BUILD_BINDINGS AND NOT WIN32)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 # 自动生成 Version.hpp，确保版本号与 project() 声明同步
 configure_file(
     ${CMAKE_SOURCE_DIR}/core/include/UBAANext/Version.hpp.in

@@ -116,6 +116,13 @@ private:
     [[nodiscard]] static std::string detect_error(const std::string &html);
 
     /**
+     * @brief Sensitive WebVPN boundary: activates the WebVPN gateway CAS session without logging credentials.
+     */
+    Result<void> activate_webvpn_session(const std::string &username,
+                                         const std::string &password,
+                                         const std::string &captcha);
+
+    /**
      * @brief PartiallyMigrated redirect helper: follows CAS redirects and extracts cookies with redacted diagnostics.
      */
     Result<HttpResponse> follow_redirects(

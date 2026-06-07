@@ -17,7 +17,7 @@
 ### 2.1 强力防明文持久化（Fail-Closed）
 当登录会话成功建立后，系统将通过 `SessionManager::save_session` 进行序列化存储。
 *   在 Windows 操作系统下，系统将自动使用 `DpapiSecureStore`（调用底层 Windows DPAPI 凭据保险箱），将生成的令牌加密落盘。
-*   在 Linux 下，如若配置开启，则会桥接至 `SecretServiceSecureStore`；若未配置则会回退为内存级的 `VolatileSecureStore`，**绝对不允许在磁盘明文保存任何会话文件**。
+*   在 Linux 下，如若配置开启，则会桥接至 `SecretServiceSecureStore`；若未启用 libsecret，则 CLI 使用 `LocalEncryptedFileStore` 作为本地加密 fallback，并将 `secure_store=false` 暴露给上层；若本地加密初始化失败，才会进入显式标记的明文 fallback。
 *   如果平台适配器声明了不支持安全存储（例如当前未连接 keychain 的 OpenHarmony 底座返回 `secure_store = false`），底层在尝试进行磁盘持久化时会抛出 `UnsupportedSecureStore` 错误直接失败（Fail-Closed），绝对不会隐式降级回退成明文不设防磁盘存储。
 
 ### 2.2 跨会话 Cookie 隔离

@@ -83,3 +83,37 @@ TEST_CASE("parse_evaluation_required_reviews 非数组返回空列表", "[Evalua
 
     CHECK(records.empty());
 }
+
+TEST_CASE("parse_evaluation_form 解析题目选项和提交上下文", "[EvaluationParser]") {
+    um::Model::EvaluationTask task;
+    task.id = "task-1_questionnaire-1_CS101_teacher-1";
+    task.title = "程序设计";
+    task.status = "pending";
+    task.task_id = "task-1";
+    task.questionnaire_id = "questionnaire-1";
+    task.course_code = "CS101";
+    task.teacher_code = "teacher-1";
+    task.term_code = "20252026";
+    task.pattern_id = "1";
+
+    auto form = um::Parser::parse_evaluation_form(nlohmann::json::array({{
+        {"pjxtWjWjbReturnEntity", {{"wjzblist", nlohmann::json::array({{{"tklist", nlohmann::json::array({
+            {{"tmid", "q1"}, {"tgmc", "整体评价"}, {"tmlx", "1"}, {"tmxxlist", nlohmann::json::array({{{"tmxxid", "a1"}, {"xxmc", "优秀"}, {"xxfz", 90}}, {{"tmxxid", "a2"}, {"xxfz", "95"}}})}},
+            {{"tmid", "q2"}, {"tgmc", "建议"}, {"tmlx", "6"}, {"tmxxlist", nlohmann::json::array({{{"tmxxid", "text-1"}}})}},
+        })}}})}}},
+        {"pjxtPjjgPjjgckb", nlohmann::json::array({{{"pjid", "pj-1"}, {"pjrjsdm", "role-1"}, {"wjssrwid", "rel-1"}, {"pjrdm", "student-1"}}})},
+        {"pjmap", {{"PJJGXXBM", "detail-map"}, {"RWID", "task-1"}, {"PJJGBM", "result-map"}}},
+    }}), task);
+
+    CHECK(form.form_result_id == "pj-1");
+    CHECK(form.evaluator_role_id == "role-1");
+    CHECK(form.evaluated_relation_id == "rel-1");
+    CHECK(form.result_map["PJJGXXBM"] == "detail-map");
+    REQUIRE(form.questions.size() == 2);
+    CHECK(form.questions[0].id == "q1");
+    CHECK(form.questions[0].is_choice);
+    REQUIRE(form.questions[0].choices.size() == 2);
+    CHECK(form.questions[0].choices[1].id == "a2");
+    CHECK(form.questions[0].choices[1].score == 95.0);
+    CHECK_FALSE(form.questions[1].is_choice);
+}

@@ -206,25 +206,37 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "classroom query",
         "term list",
         "week list",
+        "live week",
         "capability show",
         "grade list",
         "grade all",
         "user info",
         "app version",
         "app announcement",
+        "spoc week",
+        "spoc schedule",
+        "spoc courses",
         "spoc assignments",
         "spoc assignment show",
+        "spoc homework submit",
         "judge assignments",
         "judge assignment show",
         "judge assignment details",
         "judge assignment details-batch",
         "signin today",
+        "signin schedule",
+        "signin courses",
+        "signin course schedule",
         "signin do",
+        "wifi login",
+        "wifi logout",
         "ygdk overview",
         "ygdk records",
         "ygdk submit",
         "evaluation list",
+        "evaluation form",
         "evaluation submit",
+        "evaluation form submit",
         "bykc profile",
         "bykc courses",
         "bykc chosen",
@@ -249,7 +261,36 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "libbook book",
         "libbook cancel",
         "todo list",
+        "file roots",
+        "file root",
+        "file list",
+        "file size",
+        "file recycle",
+        "file shares",
+        "file suggest-name",
+        "file mkdir",
+        "file rename",
+        "file move",
+        "file copy",
+        "file delete",
+        "file recycle-delete",
+        "file recycle-restore",
+        "file share-record",
+        "file share-create",
+        "file share-update",
+        "file share-delete",
+        "file share-parse",
+        "file download-url",
+        "file batch-download-url",
         "file upload",
+        "srs config",
+        "srs batch",
+        "srs course query",
+        "srs preselected",
+        "srs selected",
+        "srs course preselect",
+        "srs course select",
+        "srs course drop",
         "config show",
         "config set",
         "cache clear",
@@ -341,8 +382,7 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "cgyy day-info 的 id，time-id 来自 fields.timeId",
         "libbook reservations 输出记录的 id 字段",
         "help --json 输出机器可读命令目录",
-        "relogin --saved",
-        "--save-password",
+        "relogin [-y|--confirm|--yes]",
         "td image add <path>",
         "td user add <student-id> --quick",
         "td count [student-id] --refresh",
@@ -350,6 +390,23 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "td scheduler once",
         "td scheduler clear-errors",
         "td scheduler watch",
+        "live week --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>",
+        "spoc schedule --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>",
+        "spoc homework submit --id <assignment-id>",
+        "signin schedule --date <yyyy-MM-dd>",
+        "signin courses --term <term-code>",
+        "wifi login [--username <account>]",
+        "file roots [--root all|user|shared|department|group]",
+        "file list --id <docid> [--token <share-token>]",
+        "file size --id <docid> [--token <share-token>]",
+        "file recycle",
+        "file shares",
+        "file upload --parent-id <docid> --path <path>",
+        "file share-create --id <docid> --name <title>",
+        "file download-url --id <docid>",
+        "srs course query",
+        "srs course select --id <clazzId>",
+        "--start-date",
         "--poll-seconds",
     };
     for (const auto &expected_token : expected_help_tokens) {
@@ -379,9 +436,9 @@ TEST_CASE("CLI login mock 兼容旧参数", "[cli][integration]") {
     REQUIRE(result.stdout_output.find("20260000") != std::string::npos);
 }
 
-TEST_CASE("CLI relogin mock 手动替换已有会话", "[cli][integration]") {
+TEST_CASE("CLI relogin mock 复用默认保存的账号密码", "[cli][integration]") {
     auto app_data_dir = make_app_data_dir();
-    auto initial = run_cli({"login", "--mock", "20260010", "test", "--save-password", "--json"}, app_data_dir);
+    auto initial = run_cli({"login", "--mock", "20260010", "test", "--json"}, app_data_dir);
     REQUIRE(initial.exit_code == 0);
 
     auto blocked = run_cli({"login", "--mock", "20260011", "test", "--json"}, app_data_dir);
@@ -390,51 +447,43 @@ TEST_CASE("CLI relogin mock 手动替换已有会话", "[cli][integration]") {
     require_error_envelope(blocked_json);
     CHECK(blocked_json["error"]["message"].get<std::string>().find("relogin") != std::string::npos);
 
-    auto still_initial = run_cli({"whoami", "--mock", "--json"}, app_data_dir);
-    REQUIRE(still_initial.exit_code == 0);
-    auto still_initial_json = parse_json_output(still_initial.stdout_output);
-    REQUIRE(still_initial_json["data"]["studentId"] == "20260010");
-
-    auto missing_confirm = run_cli({"relogin", "--mock", "20260011", "test", "--json"}, app_data_dir);
+    auto missing_confirm = run_cli({"relogin", "--mock", "--json"}, app_data_dir);
     REQUIRE(missing_confirm.exit_code != 0);
     auto missing_confirm_json = parse_json_output(missing_confirm.stdout_output);
     require_error_envelope(missing_confirm_json);
     CHECK(missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
 
-    auto relogin = run_cli({"relogin", "--mock", "20260011", "test", "--confirm", "--json"}, app_data_dir);
-    REQUIRE(relogin.exit_code == 0);
-
-    auto current = run_cli({"whoami", "--mock", "--json"}, app_data_dir);
-    REQUIRE(current.exit_code == 0);
-    auto current_json = parse_json_output(current.stdout_output);
-    REQUIRE(current_json["data"]["studentId"] == "20260011");
-}
-
-TEST_CASE("CLI relogin mock 可复用显式保存的账号密码", "[cli][integration]") {
-    auto app_data_dir = make_app_data_dir();
-    auto initial = run_cli({"login", "--mock", "20260012", "test", "--save-password", "--json"}, app_data_dir);
-    REQUIRE(initial.exit_code == 0);
-
-    auto missing_confirm = run_cli({"relogin", "--mock", "--saved", "--json"}, app_data_dir);
-    REQUIRE(missing_confirm.exit_code != 0);
-    auto missing_confirm_json = parse_json_output(missing_confirm.stdout_output);
-    require_error_envelope(missing_confirm_json);
-    CHECK(missing_confirm_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
-
-    auto relogin = run_cli({"relogin", "--mock", "--saved", "--confirm", "--json"}, app_data_dir);
+    auto relogin = run_cli({"relogin", "--mock", "--confirm", "--json"}, app_data_dir);
     REQUIRE(relogin.exit_code == 0);
     REQUIRE(relogin.stdout_output.find("test") == std::string::npos);
 
     auto current = run_cli({"whoami", "--mock", "--json"}, app_data_dir);
     REQUIRE(current.exit_code == 0);
     auto current_json = parse_json_output(current.stdout_output);
-    REQUIRE(current_json["data"]["studentId"] == "20260012");
+    REQUIRE(current_json["data"]["studentId"] == "20260010");
+}
+
+TEST_CASE("CLI login/relogin 旧保存写法已取消", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"login", "--mock", "20260012", "test", "--save-password", "--json"},
+        {"login", "--mock", "--relogin", "20260012", "test", "--confirm", "--json"},
+        {"relogin", "--mock", "--saved", "--confirm", "--json"},
+        {"relogin", "--mock", "20260012", "test", "--confirm", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
 }
 
 TEST_CASE("CLI whoami 命令", "[cli][integration]") {
     auto app_data_dir = make_app_data_dir();
     // 先登录
-    auto login_result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--relogin", "--confirm", "--json"}, app_data_dir);
+    auto login_result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--json"}, app_data_dir);
     REQUIRE(login_result.exit_code == 0);
 
     auto result = run_cli({"whoami", "--mock", "--json"}, app_data_dir);
@@ -449,7 +498,7 @@ TEST_CASE("CLI whoami 命令", "[cli][integration]") {
 TEST_CASE("CLI logout 命令", "[cli][integration]") {
     auto app_data_dir = make_app_data_dir();
     // 先登录
-    auto login_result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--relogin", "--confirm", "--json"}, app_data_dir);
+    auto login_result = run_cli({"login", "--mock", "--username", "20260000", "--password", "test", "--json"}, app_data_dir);
     REQUIRE(login_result.exit_code == 0);
 
     auto result = run_cli({"logout", "--mock", "--confirm", "--json"}, app_data_dir);
@@ -611,7 +660,45 @@ TEST_CASE("CLI v0.4 golden help contract", "[cli][integration][golden]") {
     CHECK(contains_name("cache clear"));
     CHECK(contains_name("course today"));
     CHECK(contains_name("todo list"));
+    CHECK(contains_name("spoc week"));
+    CHECK(contains_name("spoc schedule"));
+    CHECK(contains_name("spoc courses"));
+    CHECK(contains_name("spoc homework submit"));
+    CHECK(contains_name("signin schedule"));
+    CHECK(contains_name("signin courses"));
+    CHECK(contains_name("signin course schedule"));
+    CHECK(contains_name("wifi login"));
+    CHECK(contains_name("wifi logout"));
+    CHECK(contains_name("file roots"));
+    CHECK(contains_name("file root"));
+    CHECK(contains_name("file list"));
+    CHECK(contains_name("file size"));
+    CHECK(contains_name("file recycle"));
+    CHECK(contains_name("file shares"));
+    CHECK(contains_name("file suggest-name"));
+    CHECK(contains_name("file mkdir"));
+    CHECK(contains_name("file rename"));
+    CHECK(contains_name("file move"));
+    CHECK(contains_name("file copy"));
+    CHECK(contains_name("file delete"));
+    CHECK(contains_name("file recycle-delete"));
+    CHECK(contains_name("file recycle-restore"));
+    CHECK(contains_name("file share-record"));
+    CHECK(contains_name("file share-create"));
+    CHECK(contains_name("file share-update"));
+    CHECK(contains_name("file share-delete"));
+    CHECK(contains_name("file share-parse"));
+    CHECK(contains_name("file download-url"));
+    CHECK(contains_name("file batch-download-url"));
     CHECK(contains_name("file upload"));
+    CHECK(contains_name("srs config"));
+    CHECK(contains_name("srs batch"));
+    CHECK(contains_name("srs course query"));
+    CHECK(contains_name("srs preselected"));
+    CHECK(contains_name("srs selected"));
+    CHECK(contains_name("srs course preselect"));
+    CHECK(contains_name("srs course select"));
+    CHECK(contains_name("srs course drop"));
 
     auto duplicate = std::adjacent_find(names.begin(), names.end());
     std::sort(names.begin(), names.end());
@@ -715,13 +802,25 @@ TEST_CASE("CLI capability show 命令", "[cli][integration][capability]") {
 }
 
 #if !defined(_WIN32)
-TEST_CASE("CLI real login fails closed without secure store", "[cli][integration][security]") {
-    auto result = run_cli({"login", "--username", "20260000", "--password", "test", "--json"});
-    REQUIRE(result.exit_code != 0);
+TEST_CASE("CLI real login fail-closed is gated by persistence capability", "[cli][integration][security]") {
+    auto capabilities_result = run_cli({"capability", "show", "--json"});
+    REQUIRE(capabilities_result.exit_code == 0);
+    auto capabilities_json = parse_json_output(capabilities_result.stdout_output);
+    require_success_envelope(capabilities_json);
+    const auto &capabilities = capabilities_json["data"]["capabilities"];
+    const bool has_persistent_secure_store = capabilities.value("cookiePersistence", false) && capabilities.value("secureStore", false);
 
-    auto json = parse_json_output(result.stdout_output);
-    require_error_envelope(json);
-    CHECK(json["error"]["code"].get<std::string>().find("UnsupportedSecureStore") != std::string::npos);
+    if (has_persistent_secure_store) {
+        CHECK(capabilities["liveLogin"].is_boolean());
+        CHECK(capabilities["secureCookiePersistence"].is_boolean());
+    } else {
+        auto result = run_cli({"login", "--username", "20260000", "--password", "test", "--json"});
+        REQUIRE(result.exit_code != 0);
+
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"].get<std::string>().find("UnsupportedSecureStore") != std::string::npos);
+    }
 }
 #endif
 
@@ -954,6 +1053,9 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
         {"grade", "list", "--all", "--mock", "--json"},
         {"grade", "all", "--mock", "--json"},
         {"classroom", "query", "--mock", "--campus", "1", "--date", "2026-05-15", "--sections", "1,2", "--json"},
+        {"spoc", "week", "--mock", "--json"},
+        {"spoc", "schedule", "--mock", "--start-date", "2026-06-01", "--end-date", "2026-06-07", "--json"},
+        {"spoc", "courses", "--mock", "--term", "2025-2026-2", "--json"},
         {"spoc", "assignments", "--mock", "--pending-only", "--include-expired", "--json"},
         {"spoc", "assignment", "show", "--mock", "--id", "spoc-1", "--json"},
         {"judge", "assignments", "--mock", "--course-id", "course-1", "--include-history", "--include-expired", "--json"},
@@ -961,10 +1063,16 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
         {"judge", "assignment", "details", "--mock", "--assignment-id", "judge-1", "--json"},
         {"judge", "assignment", "details-batch", "--mock", "--input", "judge-1", "--json"},
         {"signin", "today", "--mock", "--json"},
+        {"signin", "schedule", "--mock", "--date", "2026-06-01", "--json"},
+        {"signin", "courses", "--mock", "--term", "2025-2026-2", "--json"},
+        {"signin", "course", "schedule", "--mock", "--course-id", "signin-course-1", "--json"},
+        {"wifi", "login", "--mock", "--username", "20260000", "--password", "secret", "--confirm", "--json"},
+        {"wifi", "logout", "--mock", "--username", "20260000", "--confirm", "--json"},
         {"ygdk", "overview", "--mock", "--json"},
         {"ygdk", "records", "--mock", "--json"},
         {"ygdk", "records", "--mock", "--page", "1", "--limit", "20", "--json"},
         {"evaluation", "list", "--mock", "--json"},
+        {"evaluation", "form", "--mock", "--id", "evaluation-1", "--json"},
         {"todo", "list", "--mock", "--json"},
         {"todo", "list", "--mock", "--all", "--json"},
         {"bykc", "profile", "--mock", "--json"},
@@ -982,6 +1090,13 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
         {"libbook", "area", "show", "--mock", "--area-id", "libbook-1", "--json"},
         {"libbook", "seats", "--mock", "--area-id", "libbook-1", "--json"},
         {"libbook", "reservations", "--mock", "--json"},
+        {"file", "roots", "--mock", "--json"},
+        {"file", "roots", "--mock", "--root", "user", "--json"},
+        {"file", "root", "--mock", "--json"},
+        {"file", "list", "--mock", "--id", "cloud-root-user", "--json"},
+        {"file", "size", "--mock", "--id", "cloud-file-1", "--token", "share-token", "--json"},
+        {"file", "recycle", "--mock", "--json"},
+        {"file", "shares", "--mock", "--json"},
     };
 
     for (const auto &command : commands) {
@@ -999,9 +1114,13 @@ TEST_CASE("CLI 有副作用命令需要 confirm", "[cli][integration]") {
         {"logout", "--json"},
         {"config", "set", "--key", "mode", "--value", "direct", "--json"},
         {"cache", "clear", "--json"},
+        {"spoc", "homework", "submit", "--mock", "--id", "spoc-1", "--course-id", "course-1", "--file-id", "file-1", "--name", "report.pdf", "--json"},
+        {"wifi", "login", "--mock", "--username", "20260000", "--password", "secret", "--json"},
+        {"wifi", "logout", "--mock", "--username", "20260000", "--json"},
         {"signin", "do", "--mock", "--json"},
         {"ygdk", "submit", "--mock", "--json"},
         {"evaluation", "submit", "--mock", "--json"},
+        {"evaluation", "form", "submit", "--mock", "--id", "evaluation-1", "--json"},
         {"bykc", "select", "--mock", "--course-id", "bykc-1", "--json"},
         {"bykc", "unselect", "--mock", "--course-id", "bykc-1", "--json"},
         {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--json"},
@@ -1037,7 +1156,12 @@ TEST_CASE("CLI 直接服务写操作保留分隔符参数", "[cli][integration]"
     auto evaluation_json = parse_json_output(evaluation.stdout_output);
     REQUIRE(evaluation_json["ok"] == true);
 
-    auto bykc = run_cli({"bykc", "sign", "--mock", "--course-id", "bykc:1", "--sign-type", "1", "--confirm", "--json"});
+    auto spoc = run_cli({"spoc", "homework", "submit", "--mock", "--id", "spoc:1", "--course-id", "course:1", "--file-id", "file:1", "--name", "report:final.pdf", "--confirm", "--json"});
+    REQUIRE(spoc.exit_code == 0);
+    auto spoc_json = parse_json_output(spoc.stdout_output);
+    REQUIRE(spoc_json["ok"] == true);
+
+    auto bykc = run_cli({"bykc", "sign", "--mock", "--course-id", "bykc:1", "--sign-type", "1", "--lat", "40.1001", "--lng", "116.3001", "--confirm", "--json"});
     REQUIRE(bykc.exit_code == 0);
     auto bykc_json = parse_json_output(bykc.stdout_output);
     REQUIRE(bykc_json["ok"] == true);
@@ -1120,9 +1244,10 @@ TEST_CASE("CLI 有副作用命令 confirm 后 mock 可执行", "[cli][integratio
         {"signin", "do", "--mock", "--id", "signin-1", "--confirm", "--json"},
         {"ygdk", "submit", "--mock", "--confirm", "--json"},
         {"evaluation", "submit", "--mock", "--confirm", "--json"},
+        {"evaluation", "form", "submit", "--mock", "--id", "evaluation-1", "--confirm", "--json"},
         {"bykc", "select", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
         {"bykc", "unselect", "--mock", "--course-id", "bykc-1", "--confirm", "--json"},
-        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--confirm", "--json"},
+        {"bykc", "sign", "--mock", "--course-id", "bykc-1", "--sign-type", "1", "--lat", "40.1001", "--lng", "116.3001", "--confirm", "--json"},
         {"cgyy", "reserve", "--mock", "--id", "1", "--site-id", "1", "--space-id", "1", "--date", "2026-05-15", "--purpose-type", "1", "--theme", "组会", "--phone", "13800000000", "--joiners", "张三", "--captcha", "captcha", "--token", "token", "--confirm", "--json"},
         {"cgyy", "order", "cancel", "--mock", "--order-id", "cgyy-1", "--confirm", "--json"},
         {"libbook", "book", "--mock", "--seat-id", "libbook-1", "--date", "2026-05-15", "--segment", "08:00-10:00", "--confirm", "--json"},
@@ -1179,6 +1304,11 @@ TEST_CASE("CLI JSON contract mock smoke", "[cli][integration]") {
         {{"bykc", "courses", "--mock", "--json"}, "courses"},
         {{"cgyy", "sites", "--mock", "--json"}, "sites"},
         {{"libbook", "libraries", "--mock", "--json"}, "libraries"},
+        {{"live", "week", "--mock", "--start-date", "2026-06-01", "--end-date", "2026-06-07", "--json"}, "schedules"},
+        {{"file", "roots", "--mock", "--json"}, "cloudRoots"},
+        {{"file", "list", "--mock", "--id", "cloud-root-user", "--json"}, "cloudFiles"},
+        {{"file", "recycle", "--mock", "--json"}, "cloudRecycle"},
+        {{"file", "shares", "--mock", "--json"}, "cloudShares"},
     };
 
     for (const auto &[command, key] : list_commands) {
@@ -1195,6 +1325,27 @@ TEST_CASE("CLI JSON contract mock smoke", "[cli][integration]") {
     REQUIRE(detail_json["data"].contains("course"));
     require_feature_record(detail_json["data"]["course"]);
 
+    auto evaluation_form = run_cli({"evaluation", "form", "--mock", "--id", "evaluation-1", "--json"});
+    REQUIRE(evaluation_form.exit_code == 0);
+    auto evaluation_form_json = parse_json_output(evaluation_form.stdout_output);
+    require_success_envelope(evaluation_form_json);
+    REQUIRE(evaluation_form_json["data"].contains("evaluation"));
+    require_feature_record(evaluation_form_json["data"]["evaluation"]);
+
+    auto cloud_root = run_cli({"file", "root", "--mock", "--json"});
+    REQUIRE(cloud_root.exit_code == 0);
+    auto cloud_root_json = parse_json_output(cloud_root.stdout_output);
+    require_success_envelope(cloud_root_json);
+    REQUIRE(cloud_root_json["data"].contains("cloudRoot"));
+    require_feature_record(cloud_root_json["data"]["cloudRoot"]);
+
+    auto cloud_size = run_cli({"file", "size", "--mock", "--id", "cloud-file-1", "--json"});
+    REQUIRE(cloud_size.exit_code == 0);
+    auto cloud_size_json = parse_json_output(cloud_size.stdout_output);
+    require_success_envelope(cloud_size_json);
+    REQUIRE(cloud_size_json["data"].contains("cloudSize"));
+    require_feature_record(cloud_size_json["data"]["cloudSize"]);
+
     auto mutation = run_cli({"bykc", "select", "--mock", "--course-id", "bykc-1", "--confirm", "--json"});
     REQUIRE(mutation.exit_code == 0);
     require_mutation_contract(parse_json_output(mutation.stdout_output));
@@ -1206,20 +1357,30 @@ TEST_CASE("CLI JSON contract mock smoke", "[cli][integration]") {
     REQUIRE(error_json["error"]["code"] == "InvalidArgument");
 }
 
-TEST_CASE("CLI 保留占位接口稳定返回 NotImplemented", "[cli][integration]") {
+TEST_CASE("CLI 云盘上传确认后仍校验目标目录", "[cli][integration]") {
     auto result = run_cli({"file", "upload", "--path", "C:\\tmp\\attachment.jpg", "--confirm", "--json"});
-    REQUIRE(result.exit_code != 0);
+    REQUIRE(result.exit_code == 2);
     auto json = parse_json_output(result.stdout_output);
     require_error_envelope(json);
-    CHECK(json["error"]["code"] == "NotImplemented");
+    CHECK(json["error"]["code"] == "InvalidArgument");
+    CHECK(json["error"]["message"] == "file upload 需要 --parent-id <docid>");
 }
 
-TEST_CASE("CLI 占位上传接口仍需要显式确认", "[cli][integration]") {
+TEST_CASE("CLI 云盘上传仍需要显式确认", "[cli][integration]") {
     auto result = run_cli({"file", "upload", "--path", "C:\\tmp\\attachment.jpg", "--json"});
     REQUIRE(result.exit_code == 2);
     auto json = parse_json_output(result.stdout_output);
     require_error_envelope(json);
     CHECK(json["error"]["code"] == "InvalidArgument");
+}
+
+TEST_CASE("CLI 云盘上传确认后才读取本地文件", "[cli][integration]") {
+    auto result = run_cli({"file", "upload", "--parent-id", "cloud-parent", "--path", "C:\\tmp\\missing-cloud-upload.bin", "--confirm", "--json"});
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_output);
+    require_error_envelope(json);
+    CHECK(json["error"]["code"] == "InvalidArgument");
+    CHECK(json["error"]["message"] == "无法读取上传文件");
 }
 
 TEST_CASE("CLI 默认写能力开启后打卡上传继续执行到下一层校验", "[cli][integration]") {
@@ -1251,6 +1412,20 @@ TEST_CASE("CLI JSON 模式写操作缺少确认时 fail closed", "[cli][integrat
     CHECK(message.find("--yes") != std::string::npos);
     CHECK(message.find("-y") != std::string::npos);
     CHECK(message.find("交互输入 y") != std::string::npos);
+
+    auto srs = run_cli({"srs", "course", "select", "--id", "clazz-1", "--scope", "ALLKC", "--token", "secret-1", "--json"});
+    REQUIRE(srs.exit_code == 2);
+    auto srs_json = parse_json_output(srs.stdout_output);
+    require_error_envelope(srs_json);
+    CHECK(srs_json["error"]["code"] == "InvalidArgument");
+    CHECK(srs_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+
+    auto spoc = run_cli({"spoc", "homework", "submit", "--id", "spoc-1", "--course-id", "course-1", "--file-id", "file-1", "--name", "report.pdf", "--json"});
+    REQUIRE(spoc.exit_code == 2);
+    auto spoc_json = parse_json_output(spoc.stdout_output);
+    require_error_envelope(spoc_json);
+    CHECK(spoc_json["error"]["code"] == "InvalidArgument");
+    CHECK(spoc_json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
 }
 
 #endif
@@ -1303,6 +1478,12 @@ TEST_CASE("CLI 真实 BYXT/Score 只读命令要求显式 term", "[cli][integrat
         {"week", "list", "--json"},
         {"exam", "list", "--json"},
         {"grade", "list", "--json"},
+        {"spoc", "schedule", "--start-date", "2026-06-01", "--json"},
+        {"spoc", "courses", "--json"},
+        {"spoc", "homework", "submit", "--mock", "--confirm", "--id", "spoc-1", "--course-id", "course-1", "--name", "report.pdf", "--json"},
+        {"signin", "schedule", "--json"},
+        {"signin", "courses", "--json"},
+        {"signin", "course", "schedule", "--json"},
     };
 
     for (const auto &command : commands) {
@@ -1344,6 +1525,20 @@ TEST_CASE("CLI 数字选项无效值返回 JSON InvalidArgument", "[cli][integra
     }
 }
 
+TEST_CASE("CLI 枚举选项无效值返回 JSON InvalidArgument", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
+        {"file", "roots", "--mock", "--root", "bad", "--json"},
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
+}
+
 TEST_CASE("CLI 选项缺值时保留 JSON 错误合同", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
         {"course", "week", "--week", "--json"},
@@ -1354,6 +1549,10 @@ TEST_CASE("CLI 选项缺值时保留 JSON 错误合同", "[cli][integration]") {
         {"course", "today", "--mode", "--json"},
         {"course", "week", "--term", "--json"},
         {"spoc", "assignment", "show", "--id", "--json"},
+        {"spoc", "homework", "submit", "--file-id", "--json"},
+        {"signin", "schedule", "--date", "--json"},
+        {"signin", "courses", "--term", "--json"},
+        {"signin", "course", "schedule", "--course-id", "--json"},
         {"bykc", "select", "--mock", "--confirm", "--course-id", "--json"},
         {"spoc", "assignment", "show", "--assignment-id", "--json"},
         {"libbook", "seats", "--area-id", "--json"},
@@ -1392,6 +1591,9 @@ TEST_CASE("CLI 选项缺值时保留 JSON 错误合同", "[cli][integration]") {
         {"config", "set", "--base-url", "--json"},
         {"config", "set", "--proxy", "--json"},
         {"td", "scheduler", "watch", "--poll-seconds", "--json"},
+        {"live", "week", "--start-date", "--json"},
+        {"live", "week", "--end-date", "--json"},
+        {"file", "roots", "--root", "--json"},
     };
 
     for (const auto &command : commands) {
@@ -1404,15 +1606,25 @@ TEST_CASE("CLI 选项缺值时保留 JSON 错误合同", "[cli][integration]") {
 }
 
 TEST_CASE("CLI 缺少必要参数返回 InvalidArgument", "[cli][integration]") {
+    const std::vector<std::vector<std::string>> commands = {
 #if UBAANEXT_ENABLE_MOCKS
-    auto result = run_cli({"login", "--mock", "--json"});
+        {"login", "--mock", "--json"},
+        {"file", "list", "--mock", "--json"},
+        {"file", "size", "--mock", "--json"},
 #else
-    auto result = run_cli({"login", "--json"});
+        {"login", "--json"},
+        {"file", "list", "--json"},
+        {"file", "size", "--json"},
 #endif
-    REQUIRE(result.exit_code == 2);
-    auto json = parse_json_output(result.stdout_output);
-    require_error_envelope(json);
-    CHECK(json["error"]["code"] == "InvalidArgument");
+    };
+
+    for (const auto &command : commands) {
+        auto result = run_cli(command);
+        REQUIRE(result.exit_code == 2);
+        auto json = parse_json_output(result.stdout_output);
+        require_error_envelope(json);
+        CHECK(json["error"]["code"] == "InvalidArgument");
+    }
 }
 
 #if !UBAANEXT_ENABLE_MOCKS

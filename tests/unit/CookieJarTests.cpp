@@ -90,6 +90,15 @@ TEST_CASE("CookieJar 序列化保留主机", "[CookieJar]") {
     REQUIRE(restored.get_cookie("sso.buaa.edu.cn", "SESSION") == "abc");
 }
 
+TEST_CASE("CookieJar 路径匹配对齐 reference 前缀语义", "[CookieJar]") {
+    um::CookieJar jar;
+    jar.set_cookie("bhpan.buaa.edu.cn", "/oauth2", "oauth_cookie", "ok");
+
+    CHECK(jar.to_header("bhpan.buaa.edu.cn", "/oauth2/signin").find("oauth_cookie=ok") != std::string::npos);
+    CHECK(jar.to_header("bhpan.buaa.edu.cn", "/oauth2signin").find("oauth_cookie=ok") != std::string::npos);
+    CHECK(jar.to_header("bhpan.buaa.edu.cn", "/anyshare/oauth2/login").find("oauth_cookie=ok") == std::string::npos);
+}
+
 TEST_CASE("CookieJar 拒绝不安全 Cookie", "[CookieJar]") {
     um::CookieJar jar;
     jar.set_cookie("com", "PUBLIC", "bad");

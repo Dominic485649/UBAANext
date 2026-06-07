@@ -90,7 +90,7 @@ TEST_CASE("BykcService 跟随 CAS 多跳重定向获取 token", "[service][bykc]
     CHECK(http_client.request_counts[kProfileUrl] == 1);
 }
 
-TEST_CASE("BykcService 签到从课程签到范围生成位置", "[service][bykc]") {
+TEST_CASE("BykcService 签到使用显式坐标", "[service][bykc]") {
     BykcRedirectFixtureHttpClient http_client(R"JSON({"signPointList":[{"lat":40.1001,"lng":116.3001,"radius":8.0}]})JSON");
     UBAANext::MemoryCacheStore cache;
     UBAANext::BykcService service(http_client, cache, UBAANext::ConnectionMode::Direct);
@@ -98,16 +98,16 @@ TEST_CASE("BykcService 签到从课程签到范围生成位置", "[service][bykc
     capabilities.write_operations = true;
     service.set_write_operation_gate(UBAANext::confirmed_write_operation(capabilities, "bykc sign"));
 
-    auto result = service.sign_course("1", 1);
+    auto result = service.sign_course("1", 1, UBAANext::BykcSignLocation{40.1001, 116.3001});
 
     REQUIRE(result);
     CHECK(result->accepted);
     CHECK(result->message == "签到成功");
-    CHECK(http_client.request_counts[kCourseDetailUrl] == 1);
+    CHECK(http_client.request_counts[kCourseDetailUrl] == 0);
     CHECK(http_client.request_counts[kSignUrl] == 1);
 }
 
-TEST_CASE("BykcService 无签到范围时不提交签到", "[service][bykc]") {
+TEST_CASE("BykcService 缺少显式坐标时不提交签到", "[service][bykc]") {
     BykcRedirectFixtureHttpClient http_client(R"JSON({"signPointList":[]})JSON");
     UBAANext::MemoryCacheStore cache;
     UBAANext::BykcService service(http_client, cache, UBAANext::ConnectionMode::Direct);
@@ -119,7 +119,7 @@ TEST_CASE("BykcService 无签到范围时不提交签到", "[service][bykc]") {
 
     REQUIRE_FALSE(result);
     CHECK(result.error().code == UBAANext::ErrorCode::InvalidArgument);
-    CHECK(http_client.request_counts[kCourseDetailUrl] == 1);
+    CHECK(http_client.request_counts[kCourseDetailUrl] == 0);
     CHECK(http_client.request_counts[kSignUrl] == 0);
 }
 

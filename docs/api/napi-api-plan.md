@@ -12,10 +12,12 @@ NAPI 层是 Harmony ArkUI 调用 UBAANext Core 的边界。它不重新实现校
 
 当前 C ABI 已不只是 version/capability 骨架，`UBAANextBindingsC` / `ubaanext_c` 已包含：
 
-- version 与 capability。
+- version 与 capability，其中 JSON envelope 版本使用 camelCase capability 字段供 ArkTS 直接映射。
 - context 生命周期和 connection mode。
-- 认证/会话实验接口。
+- mock/offline login、whoami/session state 与 logout 基础。
 - 学期、周次、课表、成绩、考试、Todo、签到今日、YGDK 概览/记录等只读实验接口。
+- FeatureRecord 通用只读投影接口，复用 Core `FeatureService` 路由到 evaluation、SPOC、Judge、BYKC、CGYY、LibBook 等已迁移 typed service；NAPI 可先将其作为只读列表/详情桥接，不得把它扩展成写通道。
+- TD 本地只读投影：status、user list、count cache；这些接口不刷新远端计数、不上传图片、不执行打卡。
 - gated 的 `signin do` 实验接口。
 
 NAPI 第一阶段应从这些 C ABI/native SDK 能力上做薄封装；不得在 ArkTS 侧重写协议、parser、redaction 或 write gate。
@@ -101,14 +103,35 @@ NAPI 不得过滤掉这类记录；ArkUI 应将其展示为局部失败提示，
 
 ```ts
 function getVersion(): string;
+function getVersionInfo(): UbaaEnvelope<{ version: string }>;
 function getCapabilities(): UbaaCapabilities;
 ```
 
-这两个接口不应触发远端 I/O、本地写入或登录恢复。
+这三个接口不应触发远端 I/O、本地写入或登录恢复。`getCapabilities()` 可由 C ABI struct 或 `ubaanext_capabilities()` envelope 映射；ArkTS 不解析 CLI 文本。
 
 ### Context 与 connection mode
 
 NAPI 内部应持有 C ABI context，并提供受控初始化/释放生命周期。可暴露有限 mode 设置：`mock`、`direct`、`vpn`/`webvpn`。非法 mode 映射为 `InvalidArgument` 或内部等价 `UbaaError`，不泄露 C 指针。
+
+### 登录与会话
+
+第一阶段只把会话合同打通到 native 边界：
+
+```ts
+interface SessionInfo {
+  active: boolean;
+  mode: 'mock' | 'direct' | 'webvpn';
+  account: { studentId: string; displayName: string } | null;
+}
+
+function login(username: string, password: string, captcha?: string): Promise<{ account: SessionInfo['account'] }>;
+function whoami(): Promise<SessionInfo>;
+function getSessionState(): Promise<SessionInfo>;
+function restoreSession(): Promise<{ active: true; account: SessionInfo['account'] }>;
+function logout(): Promise<{ active: false }>;
+```
+
+Mock mode 的 `login` 只验证 native 合同和本地 session 投影，不证明真实 CAS 语义。非 mock mode 的真实登录必须 fail-closed：平台缺少 `liveLogin` 或 `cookiePersistence` 时返回 `UnsupportedPlatform`，不得让 Harmony 缺失安全/持久化存储时假装保存成功。
 
 ### Typed readonly service
 
@@ -122,6 +145,21 @@ NAPI 内部应持有 C ABI context，并提供受控初始化/释放生命周期
 - CGYY sites/purpose-types/day-info/orders/order detail/lock-code。
 - LibrarySeat libraries/areas/seats/reservations/area detail。
 - YGDK overview/records。
+- TD status/users/count cache 本地只读投影。
+
+在 typed wrapper 逐项稳定前，NAPI 可先暴露只读 FeatureRecord 通用投影：
+
+```ts
+interface FeatureQuery {
+  domain: 'evaluation' | 'spoc' | 'judge' | 'bykc' | 'cgyy' | 'libbook' | 'signin' | 'ygdk' | 'announcement' | 'app';
+  operation: string;
+}
+
+function listFeatures(query: FeatureQuery): Promise<FeatureRecord[]>;
+function showFeature(query: FeatureQuery & { id?: string }): Promise<FeatureRecord>;
+```
+
+`listFeatures`/`showFeature` 仅映射 C ABI `ubaanext_feature_list(...)` 与 `ubaanext_feature_show(...)` 的只读投影。它适合让 Harmony MVP 消费已经迁移但尚未逐个 typed wrapper 化的服务；后续 typed API 稳定后可以逐步替换为具体函数。NAPI 不得通过该接口调用 `FeatureService::mutate(...)` 或真实写操作。
 
 所有可能触发网络、文件或 secure store 的 API 均返回 `Promise<T>`。NAPI 内部不得阻塞 ArkUI 主线程；取消、超时和 session expired 必须映射为稳定错误码。
 
@@ -143,7 +181,10 @@ NAPI 第一阶段 smoke 只允许覆盖：
 
 - version。
 - capability object 字段完整且为 boolean。
+- mock context 下的 login/whoami/session state。
 - mock context 下的一两个只读 API，例如 terms/todos。
+- mock context 下通过 `listFeatures(...)` 覆盖 evaluation、SPOC、Judge、BYKC、CGYY、LibBook 的 FeatureRecord envelope。
+- TD 本地只读投影在空 store 下返回空数组 envelope。
 - JSON envelope / `UbaaError` 映射。
 - partial failure item 不被过滤。
 

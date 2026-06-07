@@ -73,15 +73,19 @@ TEST_CASE("Core CMake 不链接平台库", "[boundary][platform]") {
     }
 }
 
-TEST_CASE("CLI real platform context does not use plaintext session store", "[boundary][platform][cli]") {
+TEST_CASE("CLI real platform context makes plaintext credential fallback explicit", "[boundary][platform][cli]") {
     const auto text = read_text(std::filesystem::path(source_root()) / "apps" / "cli" / "src" / "PlatformContextFactory.cpp");
     const auto mock_return = text.find("return ctx;\n    }\n#endif");
     REQUIRE(mock_return != std::string::npos);
     const auto real_branch = text.substr(mock_return);
 
-    CHECK(real_branch.find("std::make_unique<PlainFileStore>") == std::string::npos);
     CHECK(real_branch.find("UnsupportedHttpClient") == std::string::npos);
     CHECK(real_branch.find("CurlNetworkStack") != std::string::npos);
+    CHECK(real_branch.find("LocalEncryptedFileStore") != std::string::npos);
+    CHECK(real_branch.find("std::make_unique<PlainFileStore>") != std::string::npos);
+    CHECK(real_branch.find("credential_persistence_secure = false") != std::string::npos);
+    CHECK(real_branch.find("credential_persistence_plaintext_fallback = true") != std::string::npos);
+    CHECK(real_branch.find("ctx.capabilities.secure_store = ctx.credential_persistence_secure") != std::string::npos);
 }
 
 TEST_CASE("C ABI capability struct keeps reserved bytes zeroed", "[boundary][abi]") {
