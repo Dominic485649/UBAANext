@@ -136,6 +136,42 @@ nlohmann::json get_help_json() {
 #endif
         option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
     });
+    add_command(commands, "live resources", "按日期搜索课堂资源，支持从课表过滤", json{
+        option("--date", "日期，格式 yyyy-MM-dd", true, "yyyy-MM-dd"),
+        option("--from-course", "仅保留能与当天课表匹配的课堂资源", false),
+        option("--status", "资源状态过滤: live|playback|generating|all；默认 all", false, "status"),
+        option("--page", "分页页码，默认 1", false, "n"),
+        option("--size", "分页大小，默认 20，最大 200", false, "n"),
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
+    add_command(commands, "live detail", "显示课堂资源详情、视频 URL 与 PPT GUID 候选", json{
+        option("--course-id", "课堂资源课程 ID，来自 live resources 输出 fields.courseId", true, "course-id", "live resources", "fields.courseId"),
+        option("--sub-id", "课堂资源子 ID，来自 live resources 输出 fields.subId", true, "sub-id", "live resources", "fields.subId"),
+        option("--date", "可选日期，帮助后端定位资源", false, "yyyy-MM-dd"),
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
+    add_command(commands, "live download", "下载课堂资源 PPTX 和/或视频到本地目录", json{
+        option("--date", "按日期批量下载课堂资源；与 --course-id/--sub-id 二选一", false, "yyyy-MM-dd"),
+        option("--course-id", "单个课堂资源课程 ID", false, "course-id", "live resources", "fields.courseId"),
+        option("--sub-id", "单个课堂资源子 ID", false, "sub-id", "live resources", "fields.subId"),
+        option("--out-dir", "输出目录", true, "dir"),
+        option("--guid", "优先尝试的 PPT GUID", false, "guid", "live detail", "fields.pptResourceGuid"),
+        option("--alt-guids", "逗号分隔的备用 PPT GUID", false, "guid1,guid2"),
+        option("--include", "下载内容: ppt,video,all；默认 ppt,video", false, "ppt,video"),
+        option("--from-course", "按日期批量时仅保留当天课表匹配项", false),
+        option("--status", "按日期批量时的状态过滤: live|playback|generating|all；默认 all", false, "status"),
+        option("--overwrite", "允许覆盖同名输出文件", false),
+#if UBAANEXT_ENABLE_MOCKS
+        option("--mock", "使用模拟数据", false),
+#endif
+        option("--mode", "连接模式: vpn|direct", false, "vpn|direct"),
+    });
     add_command(commands, "file roots", "显示北航云盘文档库根目录；root-id 来自输出记录 id 字段", json{
         option("--root", "根目录类型过滤: all|user|shared|department|group；默认 all", false, "all|user|shared|department|group"),
 #if UBAANEXT_ENABLE_MOCKS
@@ -322,6 +358,12 @@ nlohmann::json get_help_json() {
         option("--confirm", "确认本地图片写入；也可用 --yes 或 -y", true),
     });
     add_command(commands, "td image list", "列出本地 TD 图片");
+    add_command(commands, "td image delete", "删除本地 TD 图片；被 TD 用户引用时默认拒绝", json{
+        option("name", "图片文件名位置参数；来自 td image list 输出记录 id 字段", true, "image-name", "td image list", "id"),
+        option("--name", "图片文件名", false, "image-name", "td image list", "id"),
+        option("--force", "允许删除仍被 TD 用户引用的图片", false),
+        option("--confirm", "确认本地图片删除；也可用 --yes 或 -y", true),
+    });
     add_command(commands, "td user add", "添加 TD 用户；支持 --quick 沙河/学院路 或显式机器与图片参数", json{
         option("student-id", "学号位置参数；也可用 --student-id", true, "student-id"),
         option("--student-id", "学号", false, "student-id"),
@@ -629,6 +671,13 @@ void print_usage() {
     Console::println("  user info                                显示用户信息");
     Console::println("  live week --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>");
     Console::println("                                           显示课堂直播周课表；通常使用教学周周一到周日日期");
+    Console::println("  live resources --date <yyyy-MM-dd> [--from-course] [--status live|playback|generating|all]");
+    Console::println("                                           按日期搜索课堂资源；资源 courseId/subId 在详情字段中");
+    Console::println("  live detail --course-id <id> --sub-id <id> [--date <yyyy-MM-dd>]");
+    Console::println("                                           显示视频 URL、PPT GUID 候选和课堂资源详情");
+    Console::println("  live download --date <yyyy-MM-dd> --out-dir <dir> [--include ppt,video] [--overwrite]");
+    Console::println("  live download --course-id <id> --sub-id <id> --out-dir <dir> [--guid <guid>] [--alt-guids <csv>]");
+    Console::println("                                           下载 PPTX/视频；HLS 无法合并时写入 .m3u8.url sidecar");
     Console::println("  file roots [--root all|user|shared|department|group]");
     Console::println("                                           显示北航云盘文档库根目录；docid 在输出记录的 id 字段");
     Console::println("  file root                                显示北航云盘个人文档库根目录");
@@ -764,6 +813,8 @@ void print_usage() {
     Console::println("  td image add <path> [--name <name>] [--overwrite] [-y|--confirm|--yes]");
     Console::println("                                           添加本地 TD 图片；不会上传到 TD 服务器");
     Console::println("  td image list                            列出本地 TD 图片");
+    Console::println("  td image delete <name> [--force] [-y|--confirm|--yes]");
+    Console::println("                                           删除本地 TD 图片；被用户引用时默认拒绝，--force 才允许");
     Console::println("  td user add <student-id> --quick <沙河|学院路> [-y|--confirm|--yes]");
     Console::println("                                           快速添加 TD 用户；需要先用 td image add 准备图片");
     Console::println("  td user add <student-id> --entrance <id> --exit <id> --entrance-image <name> --exit-image <name> [-y|--confirm|--yes]");

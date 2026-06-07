@@ -107,6 +107,9 @@ cmake --build --preset linux-ninja-release --target ubaa
 .\bin\x64\Debug\ubaa.exe term list --mock --json
 .\bin\x64\Debug\ubaa.exe week list --mock --json
 .\bin\x64\Debug\ubaa.exe live week --mock --start-date 2026-06-01 --end-date 2026-06-07 --json
+.\bin\x64\Debug\ubaa.exe live resources --mock --date 2026-06-01 --json
+.\bin\x64\Debug\ubaa.exe live detail --mock --course-id mock-course-1 --sub-id mock-sub-1 --json
+.\bin\x64\Debug\ubaa.exe live download --mock --course-id mock-course-1 --sub-id mock-sub-1 --out-dir .\tmp\live --json
 .\bin\x64\Debug\ubaa.exe file roots --mock --root user --json
 .\bin\x64\Debug\ubaa.exe file list --mock --id cloud-root-user --json
 .\bin\x64\Debug\ubaa.exe signin schedule --mock --date 2026-06-01 --json
@@ -117,7 +120,7 @@ cmake --build --preset linux-ninja-release --target ubaa
 
 不加 `--json` 时，CLI 默认输出面向终端阅读的 PowerShell 风格表格：包含标题、列名、分隔线和对齐后的数据行。列表类命令会显式显示 `Id` 列，例如 `spoc assignments`、`signin today`、`bykc courses`、`cgyy sites`、`libbook seats`、`evaluation list`；后续命令里的 `<...-id>` 参数应从对应表格的 `Id` 列取得。脚本、GUI 或需要稳定机器解析的场景应继续使用 `--json`，JSON 输出合同不随文本排版变化。
 
-`master` 当前已按 `reference/buaa-api` 补齐 Cloud、SPOC、Signin、SRS、Evaluation/TES、WiFi 等 typed Core/CLI 能力。Cloud 已从只读扩展到目录、重命名、移动、复制、删除、回收站、分享、下载 URL、秒传、小文件上传和 20MiB 分片上传；`file upload --parent-id <docid> --path <path> [--name <name>] [--token <share-token>] -y` 为真实云盘上传入口。SRS、BYKC、Signin、Evaluation、SPOC 作业提交、WiFi 登录/登出等真实写操作仍必须逐条确认，默认 smoke 不自动执行。TD、C ABI/NAPI、HarmonyOS 和 Slint 仍按各自阶段文档推进。
+`master` 当前已按 `reference/buaa-api`、`reference/UBAA`、`reference/BBUAA` 和 `autotd-buaa 0.1.15` 补齐 Cloud、SPOC、Signin、SRS、Evaluation/TES、WiFi、课堂资源下载和 TD 图片管理等 typed Core/CLI 能力。Cloud 已从只读扩展到目录、重命名、移动、复制、删除、回收站、分享、下载 URL、秒传、小文件上传和 20MiB 分片上传；`file upload --parent-id <docid> --path <path> [--name <name>] [--token <share-token>] -y` 为真实云盘上传入口。`live resources/detail/download` 用课堂资源语义按日期或 course/sub ID 发现并下载 PPTX/视频；HLS 视频会尝试 `ffmpeg` 合并，失败时写入 `.m3u8.url` sidecar。SRS、BYKC、Signin、Evaluation、SPOC 作业提交、WiFi 登录/登出等真实写操作仍必须逐条确认，默认 smoke 不自动执行。TD、C ABI/NAPI、HarmonyOS 和 Slint 仍按各自阶段文档推进。
 
 涉及真实校园系统写入或本地状态变更的命令（例如签到、选课、退选、场馆预约、取消预约、图书馆座位预约、阳光打卡、评教、登出、配置写入和缓存清理）会改变真实状态。CLI 在 Windows、Linux、Harmony 平台默认具备写能力，但每条写命令仍必须传入 `--confirm`、`--yes`、`-y`，或在未传确认参数时按提示输入 `y`；自动化脚本和 `--json` 模式应始终显式传确认参数，否则会返回 `InvalidArgument`。执行写命令前应先用列表/详情命令确认 `<...-id>` 来源与目标记录。
 
@@ -139,6 +142,7 @@ cmake --build --preset linux-ninja-release --target ubaa
 - [Windows CLI](docs/apps/windows-cli.md)
 - [Linux CLI](docs/apps/linux-cli.md)
 - [buaa-api 迁移矩阵](docs/reports/buaa-api-migration-matrix.md)
+- [Reference 差异矩阵](docs/reports/reference-diff-matrix.md)
 - [版本号规范](docs/release/versioning.md)
 - [测试策略](docs/testing/test-strategy.md)
 

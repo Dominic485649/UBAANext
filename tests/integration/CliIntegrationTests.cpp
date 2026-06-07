@@ -176,6 +176,14 @@ void require_mutation_contract(const nlohmann::json &json) {
     require_feature_record(json["data"]["result"]);
 }
 
+[[nodiscard]] std::string read_binary_prefix(const std::filesystem::path &path, std::size_t length) {
+    std::ifstream input(path, std::ios::binary);
+    std::string bytes(length, '\0');
+    input.read(bytes.data(), static_cast<std::streamsize>(length));
+    bytes.resize(static_cast<std::size_t>(input.gcount()));
+    return bytes;
+}
+
 } // namespace
 
 TEST_CASE("CLI version 命令", "[cli][integration]") {
@@ -207,6 +215,9 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "term list",
         "week list",
         "live week",
+        "live resources",
+        "live detail",
+        "live download",
         "capability show",
         "grade list",
         "grade all",
@@ -297,6 +308,7 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "td init",
         "td image add",
         "td image list",
+        "td image delete",
         "td user add",
         "td user list",
         "td user show",
@@ -384,6 +396,7 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "help --json 输出机器可读命令目录",
         "relogin [-y|--confirm|--yes]",
         "td image add <path>",
+        "td image delete <name>",
         "td user add <student-id> --quick",
         "td count [student-id] --refresh",
         "td run --once",
@@ -391,6 +404,8 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         "td scheduler clear-errors",
         "td scheduler watch",
         "live week --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>",
+        "live resources --date <yyyy-MM-dd>",
+        "live download --date <yyyy-MM-dd> --out-dir <dir>",
         "spoc schedule --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>",
         "spoc homework submit --id <assignment-id>",
         "signin schedule --date <yyyy-MM-dd>",
@@ -667,6 +682,9 @@ TEST_CASE("CLI v0.4 golden help contract", "[cli][integration][golden]") {
     CHECK(contains_name("signin schedule"));
     CHECK(contains_name("signin courses"));
     CHECK(contains_name("signin course schedule"));
+    CHECK(contains_name("live resources"));
+    CHECK(contains_name("live detail"));
+    CHECK(contains_name("live download"));
     CHECK(contains_name("wifi login"));
     CHECK(contains_name("wifi logout"));
     CHECK(contains_name("file roots"));
@@ -699,6 +717,7 @@ TEST_CASE("CLI v0.4 golden help contract", "[cli][integration][golden]") {
     CHECK(contains_name("srs course preselect"));
     CHECK(contains_name("srs course select"));
     CHECK(contains_name("srs course drop"));
+    CHECK(contains_name("td image delete"));
 
     auto duplicate = std::adjacent_find(names.begin(), names.end());
     std::sort(names.begin(), names.end());
@@ -879,6 +898,12 @@ TEST_CASE("CLI TD 本地子命令保持无真实网络并遵守确认边界", "[
     require_mutation_contract(user_add_json);
     CHECK(user_add_json["data"]["result"]["id"] == "2023123456");
 
+    auto image_delete_referenced = run_cli({"td", "image", "delete", "entrance.jpg", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(image_delete_referenced.exit_code == 2);
+    auto image_delete_referenced_json = parse_json_output(image_delete_referenced.stdout_output);
+    require_error_envelope(image_delete_referenced_json);
+    CHECK(image_delete_referenced_json["error"]["message"].get<std::string>().find("引用") != std::string::npos);
+
     auto user_list = run_cli({"td", "user", "list", "--json"}, app_data_dir);
     REQUIRE(user_list.exit_code == 0);
     auto user_list_json = parse_json_output(user_list.stdout_output);
@@ -939,6 +964,12 @@ TEST_CASE("CLI TD 本地子命令保持无真实网络并遵守确认边界", "[
     auto user_delete_json = parse_json_output(user_delete.stdout_output);
     require_mutation_contract(user_delete_json);
     CHECK(user_delete_json["data"]["result"]["status"] == "deleted");
+
+    auto image_delete = run_cli({"td", "image", "delete", "entrance.jpg", "--confirm", "--json"}, app_data_dir);
+    REQUIRE(image_delete.exit_code == 0);
+    auto image_delete_json = parse_json_output(image_delete.stdout_output);
+    require_mutation_contract(image_delete_json);
+    CHECK(image_delete_json["data"]["result"]["id"] == "entrance.jpg");
 }
 
 TEST_CASE("CLI TD scheduler 子命令使用 mock 客户端并写入状态", "[cli][integration][td]") {
@@ -1097,6 +1128,8 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
         {"file", "size", "--mock", "--id", "cloud-file-1", "--token", "share-token", "--json"},
         {"file", "recycle", "--mock", "--json"},
         {"file", "shares", "--mock", "--json"},
+        {"live", "resources", "--mock", "--date", "2026-06-01", "--json"},
+        {"live", "detail", "--mock", "--course-id", "mock-course-1", "--sub-id", "mock-sub-1", "--json"},
     };
 
     for (const auto &command : commands) {
@@ -1109,11 +1142,53 @@ TEST_CASE("CLI 新增只读命令 mock smoke", "[cli][integration]") {
     }
 }
 
+TEST_CASE("CLI live download mock 生成 PPTX/视频并遵守 overwrite", "[cli][integration][live]") {
+    const auto app_data_dir = make_app_data_dir();
+    const auto out_dir = std::filesystem::path(app_data_dir) / "downloads";
+
+    auto result = run_cli({"live", "download", "--mock",
+                           "--course-id", "mock-course-1",
+                           "--sub-id", "mock-sub-1",
+                           "--out-dir", out_dir.string(),
+                           "--json"},
+                          app_data_dir);
+    INFO(result.stdout_output);
+    REQUIRE(result.exit_code == 0);
+    auto json = parse_json_output(result.stdout_output);
+    require_records_contract(json, "downloads");
+    const auto &fields = json["data"]["downloads"][0]["fields"];
+    const auto pptx_path = std::filesystem::path(fields["pptxPath"].get<std::string>());
+    const auto video_path = std::filesystem::path(fields["videoPath"].get<std::string>());
+
+    REQUIRE(std::filesystem::exists(pptx_path));
+    REQUIRE(std::filesystem::exists(video_path));
+    CHECK(read_binary_prefix(pptx_path, 2) == "PK");
+
+    auto duplicate = run_cli({"live", "download", "--mock",
+                              "--course-id", "mock-course-1",
+                              "--sub-id", "mock-sub-1",
+                              "--out-dir", out_dir.string(),
+                              "--json"},
+                             app_data_dir);
+    CHECK(duplicate.exit_code == 2);
+
+    auto overwrite = run_cli({"live", "download", "--mock",
+                              "--course-id", "mock-course-1",
+                              "--sub-id", "mock-sub-1",
+                              "--out-dir", out_dir.string(),
+                              "--overwrite",
+                              "--json"},
+                             app_data_dir);
+    INFO(overwrite.stdout_output);
+    CHECK(overwrite.exit_code == 0);
+}
+
 TEST_CASE("CLI 有副作用命令需要 confirm", "[cli][integration]") {
     const std::vector<std::vector<std::string>> commands = {
         {"logout", "--json"},
         {"config", "set", "--key", "mode", "--value", "direct", "--json"},
         {"cache", "clear", "--json"},
+        {"td", "image", "delete", "td.jpg", "--json"},
         {"spoc", "homework", "submit", "--mock", "--id", "spoc-1", "--course-id", "course-1", "--file-id", "file-1", "--name", "report.pdf", "--json"},
         {"wifi", "login", "--mock", "--username", "20260000", "--password", "secret", "--json"},
         {"wifi", "logout", "--mock", "--username", "20260000", "--json"},
@@ -1305,6 +1380,7 @@ TEST_CASE("CLI JSON contract mock smoke", "[cli][integration]") {
         {{"cgyy", "sites", "--mock", "--json"}, "sites"},
         {{"libbook", "libraries", "--mock", "--json"}, "libraries"},
         {{"live", "week", "--mock", "--start-date", "2026-06-01", "--end-date", "2026-06-07", "--json"}, "schedules"},
+        {{"live", "resources", "--mock", "--date", "2026-06-01", "--json"}, "resources"},
         {{"file", "roots", "--mock", "--json"}, "cloudRoots"},
         {{"file", "list", "--mock", "--id", "cloud-root-user", "--json"}, "cloudFiles"},
         {{"file", "recycle", "--mock", "--json"}, "cloudRecycle"},
@@ -1448,8 +1524,8 @@ TEST_CASE("CLI 博雅签到要求显式课程和签到类型", "[cli][integratio
     REQUIRE(json["error"]["code"] == "InvalidArgument");
 }
 
-TEST_CASE("CLI 公告真实模式返回稳定空列表", "[cli][integration]") {
-    auto result = run_cli({"app", "announcement", "--json"});
+TEST_CASE("CLI 公告默认使用 mock 避免真实网络", "[cli][integration]") {
+    auto result = run_cli({"app", "announcement", "--mock", "--json"});
     REQUIRE(result.exit_code == 0);
 
     auto json = parse_json_output(result.stdout_output);

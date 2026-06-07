@@ -81,7 +81,9 @@ $env:UBAANEXT_PASSWORD = '<password>'
 .\tools\live-smoke.ps1 -Level L1
 ```
 
-L1 只运行读取类命令；任何未标记为跳过的读取命令失败都必须使 runner 失败，不能作为“已知失败”静默通过。当前 runner 覆盖 term/week/course/exam/grade/app/todo/SPOC/Judge/signin/YGDK、BYKC `profile/courses/chosen/stats`、direct-only CGYY `sites/orders/order lock-code`、LibrarySeat `libraries/reservations`。L2/L3 写操作需要额外环境变量和用户手动指定具体命令；runner 不自动执行真实写操作。
+L1 只运行读取类命令；任何未标记为跳过的读取命令失败都必须使 runner 失败，不能作为“已知失败”静默通过。当前 runner 覆盖 term/week/course/exam/grade/app/todo/SPOC/Judge/signin/YGDK、BYKC `profile/courses/chosen/stats`、direct-only CGYY `sites/orders/order lock-code`、LibrarySeat `libraries/reservations`，以及课堂资源 `live week/resources/detail`。课堂资源真实下载默认跳过；需设置 `UBAANEXT_LIVE_DOWNLOAD=1`，并用 `UBAANEXT_LIVE_DOWNLOAD_INCLUDE=ppt` 或 `ppt,video` 控制范围。L2/L3 写操作需要额外环境变量和用户手动指定具体命令；runner 不自动执行真实写操作。
+
+课堂资源 smoke 报告必须区分：缺少凭据、校园网/后端不可达、指定日期资源为空、资源缺少 PPT GUID、视频是 HLS 但本机没有 `ffmpeg`、下载后只生成 `.m3u8.url` sidecar、以及本地临时目录清理失败。默认 `ctest` 不访问真实课堂资源后端。
 
 ## Mock 策略
 

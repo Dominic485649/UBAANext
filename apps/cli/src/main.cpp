@@ -14,6 +14,9 @@
  *   course date --date <yyyy-MM-dd> [--mock] [--mode vpn|direct] [--json]
  *   course week --week <n> [--mock] [--mode vpn|direct] [--json]
  *   live week --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd> [--mock] [--mode vpn|direct] [--json]
+ *   live resources --date <yyyy-MM-dd> [--from-course] [--status live|playback|generating|all] [--mock] [--json]
+ *   live detail --course-id <id> --sub-id <id> [--date <yyyy-MM-dd>] [--mock] [--json]
+ *   live download --date <yyyy-MM-dd> --out-dir <dir> [--include ppt,video] [--overwrite] [--mock] [--json]
  *   file roots [--root all|user|shared|department|group] [--mock] [--mode vpn|direct] [--json]
  *   file root [--mock] [--mode vpn|direct] [--json]
  *   file list --id <docid> [--token <share-token>] [--mock] [--mode vpn|direct] [--json]
@@ -32,6 +35,7 @@
  *   td init [--confirm] [--json]
  *   td image add <path> [--name <name>] [--overwrite] [--confirm] [--json]
  *   td image list [--json]
+ *   td image delete <name> [--force] [--confirm] [--json]
  *   td user add <student-id> --quick <沙河|学院路> [--card-id <id>] [--confirm] [--json]
  *   td user add <student-id> --entrance <id> --exit <id> --entrance-image <name> --exit-image <name> [--confirm] [--json]
  *   td user list|show|delete [<student-id>] [--confirm] [--json]
@@ -57,8 +61,11 @@
 
 #include <UBAANext/Version.hpp>
 #include <UBAANext/Auth/SessionContext.hpp>
+#include <UBAANext/Model/Course.hpp>
 #include <UBAANext/Model/FeatureRecord.hpp>
+#include <UBAANext/Model/Live.hpp>
 #include <UBAANext/Model/Td.hpp>
+#include <UBAANext/Parser/LiveParser.hpp>
 #include <UBAANext/Platform/Tcp/TdTcpTransport.hpp>
 #include <UBAANext/Protocol/TdClient.hpp>
 #include <UBAANext/Service/TdSchedulerService.hpp>
@@ -70,6 +77,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -154,6 +162,7 @@ struct CliArgs {
     std::string term;
     std::string id;
     std::string course_id;
+    std::string sub_id;
     std::string assignment_id;
     std::string area_id;
     std::string library_id;
@@ -183,6 +192,10 @@ struct CliArgs {
     std::string segment;
     std::string sections;
     std::string input;
+    std::string out_dir;
+    std::string include;
+    std::string guid;
+    std::string alt_guids;
     int page = 1;
     int size = 20;
     bool all = false;
@@ -221,6 +234,8 @@ struct CliArgs {
     int poll_seconds = 0;
     int share_limit = -1;
     bool overwrite = false;
+    bool force = false;
+    bool from_course = false;
     bool once = false;
     bool refresh = false;
     std::string error_message;  // 详细的错误信息
@@ -409,6 +424,8 @@ CliArgs parse_args(int argc, char *argv[]) {
             read_string_option(argc, argv, i, "--id", args.id, args);
         } else if (arg == "--course-id") {
             read_string_option(argc, argv, i, "--course-id", args.course_id, args);
+        } else if (arg == "--sub-id") {
+            read_string_option(argc, argv, i, "--sub-id", args.sub_id, args);
         } else if (arg == "--assignment-id") {
             read_string_option(argc, argv, i, "--assignment-id", args.assignment_id, args);
         } else if (arg == "--area-id") {
@@ -454,6 +471,8 @@ CliArgs parse_args(int argc, char *argv[]) {
             args.all = true;
         } else if (arg == "--status") {
             read_string_option(argc, argv, i, "--status", args.status, args);
+        } else if (arg == "--from-course") {
+            args.from_course = true;
         } else if (arg == "--category") {
             read_string_option(argc, argv, i, "--category", args.category, args);
         } else if (arg == "--sub-category" || arg == "--subcategory") {
@@ -643,6 +662,8 @@ CliArgs parse_args(int argc, char *argv[]) {
             }
         } else if (arg == "--overwrite") {
             args.overwrite = true;
+        } else if (arg == "--force") {
+            args.force = true;
         } else if (arg == "--once") {
             args.once = true;
         } else if (arg == "--refresh") {
@@ -669,6 +690,14 @@ CliArgs parse_args(int argc, char *argv[]) {
             read_string_option(argc, argv, i, "--sections", args.sections, args);
         } else if (arg == "--input") {
             read_string_option(argc, argv, i, "--input", args.input, args);
+        } else if (arg == "--out-dir") {
+            read_string_option(argc, argv, i, "--out-dir", args.out_dir, args);
+        } else if (arg == "--include") {
+            read_string_option(argc, argv, i, "--include", args.include, args);
+        } else if (arg == "--guid") {
+            read_string_option(argc, argv, i, "--guid", args.guid, args);
+        } else if (arg == "--alt-guids") {
+            read_string_option(argc, argv, i, "--alt-guids", args.alt_guids, args);
         } else if (arg == "--include-expired") {
             args.include_expired = true;
         } else if (arg == "--include-history") {
@@ -740,6 +769,9 @@ CliArgs parse_args(int argc, char *argv[]) {
             args.parse_error = true;
         } else if (args.command == "td" && args.subcommand == "image" && args.action == "add" && args.photo_path.empty()) {
             args.photo_path = arg;
+        } else if (args.command == "td" && args.subcommand == "image" &&
+                   (args.action == "delete" || args.action == "remove") && args.image_name.empty()) {
+            args.image_name = arg;
         } else if (args.command == "td" && args.student_id.empty() &&
                    (args.subcommand == "count" ||
                     (args.subcommand == "user" && (args.action == "add" || args.action == "show" || args.action == "delete" || args.action == "count")))) {
@@ -947,7 +979,13 @@ bool command_requires_session(const CliArgs &args) {
         return args.subcommand == "list";
     }
     if (args.command == "live") {
-        return args.subcommand == "week" && !args.start_date.empty() && !args.end_date.empty();
+        if (args.subcommand == "week") return !args.start_date.empty() && !args.end_date.empty();
+        if (args.subcommand == "resources") return !args.date.empty();
+        if (args.subcommand == "detail") return !args.course_id.empty() && !args.sub_id.empty();
+        if (args.subcommand == "download") {
+            return (!args.date.empty()) || (!args.course_id.empty() && !args.sub_id.empty());
+        }
+        return false;
     }
     if (args.command == "file") {
         return args.subcommand == "roots" || args.subcommand == "root" ||
@@ -1327,6 +1365,579 @@ ExitCode cmd_live_week(const CliArgs &args, ServiceFactory &factory, OutputForma
     }
     save_real_cookies(factory);
     out.print_records("schedules", *result);
+    return ExitCode::Ok;
+}
+
+[[nodiscard]] std::string trim_ascii(std::string text) {
+    auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
+    text.erase(text.begin(), std::find_if(text.begin(), text.end(), not_space));
+    text.erase(std::find_if(text.rbegin(), text.rend(), not_space).base(), text.end());
+    return text;
+}
+
+[[nodiscard]] std::string lowercase_ascii_copy(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return text;
+}
+
+[[nodiscard]] std::vector<std::string> split_live_csv_values(const std::string &text) {
+    std::vector<std::string> values;
+    std::string current;
+    for (char ch : text) {
+        if (ch == ',') {
+            auto value = trim_ascii(std::move(current));
+            if (!value.empty()) values.push_back(std::move(value));
+            current.clear();
+        } else {
+            current.push_back(ch);
+        }
+    }
+    auto value = trim_ascii(std::move(current));
+    if (!value.empty()) values.push_back(std::move(value));
+    return values;
+}
+
+[[nodiscard]] std::string join_values(const std::vector<std::string> &values, std::string_view delimiter = ",") {
+    std::string out;
+    for (const auto &value : values) {
+        if (!out.empty()) out.append(delimiter);
+        out.append(value);
+    }
+    return out;
+}
+
+[[nodiscard]] bool is_valid_live_status(const std::string &status) {
+    if (status.empty()) return true;
+    const auto normalized = lowercase_ascii_copy(status);
+    return normalized == "all" || normalized == "live" || normalized == "playback" || normalized == "generating";
+}
+
+[[nodiscard]] bool parse_live_include(const std::string &text, bool &include_ppt, bool &include_video, std::string &error) {
+    include_ppt = text.empty();
+    include_video = text.empty();
+    const auto values = split_live_csv_values(text.empty() ? "ppt,video" : text);
+    if (values.empty()) {
+        error = "--include 只支持 ppt,video,all";
+        return false;
+    }
+    for (const auto &raw : values) {
+        const auto value = lowercase_ascii_copy(raw);
+        if (value == "all") {
+            include_ppt = true;
+            include_video = true;
+        } else if (value == "ppt" || value == "pptx" || value == "slides") {
+            include_ppt = true;
+        } else if (value == "video" || value == "mp4" || value == "hls") {
+            include_video = true;
+        } else {
+            error = "--include 只支持 ppt,video,all";
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] std::string live_safe_component(std::string text, std::size_t max_len = 80) {
+    std::string out;
+    out.reserve(text.size());
+    bool last_underscore = false;
+    for (unsigned char ch : text) {
+        const bool keep = std::isalnum(ch) || ch == '-' || ch == '_' || ch == '.';
+        char next = keep ? static_cast<char>(ch) : '_';
+        if (next == '_') {
+            if (last_underscore) continue;
+            last_underscore = true;
+        } else {
+            last_underscore = false;
+        }
+        out.push_back(next);
+        if (out.size() >= max_len) break;
+    }
+    while (!out.empty() && (out.back() == '_' || out.back() == '.')) out.pop_back();
+    while (!out.empty() && (out.front() == '_' || out.front() == '.')) out.erase(out.begin());
+    return out.empty() ? "resource" : out;
+}
+
+[[nodiscard]] std::string live_download_base_name(const um::Model::LiveResourceDetail &detail, const std::string &date) {
+    std::vector<std::string> parts;
+    if (!date.empty()) parts.push_back(date);
+    parts.push_back(detail.title.empty() ? "classroom" : detail.title);
+    if (!detail.course_id.empty()) parts.push_back(detail.course_id);
+    if (!detail.sub_id.empty()) parts.push_back(detail.sub_id);
+
+    std::string base;
+    for (const auto &part : parts) {
+        const auto safe = live_safe_component(part);
+        if (safe.empty()) continue;
+        if (!base.empty()) base.push_back('_');
+        base.append(safe);
+    }
+    return base.empty() ? "classroom_resource" : base;
+}
+
+[[nodiscard]] um::Result<void> ensure_output_dir(const std::filesystem::path &dir) {
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) return um::make_error(um::ErrorCode::StorageError, "无法创建输出目录: " + ec.message());
+    if (!std::filesystem::is_directory(dir, ec)) {
+        return um::make_error(um::ErrorCode::InvalidArgument, "--out-dir 不是目录");
+    }
+    return {};
+}
+
+[[nodiscard]] um::Result<void> write_binary_checked(const std::filesystem::path &path,
+                                                    const std::vector<std::uint8_t> &bytes,
+                                                    bool overwrite) {
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec) && !overwrite) {
+        return um::make_error(um::ErrorCode::InvalidArgument, "目标文件已存在，需 --overwrite: " + path.string());
+    }
+    std::filesystem::create_directories(path.parent_path(), ec);
+    if (ec) return um::make_error(um::ErrorCode::StorageError, "无法创建输出目录: " + ec.message());
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) return um::make_error(um::ErrorCode::StorageError, "无法写入文件: " + path.string());
+    if (!bytes.empty()) {
+        output.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    }
+    if (!output) return um::make_error(um::ErrorCode::StorageError, "写入文件失败: " + path.string());
+    return {};
+}
+
+[[nodiscard]] um::Result<void> write_text_checked(const std::filesystem::path &path,
+                                                  const std::string &text,
+                                                  bool overwrite) {
+    std::vector<std::uint8_t> bytes(text.begin(), text.end());
+    return write_binary_checked(path, bytes, overwrite);
+}
+
+[[nodiscard]] std::string shell_quote_arg(const std::string &text) {
+#if defined(_WIN32)
+    std::string out = "\"";
+    for (char ch : text) {
+        if (ch == '"') out += "\\\"";
+        else out.push_back(ch);
+    }
+    out.push_back('"');
+    return out;
+#else
+    std::string out = "'";
+    for (char ch : text) {
+        if (ch == '\'') out += "'\\''";
+        else out.push_back(ch);
+    }
+    out.push_back('\'');
+    return out;
+#endif
+}
+
+[[nodiscard]] bool ffmpeg_available() {
+#if defined(_WIN32)
+    return std::system("ffmpeg -version >NUL 2>NUL") == 0;
+#else
+    return std::system("ffmpeg -version >/dev/null 2>/dev/null") == 0;
+#endif
+}
+
+[[nodiscard]] bool run_ffmpeg_hls_to_mp4(const std::string &url, const std::filesystem::path &path) {
+    if (!ffmpeg_available()) return false;
+    const std::string command = "ffmpeg -y -loglevel error -i " + shell_quote_arg(url) +
+                                " -c copy " + shell_quote_arg(path.string())
+#if defined(_WIN32)
+                                + " >NUL 2>NUL";
+#else
+                                + " >/dev/null 2>/dev/null";
+#endif
+    if (std::system(command.c_str()) != 0) return false;
+    std::error_code ec;
+    return std::filesystem::exists(path, ec) && std::filesystem::file_size(path, ec) > 0;
+}
+
+[[nodiscard]] um::Model::FeatureRecord live_resource_record(const um::Model::LiveResource &resource) {
+    um::Model::FeatureRecord record;
+    record.id = resource.course_id + ":" + resource.sub_id;
+    record.title = resource.title.empty() ? resource.sub_title : resource.title;
+    record.status = resource.status_label.empty() ? (resource.raw_status.empty() ? "available" : resource.raw_status) : resource.status_label;
+    record.fields["courseId"] = resource.course_id;
+    record.fields["subId"] = resource.sub_id;
+    record.fields["courseCode"] = resource.course_code;
+    record.fields["teacher"] = resource.teacher;
+    record.fields["room"] = resource.room;
+    record.fields["subTitle"] = resource.sub_title;
+    record.fields["rawStatus"] = resource.raw_status;
+    record.fields["termName"] = resource.term_name;
+    record.fields["courseTime"] = resource.course_time;
+    record.fields["timeSlot"] = resource.time_slot;
+    record.fields["timeRange"] = resource.time_range;
+    record.fields["thumbUrl"] = resource.thumb_url;
+    record.fields["source"] = resource.source;
+    return record;
+}
+
+[[nodiscard]] um::Model::FeatureRecord live_detail_record(const um::Model::LiveResourceDetail &detail) {
+    auto record = live_resource_record(detail);
+    record.status = detail.has_video ? (detail.primary_video_hls ? "hls" : "video") : record.status;
+    record.fields["hasVideo"] = detail.has_video ? "true" : "false";
+    record.fields["primaryVideoUrl"] = detail.primary_video_url;
+    record.fields["primaryVideoHls"] = detail.primary_video_hls ? "true" : "false";
+    record.fields["liveUrl"] = detail.live_url;
+    record.fields["playbackUrl"] = detail.playback_url;
+    record.fields["playbackHls"] = detail.playback_hls ? "true" : "false";
+    record.fields["pptVideoUrl"] = detail.ppt_video_url;
+    record.fields["subResourceGuid"] = detail.sub_resource_guid;
+    record.fields["pptResourceGuid"] = detail.ppt_resource_guid;
+    record.fields["pptGuids"] = join_values(detail.ppt_guids);
+    record.fields["videoSourceCount"] = std::to_string(detail.video_sources.size());
+    return record;
+}
+
+[[nodiscard]] um::Model::FeatureRecord live_download_record(const um::Model::LiveDownloadResult &result,
+                                                            const std::filesystem::path &pptx_path,
+                                                            const std::filesystem::path &video_path,
+                                                            const std::filesystem::path &sidecar_path) {
+    um::Model::FeatureRecord record;
+    record.id = result.course_id + ":" + result.sub_id;
+    record.title = result.title.empty() ? record.id : result.title;
+    record.status = result.status;
+    record.fields["courseId"] = result.course_id;
+    record.fields["subId"] = result.sub_id;
+    record.fields["usedGuid"] = result.used_guid;
+    record.fields["message"] = result.message;
+    record.fields["slides"] = std::to_string(result.slides.size());
+    record.fields["images"] = std::to_string(result.images.size());
+    record.fields["failedImages"] = std::to_string(result.failed_images.size());
+    record.fields["videoUrl"] = result.video_url;
+    record.fields["videoHls"] = result.video_hls ? "true" : "false";
+    record.fields["pptxPath"] = pptx_path.empty() ? std::string{} : pptx_path.string();
+    record.fields["videoPath"] = video_path.empty() ? std::string{} : video_path.string();
+    record.fields["hlsSidecarPath"] = sidecar_path.empty() ? std::string{} : sidecar_path.string();
+    return record;
+}
+
+[[nodiscard]] bool live_matches_course_schedule(const um::Model::LiveResource &resource,
+                                                const std::vector<um::Model::Course> &courses) {
+    const auto title = lowercase_ascii_copy(resource.title);
+    const auto code = lowercase_ascii_copy(resource.course_code);
+    for (const auto &course : courses) {
+        const auto course_name = lowercase_ascii_copy(course.name);
+        const auto course_code = lowercase_ascii_copy(course.course_code);
+        if (!code.empty() && !course_code.empty() && code == course_code) return true;
+        if (!title.empty() && !course_name.empty() &&
+            (title.find(course_name) != std::string::npos || course_name.find(title) != std::string::npos)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] um::Result<std::vector<um::Model::LiveResource>> maybe_filter_live_from_course(const CliArgs &args,
+                                                                                            ServiceFactory &factory,
+                                                                                            std::vector<um::Model::LiveResource> resources) {
+    if (!args.from_course) return resources;
+    auto course_service = factory.create_course_service();
+    auto courses = course_service.get_date_courses(args.date);
+    if (!courses) return um::make_error(courses.error().code, "按课表过滤课堂资源失败: " + courses.error().message);
+
+    std::vector<um::Model::LiveResource> filtered;
+    for (auto &resource : resources) {
+        if (live_matches_course_schedule(resource, *courses)) filtered.push_back(std::move(resource));
+    }
+    return filtered;
+}
+
+#if UBAANEXT_ENABLE_MOCKS
+[[nodiscard]] um::Model::LiveResourceDetail mock_live_detail(const CliArgs &args) {
+    um::Model::LiveResourceDetail detail;
+    detail.course_id = args.course_id.empty() ? "mock-course-1" : args.course_id;
+    detail.sub_id = args.sub_id.empty() ? "mock-sub-1" : args.sub_id;
+    detail.title = "Mock Classroom Resource";
+    detail.teacher = "Mock Teacher";
+    detail.room = "Mock Room";
+    detail.status_label = "playback";
+    detail.raw_status = "6";
+    detail.source = "mock";
+    detail.has_video = true;
+    detail.primary_video_url = "https://example.invalid/mock.mp4";
+    detail.primary_video_hls = false;
+    detail.playback_url = detail.primary_video_url;
+    detail.ppt_resource_guid = args.guid.empty() ? "mock-guid-1" : args.guid;
+    detail.ppt_guids = {detail.ppt_resource_guid, "mock-guid-2"};
+    detail.video_sources.push_back({"playback", detail.primary_video_url, false});
+    return detail;
+}
+
+[[nodiscard]] std::vector<std::uint8_t> mock_jpeg_bytes() {
+    return {0xFF, 0xD8, 0xFF, 0xD9};
+}
+
+[[nodiscard]] um::Model::LiveDownloadResult mock_live_download_result(const CliArgs &args,
+                                                                      bool include_ppt,
+                                                                      bool include_video) {
+    auto detail = mock_live_detail(args);
+    um::Model::LiveDownloadResult result;
+    result.course_id = detail.course_id;
+    result.sub_id = detail.sub_id;
+    result.title = detail.title;
+    result.status = "completed";
+    result.used_guid = detail.ppt_resource_guid;
+    result.message = "mock download generated";
+    if (include_ppt) {
+        result.slides = {{1, 0, "mock://slide1.jpg"}};
+        um::Model::LiveBinaryResource image;
+        image.name = "slide1.jpg";
+        image.content_type = "image/jpeg";
+        image.bytes = mock_jpeg_bytes();
+        result.images.push_back(image);
+        result.pptx_bytes = um::Parser::build_live_pptx(result.images);
+    }
+    if (include_video) {
+        result.video_url = detail.primary_video_url;
+        result.video_hls = false;
+        const std::string video = "mock mp4 payload";
+        result.video_bytes.assign(video.begin(), video.end());
+    }
+    return result;
+}
+#endif
+
+ExitCode cmd_live_resources(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.date.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "live resources 需要 --date <yyyy-MM-dd>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (!is_valid_live_status(args.status)) {
+        out.print_error({um::ErrorCode::InvalidArgument, "--status 只支持 live、playback、generating 或 all"});
+        return ExitCode::InvalidArgument;
+    }
+
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        std::vector<um::Model::FeatureRecord> records;
+        auto detail = mock_live_detail(args);
+        detail.course_time = args.date;
+        records.push_back(live_resource_record(detail));
+        out.print_records("resources", records);
+        return ExitCode::Ok;
+    }
+#endif
+
+    um::Model::LiveResourceQuery query;
+    query.date = args.date;
+    query.status = args.status.empty() ? "all" : args.status;
+    query.from_course = args.from_course;
+    query.page = args.page;
+    query.size = args.size;
+
+    auto service = factory.create_live_service();
+    auto resources = service.resources(query);
+    if (!resources) {
+        out.print_error(resources.error());
+        return map_error_to_exit_code(resources.error());
+    }
+    auto filtered = maybe_filter_live_from_course(args, factory, std::move(*resources));
+    if (!filtered) {
+        out.print_error(filtered.error());
+        return map_error_to_exit_code(filtered.error());
+    }
+
+    std::vector<um::Model::FeatureRecord> records;
+    records.reserve(filtered->size());
+    for (const auto &resource : *filtered) records.push_back(live_resource_record(resource));
+    save_real_cookies(factory);
+    out.print_records("resources", records);
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_live_detail(const CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.course_id.empty() || args.sub_id.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "live detail 需要 --course-id <id> --sub-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
+
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        out.print_record("resource", live_detail_record(mock_live_detail(args)));
+        return ExitCode::Ok;
+    }
+#endif
+
+    auto service = factory.create_live_service();
+    auto detail = service.detail(args.course_id, args.sub_id, args.date);
+    if (!detail) {
+        out.print_error(detail.error());
+        return map_error_to_exit_code(detail.error());
+    }
+    save_real_cookies(factory);
+    out.print_record("resource", live_detail_record(*detail));
+    return ExitCode::Ok;
+}
+
+[[nodiscard]] std::vector<std::string> live_guid_candidates_from_args(const CliArgs &args) {
+    std::vector<std::string> guids;
+    if (!args.guid.empty()) guids.push_back(args.guid);
+    for (auto &guid : split_live_csv_values(args.alt_guids)) {
+        if (std::find(guids.begin(), guids.end(), guid) == guids.end()) guids.push_back(std::move(guid));
+    }
+    return guids;
+}
+
+[[nodiscard]] um::Result<um::Model::FeatureRecord> write_live_download_outputs(const CliArgs &args,
+                                                                               const um::Model::LiveResourceDetail &detail,
+                                                                               um::Model::LiveDownloadResult result,
+                                                                               const std::filesystem::path &out_dir) {
+    const auto base = live_download_base_name(detail, args.date);
+    std::filesystem::path pptx_path;
+    std::filesystem::path video_path;
+    std::filesystem::path sidecar_path;
+
+    if (!result.pptx_bytes.empty()) {
+        pptx_path = out_dir / (base + ".pptx");
+        auto written = write_binary_checked(pptx_path, result.pptx_bytes, args.overwrite);
+        if (!written) return um::make_error(written.error().code, written.error().message);
+    }
+
+    if (!result.video_bytes.empty()) {
+        video_path = out_dir / (base + ".mp4");
+        auto written = write_binary_checked(video_path, result.video_bytes, args.overwrite);
+        if (!written) return um::make_error(written.error().code, written.error().message);
+    } else if (result.video_hls && !result.video_url.empty()) {
+        video_path = out_dir / (base + ".mp4");
+        std::error_code ec;
+        if (std::filesystem::exists(video_path, ec) && !args.overwrite) {
+            return um::make_error(um::ErrorCode::InvalidArgument, "目标文件已存在，需 --overwrite: " + video_path.string());
+        }
+        if (run_ffmpeg_hls_to_mp4(result.video_url, video_path)) {
+            if (result.status != "error") result.status = result.failed_images.empty() ? "completed" : "partial";
+            if (result.message == "视频为 HLS，需由 CLI 调用 ffmpeg 或写入 m3u8 sidecar") {
+                result.message = "HLS 视频已通过 ffmpeg 合并";
+            }
+        } else {
+            std::filesystem::remove(video_path, ec);
+            video_path.clear();
+            sidecar_path = out_dir / (base + ".m3u8.url");
+            auto written = write_text_checked(sidecar_path, result.video_url + "\n", args.overwrite);
+            if (!written) return um::make_error(written.error().code, written.error().message);
+            result.status = "partial";
+            if (result.message.empty()) result.message = "HLS 视频未合并，已写入 m3u8 sidecar";
+        }
+    }
+
+    return live_download_record(result, pptx_path, video_path, sidecar_path);
+}
+
+ExitCode cmd_live_download_one(const CliArgs &args,
+                               ServiceFactory &factory,
+                               OutputFormatter &out,
+                               const um::Model::LiveResource &resource,
+                               const std::filesystem::path &out_dir,
+                               bool include_ppt,
+                               bool include_video,
+                               std::vector<um::Model::FeatureRecord> &records) {
+    auto service = factory.create_live_service();
+    auto detail = service.detail(resource.course_id, resource.sub_id, args.date);
+    if (!detail) {
+        out.print_error(detail.error());
+        return map_error_to_exit_code(detail.error());
+    }
+
+    auto download = service.prepare_download(*detail, live_guid_candidates_from_args(args), include_ppt, include_video);
+    if (!download) {
+        out.print_error(download.error());
+        return map_error_to_exit_code(download.error());
+    }
+    auto record = write_live_download_outputs(args, *detail, std::move(*download), out_dir);
+    if (!record) {
+        out.print_error(record.error());
+        return map_error_to_exit_code(record.error());
+    }
+    records.push_back(std::move(*record));
+    return ExitCode::Ok;
+}
+
+ExitCode cmd_live_download(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
+    if (args.out_dir.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "live download 需要 --out-dir <dir>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (args.date.empty() && (args.course_id.empty() || args.sub_id.empty())) {
+        out.print_error({um::ErrorCode::InvalidArgument, "live download 需要 --date <yyyy-MM-dd> 或 --course-id <id> --sub-id <id>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (!is_valid_live_status(args.status)) {
+        out.print_error({um::ErrorCode::InvalidArgument, "--status 只支持 live、playback、generating 或 all"});
+        return ExitCode::InvalidArgument;
+    }
+
+    bool include_ppt = false;
+    bool include_video = false;
+    std::string include_error;
+    if (!parse_live_include(args.include, include_ppt, include_video, include_error)) {
+        out.print_error({um::ErrorCode::InvalidArgument, include_error});
+        return ExitCode::InvalidArgument;
+    }
+
+    const std::filesystem::path out_dir(args.out_dir);
+    if (auto ready = ensure_output_dir(out_dir); !ready) {
+        out.print_error(ready.error());
+        return map_error_to_exit_code(ready.error());
+    }
+
+    std::vector<um::Model::FeatureRecord> records;
+
+#if UBAANEXT_ENABLE_MOCKS
+    if (factory.context().conn_mode == um::ConnectionMode::Mock) {
+        auto detail = mock_live_detail(args);
+        auto result = mock_live_download_result(args, include_ppt, include_video);
+        auto record = write_live_download_outputs(args, detail, std::move(result), out_dir);
+        if (!record) {
+            out.print_error(record.error());
+            return map_error_to_exit_code(record.error());
+        }
+        records.push_back(std::move(*record));
+        out.print_records("downloads", records);
+        return ExitCode::Ok;
+    }
+#endif
+
+    if (!args.course_id.empty() && !args.sub_id.empty()) {
+        um::Model::LiveResource resource;
+        resource.course_id = args.course_id;
+        resource.sub_id = args.sub_id;
+        if (auto code = cmd_live_download_one(args, factory, out, resource, out_dir, include_ppt, include_video, records);
+            code != ExitCode::Ok) {
+            return code;
+        }
+    } else {
+        um::Model::LiveResourceQuery query;
+        query.date = args.date;
+        query.status = args.status.empty() ? "all" : args.status;
+        query.from_course = args.from_course;
+        query.page = args.page;
+        query.size = args.size;
+
+        auto service = factory.create_live_service();
+        auto resources = service.resources(query);
+        if (!resources) {
+            out.print_error(resources.error());
+            return map_error_to_exit_code(resources.error());
+        }
+        auto filtered = maybe_filter_live_from_course(args, factory, std::move(*resources));
+        if (!filtered) {
+            out.print_error(filtered.error());
+            return map_error_to_exit_code(filtered.error());
+        }
+        for (const auto &resource : *filtered) {
+            if (resource.course_id.empty() || resource.sub_id.empty()) continue;
+            if (auto code = cmd_live_download_one(args, factory, out, resource, out_dir, include_ppt, include_video, records);
+                code != ExitCode::Ok) {
+                return code;
+            }
+        }
+    }
+
+    save_real_cookies(factory);
+    out.print_records("downloads", records);
     return ExitCode::Ok;
 }
 
@@ -1749,6 +2360,22 @@ ExitCode cmd_td_image_list(OutputFormatter &out) {
     return ExitCode::Ok;
 }
 
+ExitCode cmd_td_image_delete(CliArgs &args, OutputFormatter &out) {
+    if (args.image_name.empty()) {
+        out.print_error({um::ErrorCode::InvalidArgument, "td image delete 需要 <name> 或 --name <name>"});
+        return ExitCode::InvalidArgument;
+    }
+    if (auto confirm = confirm_sensitive_operation_or_exit(args, out, "td image delete"); confirm != ExitCode::Ok) return confirm;
+    auto store = create_td_store();
+    if (auto ready = td_initialize_store(store, out); ready != ExitCode::Ok) return ready;
+    auto deleted = store.delete_image(args.image_name, args.force);
+    if (!deleted) return td_print_error(out, deleted.error());
+    out.print_mutation(td_mutation(args.force ? "TD 图片已强制删除" : "TD 图片已删除",
+                                   td_image_record(args.image_name),
+                                   *deleted));
+    return ExitCode::Ok;
+}
+
 ExitCode cmd_td_user_add(CliArgs &args, OutputFormatter &out) {
     const auto student_id = td_student_id_arg(args);
     if (student_id.empty()) {
@@ -2099,6 +2726,7 @@ ExitCode cmd_td(CliArgs &args, ServiceFactory &factory, OutputFormatter &out) {
     if (args.subcommand == "init") return cmd_td_init(args, out);
     if (args.subcommand == "image") {
         if (args.action == "add") return cmd_td_image_add(args, out);
+        if (args.action == "delete" || args.action == "remove") return cmd_td_image_delete(args, out);
         if (args.action == "list" || args.action.empty()) return cmd_td_image_list(out);
     }
     if (args.subcommand == "user") {
@@ -3671,6 +4299,9 @@ int run_cli(int argc, char *argv[]) {
 
     if (args.command == "live") {
         if (args.subcommand == "week") return static_cast<int>(cmd_live_week(args, factory, out));
+        if (args.subcommand == "resources") return static_cast<int>(cmd_live_resources(args, factory, out));
+        if (args.subcommand == "detail") return static_cast<int>(cmd_live_detail(args, factory, out));
+        if (args.subcommand == "download") return static_cast<int>(cmd_live_download(args, factory, out));
         out.print_error({um::ErrorCode::InvalidArgument, "未知的 live 子命令: " + args.subcommand});
         return static_cast<int>(ExitCode::InvalidArgument);
     }

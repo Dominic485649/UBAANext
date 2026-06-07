@@ -48,6 +48,10 @@
 
 `td scheduler watch` 不应作为发布前 smoke test 的默认动作；如果必须验证，只能使用短时间前台运行，并由人工随时中止。
 
+`td image delete` 是本地图片管理命令，可在隔离 `UBAANEXT_APP_DATA_DIR` 中验证：先添加图片，再验证被用户引用时拒绝删除，删除用户后允许删除，`--force` 只用于明确接受引用失效风险的本地清理。该命令不访问真实 TD 服务器。
+
+本项目不实现 AutoTD 的后台 daemon、自动挂后台、后台 PID 管理、自动刷新/刷取、Web 管理端或 telemetry。真实 smoke 不应尝试验证这些被排除能力。
+
 ## 结果记录
 
 最终报告只记录：

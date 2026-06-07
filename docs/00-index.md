@@ -8,6 +8,7 @@
 - [路线图](02-roadmap.md)
 - [术语表](03-glossary.md)
 - [buaa-api 迁移矩阵](reports/buaa-api-migration-matrix.md)
+- [Reference 差异矩阵](reports/reference-diff-matrix.md)
 - [CLI 命令 API](api/cli-command-api.md)
 - [测试策略](testing/test-strategy.md)
 - [集成测试计划](testing/integration-tests-plan.md)

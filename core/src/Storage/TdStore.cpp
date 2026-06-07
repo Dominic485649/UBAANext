@@ -312,6 +312,34 @@ Result<std::vector<std::string>> TdStore::list_images() const {
     return images;
 }
 
+Result<bool> TdStore::delete_image(std::string name, bool force) const {
+    auto safe_name = safe_file_name(std::move(name), "图片名称");
+    if (!safe_name) return make_error(safe_name.error().code, safe_name.error().message);
+
+    if (!force) {
+        auto users = load_users();
+        if (!users) return make_error(users.error().code, users.error().message);
+        for (const auto &user : *users) {
+            if (user.entrance_image == *safe_name || user.exit_image == *safe_name) {
+                return make_error(ErrorCode::InvalidArgument, "图片仍被 TD 用户引用: " + *safe_name);
+            }
+        }
+    }
+
+    const auto target = m_paths.images_dir / *safe_name;
+    auto present = path_exists(target);
+    if (!present) return make_error(present.error().code, present.error().message);
+    if (!present.value()) return false;
+    auto regular = path_is_regular_file(target);
+    if (!regular) return make_error(regular.error().code, regular.error().message);
+    if (!regular.value()) return make_error(ErrorCode::InvalidArgument, "图片路径不是普通文件: " + *safe_name);
+
+    std::error_code error;
+    const bool removed = std::filesystem::remove(target, error);
+    if (error) return filesystem_error("删除图片失败", target, error);
+    return removed;
+}
+
 Result<std::filesystem::path> TdStore::image_path(std::string name) const {
     auto safe_name = safe_file_name(std::move(name), "图片名称");
     if (!safe_name) return make_error(safe_name.error().code, safe_name.error().message);

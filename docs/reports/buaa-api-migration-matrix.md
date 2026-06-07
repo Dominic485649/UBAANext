@@ -9,7 +9,7 @@
 | SSO/Auth | `AuthService`、`SessionManager`、`RedirectNavigator`、`CookieJar` | `login`、`relogin`、`logout`、`whoami` | 已迁移并增强 | `AuthServiceTests`、`SessionManagerTests`、CLI integration | L1 可用 `.env` 登录/用户信息；登出属于本地/远端状态写，需确认 |
 | AAS/App 教务 | `TermService`、`CourseService`、`ExamService`、`GradeService` | `term/week/course/exam/grade` | 已迁移并保留真实只读入口 | 对应 service/parser tests、CLI smoke | L1 只读；`course week` 支持显式 term，真实模式可用当前配置 |
 | Class | `ClassroomService` | `classroom query` | 已迁移 | `ClassroomServiceTests`、CLI tests | L1 只读 |
-| Live | `LiveService` | `live week` | 已迁移 | `LiveServiceTests`、CLI tests | L1 只读；需要真实会话 |
+| Live | `LiveService` | `live week/resources/detail/download` | 已迁移并按 BBUAA 补齐课堂资源下载 | `LiveServiceTests`、CLI tests | L1 搜索/详情只读；下载需 `UBAANEXT_LIVE_DOWNLOAD=1` |
 | Boya/BYKC | `BykcService` | `bykc profile/courses/chosen/stats/course show/select/unselect/sign` | 已迁移并增强 | `BykcParserTests`、`BykcServiceTests`、CLI write-gate tests | 只读可 smoke；选课/退选/签到不自动真实执行。`sign` 必须显式 `--lat/--lng`，不会默认伪造位置 |
 | Smart Class/Signin | `SigninService` | `signin today/schedule/courses/course schedule/do` | 已迁移并增强 | `SigninServiceTests`、CLI tests | 只读可 smoke；真实签到不自动执行 |
 | Cloud | `CloudService`、`IUploadSource` | `file roots/root/list/size/recycle/shares/suggest-name/mkdir/rename/move/copy/delete/recycle-delete/recycle-restore/share-* /download-url/batch-download-url/upload` | 已迁移并增强到读写/上传 | `CloudServiceTests`、CLI upload/write-gate tests | L1 只读；可逆写 smoke 只允许临时目录/小文件/分享/删除回收站清理，并需显式开关 |
@@ -31,7 +31,7 @@
 
 - Windows Debug 构建通过：`UBAANextTests`、`UBAANextCliTests`。
 - 目标测试已覆盖 Cloud、SRS、SPOC、Signin、WiFi、BYKC、Evaluation 的新增 service/parser/CLI 写门控路径。
-- 全量 `ctest` 基线仍存在历史已知失败：`CLI 公告真实模式返回稳定空列表`，该失败在本次迁移前已存在。
+- 全量 `ctest` 基线应保持默认 mock/offline，不访问真实公告或课堂资源后端。
 
 ## 未自动执行的真实写测
 

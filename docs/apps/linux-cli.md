@@ -23,6 +23,8 @@ cmake --build --preset linux-ninja-release --target ubaa
 ./build/linux-ninja-debug/bin/ubaa version --json
 ./build/linux-ninja-debug/bin/ubaa login --mock 20260000 test --json
 ./build/linux-ninja-debug/bin/ubaa course today --mock --json
+./build/linux-ninja-debug/bin/ubaa live resources --mock --date 2026-06-01 --json
+./build/linux-ninja-debug/bin/ubaa live download --mock --course-id mock-course-1 --sub-id mock-sub-1 --out-dir /tmp/ubaanext-live --json
 ./build/linux-ninja-debug/bin/ubaa file roots --mock --root user --json
 ./build/linux-ninja-debug/bin/ubaa srs config --mock --json
 ./build/linux-ninja-debug/bin/ubaa evaluation form --mock --id evaluation-1 --json
@@ -41,7 +43,7 @@ cmake --build --preset linux-ninja-release --target ubaa
 Linux CLI 与 Windows CLI 使用相同命令合同，完整列表见 [CLI 命令 API](../api/cli-command-api.md)。
 
 - AAS/App：`term/week/course/exam/grade/classroom`
-- Live：`live week --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>`
+- Live：`live week --start-date <yyyy-MM-dd> --end-date <yyyy-MM-dd>`、`live resources/detail/download`
 - SPOC：`spoc week/schedule/courses/assignments/assignment show/homework submit`
 - Signin：`signin today/schedule/courses/course schedule/do`
 - Cloud：`file roots/root/list/size/recycle/shares/suggest-name/mkdir/rename/move/copy/delete/recycle-delete/recycle-restore/share-* /download-url/batch-download-url/upload`
@@ -59,9 +61,21 @@ ubaa file upload --parent-id <cloud-docid> --path <path> [--name <name>] [--toke
 
 Cloud Core 使用 `IUploadSource` 消费上传字节源，Linux CLI 负责读取本地文件。上传支持秒传、小文件上传和 20MiB 分片上传；错误和日志不得泄露本地路径、文件名、token 或 URL query。Cloud 可逆写 smoke 只在用户显式开启时运行。
 
+## 课堂资源下载
+
+Linux CLI 与 Windows CLI 的课堂资源命令完全一致：
+
+```bash
+ubaa live resources --date <yyyy-MM-dd> [--from-course] [--status live|playback|generating|all] --json
+ubaa live detail --course-id <course-id> --sub-id <sub-id> [--date <yyyy-MM-dd>] --json
+ubaa live download --course-id <course-id> --sub-id <sub-id> --out-dir <dir> [--include ppt,video] [--overwrite] --json
+```
+
+PPT 下载会生成 `.pptx`。视频为 MP4 直链时直接落盘；视频为 HLS/m3u8 时会尝试调用系统 `ffmpeg`，未安装或合并失败时写入 `.m3u8.url` sidecar 并返回 `status:"partial"`。默认测试只覆盖 mock 下载和 PPTX ZIP 结构；真实下载必须通过 live smoke 显式开启。
+
 ## 真实性测试边界
 
-默认 live smoke 只执行登录和只读命令。不会自动执行：SRS 选课/退选、BYKC 选课/退选/签到、课程签到、评教提交、SPOC 作业提交、WiFi 登录/登出、阳光打卡、场馆预约/取消、图书馆座位预约/取消。
+默认 live smoke 只执行登录和只读命令。课堂资源真实下载需要额外设置 `UBAANEXT_LIVE_DOWNLOAD=1`，并建议先用 `UBAANEXT_LIVE_DOWNLOAD_INCLUDE=ppt` 做小范围验证。不会自动执行：SRS 选课/退选、BYKC 选课/退选/签到、课程签到、评教提交、SPOC 作业提交、WiFi 登录/登出、阳光打卡、场馆预约/取消、图书馆座位预约/取消。
 
 Linux CLI 的新增命令必须同时更新：
 

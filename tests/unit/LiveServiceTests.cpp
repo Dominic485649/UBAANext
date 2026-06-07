@@ -160,3 +160,114 @@ TEST_CASE("LiveService 业务失败消息会脱敏", "[service][live][security]"
     CHECK(result.error().message.find("bearer-secret") == std::string::npos);
     CHECK(result.error().message.find("[REDACTED]") != std::string::npos);
 }
+
+TEST_CASE("parse_live_resources 映射 BBUAA 课堂资源和 sub_status", "[LiveParser][live-resource]") {
+    const auto root = nlohmann::json::parse(R"JSON({
+        "result": {"list": [{
+            "name": "1-2",
+            "class_begin_time": "08:00",
+            "class_end_time": "09:40",
+            "list": [{
+                "course_id": "course-1",
+                "sub_id": "sub-1",
+                "title": "计算机网络",
+                "course_code": "CS101",
+                "lecturer_name": "李老师",
+                "room_name": "J3-101",
+                "sub_status": 6
+            }]
+        }]}
+    })JSON");
+
+    const auto resources = um::Parser::parse_live_resources(root, "bbuaa");
+
+    REQUIRE(resources.size() == 1);
+    CHECK(resources[0].course_id == "course-1");
+    CHECK(resources[0].sub_id == "sub-1");
+    CHECK(resources[0].title == "计算机网络");
+    CHECK(resources[0].status_label == "回放");
+    CHECK(resources[0].time_slot == "1-2");
+    CHECK(resources[0].time_range == "08:00-09:40");
+    CHECK(resources[0].source == "bbuaa");
+}
+
+TEST_CASE("parse_live_resource_detail 解析视频 URL 与 PPT GUID 候选", "[LiveParser][live-resource]") {
+    const auto item = nlohmann::json::parse(R"JSON({
+        "course_id": "course-1",
+        "sub_id": "sub-1",
+        "title": "计算机网络",
+        "sub_status": 7,
+        "sub_resource_guid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sub_content": "{\"save_playback\":{\"contents\":\"https://media.example/video.mp4\",\"is_m3u8\":\"no\"},\"output\":{\"m3u8\":\"https://media.example/live.m3u8\"}}",
+        "video_list": [
+            {"type": "2", "resource_guid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "preview_url": "https://media.example/ppt.mp4"},
+            {"type": "3", "resource_guid": "cccccccccccccccccccccccccccccccc", "preview_url": "https://media.example/teacher.mp4"}
+        ]
+    })JSON");
+
+    const auto detail = um::Parser::parse_live_resource_detail(item);
+
+    CHECK(detail.course_id == "course-1");
+    CHECK(detail.sub_id == "sub-1");
+    CHECK(detail.status_label == "回放");
+    CHECK(detail.playback_url == "https://media.example/video.mp4");
+    CHECK(detail.live_url == "https://media.example/live.m3u8");
+    CHECK(detail.primary_video_hls);
+    CHECK(detail.has_video);
+    CHECK(detail.ppt_resource_guid == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    CHECK(detail.sub_resource_guid == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    REQUIRE(detail.ppt_guids.size() >= 2);
+}
+
+TEST_CASE("parse_live_livingroom_html 抽取 HTML/JS 视频与 GUID", "[LiveParser][live-resource]") {
+    const std::string html = R"HTML(
+        <html><body>
+        <video src="https://media.example/replay.mp4"></video>
+        <script>
+          window.__play = { streamUrl: "https://media.example/live.m3u8", resource_guid: "dddddddddddddddddddddddddddddddd" };
+        </script>
+        </body></html>
+    )HTML";
+
+    const auto detail = um::Parser::parse_live_livingroom_html(html);
+
+    CHECK(detail.has_video);
+    CHECK(detail.live_url == "https://media.example/live.m3u8");
+    CHECK(detail.playback_url == "https://media.example/replay.mp4");
+    REQUIRE_FALSE(detail.ppt_guids.empty());
+    CHECK(detail.ppt_guids[0] == "dddddddddddddddddddddddddddddddd");
+}
+
+TEST_CASE("parse_live_ppt_slides 解析时间轴并排序", "[LiveParser][ppt]") {
+    const auto root = nlohmann::json::parse(R"JSON({
+        "data": {"list": [
+            {"created_sec": 20, "content": "{\"pptimgurl\":\"https://media.example/slide2.jpg\"}"},
+            {"created_sec": 10, "img_url": "https://media.example/slide1.png"}
+        ]}
+    })JSON");
+
+    const auto slides = um::Parser::parse_live_ppt_slides(root);
+
+    REQUIRE(slides.size() == 2);
+    CHECK(slides[0].time_sec == 10);
+    CHECK(slides[0].index == 0);
+    CHECK(slides[0].image_url == "https://media.example/slide1.png");
+    CHECK(slides[1].time_sec == 20);
+}
+
+TEST_CASE("build_live_pptx 生成可识别 ZIP/OOXML 结构", "[LiveParser][pptx]") {
+    um::Model::LiveBinaryResource image;
+    image.name = "slide1.jpg";
+    image.content_type = "image/jpeg";
+    image.bytes = {0xFF, 0xD8, 0xFF, 0xD9};
+
+    const auto pptx = um::Parser::build_live_pptx({image});
+    const std::string bytes(pptx.begin(), pptx.end());
+
+    REQUIRE(pptx.size() > 100);
+    CHECK(pptx[0] == 'P');
+    CHECK(pptx[1] == 'K');
+    CHECK(bytes.find("[Content_Types].xml") != std::string::npos);
+    CHECK(bytes.find("ppt/slides/slide1.xml") != std::string::npos);
+    CHECK(bytes.find("ppt/media/image1.jpg") != std::string::npos);
+}

@@ -220,3 +220,34 @@ TEST_CASE("TdStore 保存和加载用户状态", "[Td][Store]") {
     REQUIRE(states->size() == 1);
     CHECK((*states)[0].student_id == "2023123456");
 }
+
+TEST_CASE("TdStore 删除图片处理不存在、引用、force 和路径穿越", "[Td][Store][ImageDelete]") {
+    const auto root = make_temp_root("delete-image");
+    um::TdStore store(root);
+    REQUIRE(store.initialize());
+    const auto source = root / "source.jpg";
+    write_text(source, "image");
+    REQUIRE(store.add_image(source, "td.jpg"));
+
+    const auto missing = store.delete_image("missing.jpg");
+    REQUIRE(missing);
+    CHECK_FALSE(*missing);
+
+    const auto traversal = store.delete_image("../td.jpg", true);
+    REQUIRE_FALSE(traversal);
+    CHECK(traversal.error().code == um::ErrorCode::InvalidArgument);
+
+    const auto user = td::make_user("2023123456", "", 8, 11, "td.jpg", "td.jpg");
+    REQUIRE(user);
+    REQUIRE(store.save_user(*user));
+
+    const auto referenced = store.delete_image("td.jpg");
+    REQUIRE_FALSE(referenced);
+    CHECK(referenced.error().code == um::ErrorCode::InvalidArgument);
+    CHECK(std::filesystem::exists(store.paths().images_dir / "td.jpg"));
+
+    const auto forced = store.delete_image("td.jpg", true);
+    REQUIRE(forced);
+    CHECK(*forced);
+    CHECK_FALSE(std::filesystem::exists(store.paths().images_dir / "td.jpg"));
+}

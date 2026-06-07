@@ -124,6 +124,20 @@ function Get-MutationResultId($Json) {
     return [string]$id
 }
 
+function Get-FirstLiveResource($Json) {
+    if ($null -eq $Json -or $Json.ok -ne $true -or $null -eq $Json.data -or $null -eq $Json.data.resources) {
+        return $null
+    }
+    foreach ($resource in $Json.data.resources) {
+        $courseId = [string]$resource.fields.courseId
+        $subId = [string]$resource.fields.subId
+        if (-not [string]::IsNullOrWhiteSpace($courseId) -and -not [string]::IsNullOrWhiteSpace($subId)) {
+            return $resource
+        }
+    }
+    return $null
+}
+
 function Invoke-CloudReversibleWriteSmoke([string]$CloudRootId) {
     if ($env:UBAANEXT_ALLOW_WRITE -ne '1' -or $env:UBAANEXT_CONFIRM_WRITE -ne '1') {
         throw 'Cloud 可逆写 smoke 需要 UBAANEXT_ALLOW_WRITE=1 且 UBAANEXT_CONFIRM_WRITE=1。'
@@ -196,6 +210,27 @@ Invoke-Ubaa @('term', 'list', '--mode', $Mode, '--json')
 if ($RunLive) {
     $liveWeekRange = Get-LiveWeekRange
     Invoke-Ubaa @('live', 'week', '--mode', $Mode, '--start-date', $liveWeekRange[0], '--end-date', $liveWeekRange[1], '--json')
+    $liveResourceDate = $(if ($env:UBAANEXT_LIVE_RESOURCE_DATE) { $env:UBAANEXT_LIVE_RESOURCE_DATE } else { Get-IsoDate ([datetime]::Today) })
+    $liveResourceStatus = $(if ($env:UBAANEXT_LIVE_RESOURCE_STATUS) { $env:UBAANEXT_LIVE_RESOURCE_STATUS } else { 'all' })
+    $liveResources = Invoke-UbaaJson @('live', 'resources', '--mode', $Mode, '--date', $liveResourceDate, '--status', $liveResourceStatus, '--json')
+    $firstLiveResource = Get-FirstLiveResource $liveResources
+    if ($null -eq $firstLiveResource) {
+        Write-Host "WARN：$liveResourceDate 未返回可用于 detail/download 的课堂资源。"
+    } else {
+        $courseId = [string]$firstLiveResource.fields.courseId
+        $subId = [string]$firstLiveResource.fields.subId
+        Invoke-Ubaa @('live', 'detail', '--mode', $Mode, '--course-id', $courseId, '--sub-id', $subId, '--date', $liveResourceDate, '--json')
+        if ($env:UBAANEXT_LIVE_DOWNLOAD -eq '1') {
+            $downloadDir = Join-Path $env:UBAANEXT_APP_DATA_DIR 'live-download'
+            New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+            $include = $(if ($env:UBAANEXT_LIVE_DOWNLOAD_INCLUDE) { $env:UBAANEXT_LIVE_DOWNLOAD_INCLUDE } else { 'ppt' })
+            Invoke-Ubaa @('live', 'download', '--mode', $Mode, '--course-id', $courseId, '--sub-id', $subId, '--date', $liveResourceDate, '--out-dir', $downloadDir, '--include', $include, '--overwrite', '--json')
+            Remove-Item -LiteralPath $downloadDir -Recurse -Force -ErrorAction SilentlyContinue
+        } else {
+            Write-Host 'ubaa live download'
+            Write-Host 'SKIP：课堂资源下载需设置 UBAANEXT_LIVE_DOWNLOAD=1；可用 UBAANEXT_LIVE_DOWNLOAD_INCLUDE=ppt,video 控制范围。'
+        }
+    }
 }
 
 if ($RunCloud) {

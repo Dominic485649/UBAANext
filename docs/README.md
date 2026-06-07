@@ -17,6 +17,7 @@ UBAA Next 是 UBAA（智慧北航 Remake）的 C++ 原生重写版本。
 - [构建](build/00-index.md)
 - [报告](reports/buaa-api-migration-matrix.md)
   - [buaa-api 迁移矩阵](reports/buaa-api-migration-matrix.md)
+  - [Reference 差异矩阵](reports/reference-diff-matrix.md)
 - [测试](testing/00-index.md)
   - [测试策略](testing/test-strategy.md)
   - [集成测试计划](testing/integration-tests-plan.md)

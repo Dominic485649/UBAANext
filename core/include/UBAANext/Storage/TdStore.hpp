@@ -48,6 +48,7 @@ public:
                                                 std::string name = {},
                                                 bool overwrite = false) const;
     [[nodiscard]] Result<std::vector<std::string>> list_images() const;
+    [[nodiscard]] Result<bool> delete_image(std::string name, bool force = false) const;
     [[nodiscard]] Result<std::filesystem::path> image_path(std::string name) const;
 
 private:
