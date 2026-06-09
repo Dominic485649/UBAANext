@@ -1,9 +1,0 @@
-include README.md
-include pyproject.toml
-recursive-include src/auto_td/templates *.json
-recursive-include src/auto_td/ui_static *
-recursive-include tests *.py
-exclude config.json
-exclude user_config.jsonl
-exclude td.py
-prune images
