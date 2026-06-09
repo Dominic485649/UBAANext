@@ -35,6 +35,10 @@ target_link_libraries(UBAANextDesktop
     PRIVATE Slint::Slint
 )
 
+if(WIN32 AND NOT BUILD_SHARED_LIBS)
+    target_link_libraries(UBAANextDesktop PRIVATE opengl32 imm32 uxtheme)
+endif()
+
 if(MSVC)
     target_compile_options(UBAANextDesktop PRIVATE
         /WX-

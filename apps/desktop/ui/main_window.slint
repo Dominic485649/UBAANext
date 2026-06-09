@@ -1,6 +1,7 @@
-import { Button, CheckBox, LineEdit, TabWidget, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+import { Button, CheckBox, LineEdit, TabWidget, VerticalBox, HorizontalBox, ScrollView, Palette } from "std-widgets.slint";
 
 component HeaderBar inherits Rectangle {
+    in property <bool> dark;
     in property <string> version;
     in property <string> mode;
     in property <string> account-summary;
@@ -8,24 +9,25 @@ component HeaderBar inherits Rectangle {
     in property <string> cache-status;
 
     height: 68px;
-    background: #ffffff;
-    border-color: #d7dde8;
+    background: dark ? #252830 : #ffffff;
+    border-color: dark ? #3a3f4b : #d7dde8;
     border-width: 1px;
     border-radius: 8px;
 
     HorizontalLayout {
         padding: 12px;
         spacing: 18px;
-        Text { text: "UBAA Next"; font-size: 24px; font-weight: 700; color: #1d2736; }
-        Text { text: root.version; color: #526070; vertical-alignment: center; }
-        Text { text: root.mode; color: #256f5b; vertical-alignment: center; }
-        Text { text: root.account-summary; color: #526070; vertical-alignment: center; horizontal-stretch: 1; }
-        Text { text: root.mount-status; color: #344054; vertical-alignment: center; }
-        Text { text: root.cache-status; color: #344054; vertical-alignment: center; }
+        Text { text: "UBAA Next"; font-size: 24px; font-weight: 700; color: dark ? #e4e7ec : #1d2736; }
+        Text { text: root.version; color: dark ? #98a2b3 : #526070; vertical-alignment: center; }
+        Text { text: root.mode; color: dark ? #6ecba1 : #256f5b; vertical-alignment: center; }
+        Text { text: root.account-summary; color: dark ? #98a2b3 : #526070; vertical-alignment: center; horizontal-stretch: 1; }
+        Text { text: root.mount-status; color: dark ? #b0b8c4 : #344054; vertical-alignment: center; }
+        Text { text: root.cache-status; color: dark ? #b0b8c4 : #344054; vertical-alignment: center; }
     }
 }
 
 component SessionPage inherits VerticalBox {
+    in property <bool> dark;
     in property <string> session-status;
     in property <string> account-summary;
     callback login(account: string, password: string);
@@ -34,8 +36,8 @@ component SessionPage inherits VerticalBox {
 
     padding: 16px;
     spacing: 10px;
-    Text { text: "Login / Session"; font-size: 18px; font-weight: 600; color: #202b3c; }
-    Text { text: root.session-status; color: #526070; }
+    Text { text: "Login / Session"; font-size: 18px; font-weight: 600; color: dark ? #d0d5dd : #202b3c; }
+    Text { text: root.session-status; color: dark ? #98a2b3 : #526070; }
     HorizontalBox {
         spacing: 8px;
         account_input := LineEdit { placeholder-text: "Account"; horizontal-stretch: 1; }
@@ -48,10 +50,11 @@ component SessionPage inherits VerticalBox {
         logout_confirm := CheckBox { text: "Confirm logout and clear local session"; checked: false; }
         Button { text: "Logout"; clicked => { root.logout(logout_confirm.checked); } }
     }
-    Text { text: root.account-summary; color: #526070; }
+    Text { text: root.account-summary; color: dark ? #98a2b3 : #526070; }
 }
 
 component CloudPage inherits VerticalBox {
+    in property <bool> dark;
     in property <string> cloud-status;
     in property <string> cloud-breadcrumb;
     in property <[string]> cloud-rows;
@@ -65,8 +68,8 @@ component CloudPage inherits VerticalBox {
 
     padding: 16px;
     spacing: 10px;
-    Text { text: root.cloud-status; color: #526070; }
-    Text { text: "Path: " + root.cloud-breadcrumb; font-size: 18px; font-weight: 600; color: #202b3c; }
+    Text { text: root.cloud-status; color: dark ? #98a2b3 : #526070; }
+    Text { text: "Path: " + root.cloud-breadcrumb; font-size: 18px; font-weight: 600; color: dark ? #d0d5dd : #202b3c; }
     search_input := LineEdit { placeholder-text: "Search current directory"; horizontal-stretch: 1; }
     HorizontalBox {
         spacing: 8px;
@@ -98,13 +101,13 @@ component CloudPage inherits VerticalBox {
         Button { text: "Delete"; clicked => { root.delete-cloud(mutate_path_input.text, mutate_confirm.checked, search_input.text); } }
         Button { text: "New Folder"; clicked => { root.create-cloud-folder(rename_input.text, mutate_confirm.checked, search_input.text); } }
     }
-    Text { text: "Upload, rename, delete, and new folder require explicit confirmation before changing cloud data."; color: #526070; }
+    Text { text: "Upload, rename, delete, and new folder require explicit confirmation before changing cloud data."; color: dark ? #98a2b3 : #526070; }
     ScrollView {
         viewport-height: 300px;
         VerticalLayout {
             for row in root.cloud-rows : Text {
                 text: row;
-                color: #344054;
+                color: dark ? #b0b8c4 : #344054;
                 font-size: 14px;
             }
         }
@@ -112,6 +115,7 @@ component CloudPage inherits VerticalBox {
 }
 
 component MountsPage inherits VerticalBox {
+    in property <bool> dark;
     in property <string> mount-status;
     in property <[string]> mount-rows;
     callback start-winfsp(writable: bool, mount_point: string);
@@ -121,7 +125,7 @@ component MountsPage inherits VerticalBox {
 
     padding: 16px;
     spacing: 12px;
-    Text { text: root.mount-status; font-size: 18px; font-weight: 600; color: #202b3c; }
+    Text { text: root.mount-status; font-size: 18px; font-weight: 600; color: dark ? #d0d5dd : #202b3c; }
     HorizontalBox {
         spacing: 8px;
         Text { text: "WinFsp"; vertical-alignment: center; }
@@ -150,7 +154,7 @@ component MountsPage inherits VerticalBox {
         VerticalLayout {
             for row in root.mount-rows : Text {
                 text: row;
-                color: #344054;
+                color: dark ? #b0b8c4 : #344054;
                 font-size: 14px;
             }
         }
@@ -158,6 +162,7 @@ component MountsPage inherits VerticalBox {
 }
 
 component TasksPage inherits ScrollView {
+    in property <bool> dark;
     in property <[string]> task-rows;
 
     viewport-height: 500px;
@@ -166,29 +171,40 @@ component TasksPage inherits ScrollView {
         spacing: 8px;
         for row in root.task-rows : Text {
             text: row;
-            color: #344054;
+            color: dark ? #b0b8c4 : #344054;
         }
     }
 }
 
 component SettingsPage inherits VerticalBox {
+    in property <bool> dark;
     in property <string> cache-status;
     in property <string> capabilities-status;
     in property <string> mode;
     callback set-mode(mode: string);
+    callback set-theme(theme: string);
     callback clear-cache(confirm: bool);
 
     padding: 16px;
     spacing: 12px;
-    Text { text: root.cache-status; font-size: 18px; font-weight: 600; color: #202b3c; }
-    Text { text: root.capabilities-status; color: #526070; }
+    Text { text: "Theme"; font-size: 18px; font-weight: 600; color: dark ? #d0d5dd : #202b3c; }
+    HorizontalBox {
+        spacing: 8px;
+        Text { text: "Appearance"; vertical-alignment: center; color: dark ? #98a2b3 : #526070; }
+        Button { text: "Light"; clicked => { root.set-theme("light"); } }
+        Button { text: "Dark"; clicked => { root.set-theme("dark"); } }
+        Button { text: "System"; clicked => { root.set-theme("system"); } }
+    }
+    Rectangle { height: 1px; background: dark ? #3a3f4b : #d7dde8; }
+    Text { text: root.cache-status; font-size: 18px; font-weight: 600; color: dark ? #d0d5dd : #202b3c; }
+    Text { text: root.capabilities-status; color: dark ? #98a2b3 : #526070; }
     HorizontalBox {
         spacing: 8px;
         Text { text: "Connection"; vertical-alignment: center; }
         Button { text: "direct"; clicked => { root.set-mode("direct"); } }
         Button { text: "vpn"; clicked => { root.set-mode("vpn"); } }
         Button { text: "mock"; clicked => { root.set-mode("mock"); } }
-        Text { text: "Current: " + root.mode; color: #526070; vertical-alignment: center; }
+        Text { text: "Current: " + root.mode; color: dark ? #98a2b3 : #526070; vertical-alignment: center; }
     }
     CheckBox { text: "Redact logs"; checked: true; enabled: false; }
     clear_confirm := CheckBox { text: "Confirm clear local cache"; checked: false; }
@@ -196,14 +212,15 @@ component SettingsPage inherits VerticalBox {
 }
 
 component CampusPage inherits VerticalBox {
+    in property <bool> dark;
     in property <string> campus-status;
     in property <[string]> campus-rows;
     callback run-campus-feature(domain: string, operation: string, id: string, confirm: bool);
 
     padding: 16px;
     spacing: 10px;
-    Text { text: "Campus feature center"; font-size: 18px; font-weight: 600; color: #202b3c; }
-    Text { text: root.campus-status; color: #526070; }
+    Text { text: "Campus feature center"; font-size: 18px; font-weight: 600; color: dark ? #d0d5dd : #202b3c; }
+    Text { text: root.campus-status; color: dark ? #98a2b3 : #526070; }
     HorizontalBox {
         spacing: 8px;
         feature_id_input := LineEdit { placeholder-text: "ID / term / date / operation argument"; horizontal-stretch: 1; }
@@ -237,13 +254,13 @@ component CampusPage inherits VerticalBox {
         Button { text: "Show Detail"; clicked => { root.run-campus-feature("detail", "show", feature_id_input.text, false); } }
         Button { text: "Mutate"; clicked => { root.run-campus-feature("mutation", "run", feature_id_input.text, feature_confirm.checked); } }
     }
-    Text { text: "Use ID field for term/date/id. Examples: course week=8 or 8:2025-2026-2, grades=2025-2026-2, classroom=1:2026-06-09:1,2,3,4. Command Center remains for long-tail commands."; color: #526070; }
+    Text { text: "Use ID field for term/date/id. Examples: course week=8 or 8:2025-2026-2, grades=2025-2026-2, classroom=1:2026-06-09:1,2,3,4. Command Center remains for long-tail commands."; color: dark ? #98a2b3 : #526070; }
     ScrollView {
         viewport-height: 300px;
         VerticalLayout {
             for row in root.campus-rows : Text {
                 text: row;
-                color: #344054;
+                color: dark ? #b0b8c4 : #344054;
                 font-size: 14px;
             }
         }
@@ -251,24 +268,25 @@ component CampusPage inherits VerticalBox {
 }
 
 component CommandCenterPage inherits VerticalBox {
+    in property <bool> dark;
     in property <string> command-output;
     callback run-command(command: string, confirm: bool);
 
     padding: 16px;
     spacing: 10px;
-    Text { text: "Run CLI command in this desktop process"; font-size: 18px; font-weight: 600; color: #202b3c; }
+    Text { text: "Run CLI command in this desktop process"; font-size: 18px; font-weight: 600; color: dark ? #d0d5dd : #202b3c; }
     HorizontalBox {
         spacing: 8px;
         command_input := LineEdit { placeholder-text: "Example: whoami or file roots"; horizontal-stretch: 1; }
         command_confirm := CheckBox { text: "Confirm mutation"; checked: false; }
         Button { text: "Run"; clicked => { root.run-command(command_input.text, command_confirm.checked); } }
     }
-    Text { text: "--json is added automatically. Check Confirm mutation to add --confirm."; color: #526070; }
+    Text { text: "--json is added automatically. Check Confirm mutation to add --confirm."; color: dark ? #98a2b3 : #526070; }
     ScrollView {
         viewport-height: 420px;
         Text {
             text: root.command-output;
-            color: #344054;
+            color: dark ? #b0b8c4 : #344054;
             font-family: "monospace";
             font-size: 13px;
         }
@@ -276,6 +294,7 @@ component CommandCenterPage inherits VerticalBox {
 }
 
 component DiagnosticsPage inherits VerticalBox {
+    in property <bool> dark;
     in property <string> diagnostics;
     callback export-diagnostics();
 
@@ -286,7 +305,7 @@ component DiagnosticsPage inherits VerticalBox {
         viewport-height: 450px;
         Text {
             text: root.diagnostics;
-            color: #344054;
+            color: dark ? #b0b8c4 : #344054;
             font-family: "monospace";
             font-size: 13px;
         }
@@ -294,6 +313,8 @@ component DiagnosticsPage inherits VerticalBox {
 }
 
 export component MainWindow inherits Window {
+    in-out property <string> theme;
+    private property <bool> dark: Palette.color-scheme == ColorScheme.dark;
     in property <string> version;
     in property <string> mode;
     in property <string> account-summary;
@@ -315,6 +336,17 @@ export component MainWindow inherits Window {
     callback whoami();
     callback logout(confirm: bool);
     callback set-mode(mode: string);
+    callback set-theme(theme: string);
+    set-theme(theme) => {
+        self.theme = theme;
+        if (theme == "dark") {
+            Palette.color-scheme = ColorScheme.dark;
+        } else if (theme == "light") {
+            Palette.color-scheme = ColorScheme.light;
+        } else {
+            Palette.color-scheme = ColorScheme.unknown;
+        }
+    }
     callback refresh-cloud(filter: string);
     callback open-cloud-path(path: string, filter: string);
     callback upload-cloud(local_path: string, overwrite: bool, confirm: bool, filter: string);
@@ -334,13 +366,14 @@ export component MainWindow inherits Window {
     title: "UBAA Next";
     preferred-width: 1120px;
     preferred-height: 720px;
-    background: #f6f8fb;
+    background: dark ? #1a1d23 : #f6f8fb;
 
     VerticalLayout {
         padding: 16px;
         spacing: 12px;
 
         HeaderBar {
+            dark: root.dark;
             version: root.version;
             mode: root.mode;
             account-summary: root.account-summary;
@@ -352,6 +385,7 @@ export component MainWindow inherits Window {
             Tab {
                 title: "Session";
                 SessionPage {
+                    dark: root.dark;
                     session-status: root.session-status;
                     account-summary: root.account-summary;
                     login(account, password) => { root.login(account, password); }
@@ -362,6 +396,7 @@ export component MainWindow inherits Window {
             Tab {
                 title: "Cloud";
                 CloudPage {
+                    dark: root.dark;
                     cloud-status: root.cloud-status;
                     cloud-breadcrumb: root.cloud-breadcrumb;
                     cloud-rows: root.cloud-rows;
@@ -377,6 +412,7 @@ export component MainWindow inherits Window {
             Tab {
                 title: "Mounts";
                 MountsPage {
+                    dark: root.dark;
                     mount-status: root.mount-status;
                     mount-rows: root.mount-rows;
                     start-winfsp(writable, mount_point) => { root.start-winfsp(writable, mount_point); }
@@ -387,21 +423,24 @@ export component MainWindow inherits Window {
             }
             Tab {
                 title: "Tasks";
-                TasksPage { task-rows: root.task-rows; }
+                TasksPage { dark: root.dark; task-rows: root.task-rows; }
             }
             Tab {
                 title: "Settings";
                 SettingsPage {
+                    dark: root.dark;
                     cache-status: root.cache-status;
                     capabilities-status: root.capabilities-status;
                     mode: root.mode;
                     set-mode(mode) => { root.set-mode(mode); }
+                    set-theme(theme) => { root.set-theme(theme); }
                     clear-cache(confirm) => { root.clear-cache(confirm); }
                 }
             }
             Tab {
                 title: "Campus";
                 CampusPage {
+                    dark: root.dark;
                     campus-status: root.campus-status;
                     campus-rows: root.campus-rows;
                     run-campus-feature(domain, operation, id, confirm) => { root.run-campus-feature(domain, operation, id, confirm); }
@@ -410,6 +449,7 @@ export component MainWindow inherits Window {
             Tab {
                 title: "Command Center";
                 CommandCenterPage {
+                    dark: root.dark;
                     command-output: root.command-output;
                     run-command(command, confirm) => { root.run-command(command, confirm); }
                 }
@@ -417,6 +457,7 @@ export component MainWindow inherits Window {
             Tab {
                 title: "Diagnostics";
                 DiagnosticsPage {
+                    dark: root.dark;
                     diagnostics: root.diagnostics;
                     export-diagnostics() => { root.export-diagnostics(); }
                 }

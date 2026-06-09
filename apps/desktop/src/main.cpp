@@ -543,6 +543,9 @@ int main(int argc, char *argv[]) {
         if (!result) ui->set_session_status(slint::SharedString(UBAANext::Security::redact_sensitive_text(result.error().message)));
         refresh_runtime_state(ui, ctx);
     });
+    ui->on_set_theme([ui](slint::SharedString theme) {
+        ui->set_theme(theme);
+    });
 
     ui->on_refresh_cloud([&ctx, ui](slint::SharedString filter) {
         auto state = ctx.cloud_refresh(std::string(filter));
