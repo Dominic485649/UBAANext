@@ -47,9 +47,13 @@ add_custom_target(ubaanext-clean-local
 )
 
 include(cmake/Dependencies.cmake)
+include(cmake/OptionalPlatformDependencies.cmake)
 
 if(UBAANEXT_BUILD_TESTS)
     enable_testing()
+endif()
+if((UBAANEXT_BUILD_CLI OR UBAANEXT_BUILD_DESKTOP) AND NOT UBAANEXT_BUILD_APP_RUNTIME)
+    message(FATAL_ERROR "UBAANEXT_BUILD_APP_RUNTIME must be ON when CLI or desktop targets are enabled")
 endif()
 
 add_subdirectory(core)
@@ -60,8 +64,14 @@ endif()
 if(UBAANEXT_BUILD_BINDINGS)
     add_subdirectory(bindings)
 endif()
+if(UBAANEXT_BUILD_APP_RUNTIME)
+    add_subdirectory(apps/runtime)
+endif()
 if(UBAANEXT_BUILD_CLI)
     add_subdirectory(apps/cli)
+endif()
+if(UBAANEXT_BUILD_DESKTOP)
+    add_subdirectory(apps/desktop)
 endif()
 
 if(UBAANEXT_BUILD_TESTS)
@@ -76,6 +86,10 @@ install(DIRECTORY platform/common/tcp/include/UBAANext DESTINATION ${CMAKE_INSTA
 install(DIRECTORY platform/harmony/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY platform/linux/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY platform/windows/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if(UBAANEXT_BUILD_APP_RUNTIME)
+    install(DIRECTORY apps/runtime/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(DIRECTORY apps/cli/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
 if(UBAANEXT_BUILD_BINDINGS)
     install(DIRECTORY bindings/c/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
@@ -91,8 +105,30 @@ set(UBAANEXT_INSTALL_TARGETS
     UBAANextPlatformHarmony
     UBAANextPlatformCurrent
 )
+if(UBAANEXT_ENABLE_MOCKS)
+    list(APPEND UBAANEXT_INSTALL_TARGETS UBAANextMocks)
+endif()
+if(UBAANEXT_BUILD_APP_RUNTIME)
+    list(APPEND UBAANEXT_INSTALL_TARGETS UBAANextAppRuntime)
+endif()
 if(UBAANEXT_BUILD_BINDINGS)
     list(APPEND UBAANEXT_INSTALL_TARGETS UBAANextBindingsC)
+endif()
+if(TARGET ubaa)
+    list(APPEND UBAANEXT_INSTALL_TARGETS ubaa)
+    install(FILES "$<TARGET_FILE:ubaa>.sha256"
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+        CONFIGURATIONS Release
+        OPTIONAL
+    )
+endif()
+if(TARGET UBAANextDesktop)
+    list(APPEND UBAANEXT_INSTALL_TARGETS UBAANextDesktop)
+    install(FILES "$<TARGET_FILE:UBAANextDesktop>.sha256"
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+        CONFIGURATIONS Release
+        OPTIONAL
+    )
 endif()
 
 install(TARGETS ${UBAANEXT_INSTALL_TARGETS}

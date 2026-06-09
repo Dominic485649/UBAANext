@@ -526,7 +526,7 @@ struct DirectSsoActivationProbe {
     std::string result = "skipped";
 };
 
-DirectSsoActivationProbe activate_direct_sso_session(IHttpClient &http_client, const CloudLoginCredentials *credentials) {
+[[maybe_unused]] DirectSsoActivationProbe activate_direct_sso_session(IHttpClient &http_client, const CloudLoginCredentials *credentials) {
     DirectSsoActivationProbe probe;
     if (!credentials || credentials->username.empty() || credentials->password.empty()) return probe;
     probe.attempted = true;
@@ -725,10 +725,10 @@ std::string cloud_cookie_presence_summary(ICookieStore *cookie_store) {
     return summary;
 }
 
-DirectSsoBridgeResult activate_cloud_via_direct_sso_bridge(IHttpClient &http_client,
-                                                           ICookieStore *cookie_store,
-                                                           ConnectionMode mode,
-                                                           const std::string &login_challenge) {
+[[maybe_unused]] DirectSsoBridgeResult activate_cloud_via_direct_sso_bridge(IHttpClient &http_client,
+                                                                            ICookieStore *cookie_store,
+                                                                            ConnectionMode mode,
+                                                                            const std::string &login_challenge) {
     DirectSsoBridgeResult result;
     if (mode != ConnectionMode::WebVPN || login_challenge.empty()) return result;
     result.probe.attempted = true;
@@ -2905,6 +2905,37 @@ Result<Model::CloudDownloadUrl> CloudService::download_url(const CloudItemRef &i
     auto url = extract_download_url(*json);
     if (url.empty()) return make_error(ErrorCode::ParseError, "北航云盘下载链接响应缺少 URL");
     return Model::CloudDownloadUrl{url, item.name, false};
+}
+
+Result<Model::CloudDownloadChunk> CloudService::download_range(const CloudItemRef &item, std::uint64_t offset, std::uint64_t length) {
+    if (item.is_dir) return make_error(ErrorCode::InvalidArgument, "北航云盘目录不能按文件读取");
+    if (length == 0) return Model::CloudDownloadChunk{{}, offset, true};
+
+    auto url = download_url(item);
+    if (!url) return make_error(url.error().code, url.error().message);
+    if (url->zipped) return make_error(ErrorCode::InvalidArgument, "北航云盘压缩下载链接不能作为文件 range 读取");
+    if (offset > std::numeric_limits<std::uint64_t>::max() - (length - 1)) {
+        return make_error(ErrorCode::InvalidArgument, "北航云盘文件读取 range 超出范围");
+    }
+
+    HttpRequest request;
+    request.method = HttpMethod::Get;
+    request.url = url->url;
+    request.transport.redact_url_query_in_errors = true;
+    const auto end = offset + length - 1;
+    request.headers["Range"] = "bytes=" + std::to_string(offset) + "-" + std::to_string(end);
+
+    auto response = m_http_client.send(request);
+    if (!response) return make_error(response.error().code, "北航云盘文件读取失败: " + redacted_error_message(response.error().message));
+    if (response->status_code != 200 && response->status_code != 206) {
+        return make_error(ErrorCode::NetworkError, "北航云盘文件读取失败: HTTP " + std::to_string(response->status_code));
+    }
+
+    Model::CloudDownloadChunk chunk;
+    chunk.offset = offset;
+    chunk.partial = response->status_code == 206;
+    chunk.bytes.assign(response->body.begin(), response->body.end());
+    return chunk;
 }
 
 Result<Model::CloudDownloadUrl> CloudService::batch_download_url(const std::vector<CloudItemRef> &items, const std::string &name) {

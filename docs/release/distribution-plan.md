@@ -26,14 +26,14 @@ graph TD
     C2 --> D2[华为应用市场 AppGallery / 校内分发]
 ```
 
-### 1.1 Windows CLI（命令行客户端 `ubaa.exe`）
+### 1.1 Windows CLI（命令行客户端 `ubaa.com`）
 * **定位**：面向极客学生、开发者、自动化脚本和系统测试人员。
-* **分发形态**：单文件绿色版二进制可执行文件 `ubaa.exe`。
+* **分发形态**：启用桌面构建时，Windows CLI 使用 `ubaa.com`，与 Slint 桌面 `ubaa.exe` 分工；CLI-only 包也可只包含 CLI 可执行文件。
 * **分发渠道**：GitHub Releases 页面、北航内网开源镜像站。
 
-### 1.2 Windows GUI（图形界面客户端 `ubaa-gui.exe`）
+### 1.2 Windows GUI（图形界面客户端 `ubaa.exe`）
 * **定位**：面向普通桌面的 Windows 用户。
-* **分发形态**：包含 `ubaa-gui.exe`、必要 Slint 资产文件、THIRD-PARTY-NOTICES 及使用说明的压缩包（`.zip`），或微型 Windows 安装包（`.msi`）。
+* **分发形态**：包含 `ubaa.exe`、必要 Slint 资产文件、THIRD-PARTY-NOTICES 及使用说明的压缩包（`.zip`），或微型 Windows 安装包（`.msi`）。
 * **分发渠道**：GitHub Releases 页面。
 
 ### 1.3 HarmonyOS App（鸿蒙客户端 HAP）

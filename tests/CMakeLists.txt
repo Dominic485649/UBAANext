@@ -43,6 +43,9 @@ if(UBAANEXT_ENABLE_MOCKS)
         unit/LibrarySeatServiceTests.cpp
         unit/LiveServiceTests.cpp
         unit/CloudServiceTests.cpp
+        unit/CloudVfsTests.cpp
+        unit/FuseMountAdapterTests.cpp
+        unit/AppRuntimeTests.cpp
         unit/SrsServiceTests.cpp
         unit/WifiServiceTests.cpp
         unit/ResponseUtilsTests.cpp
@@ -66,6 +69,7 @@ if(UBAANEXT_ENABLE_MOCKS)
 
     target_link_libraries(UBAANextTests
         PRIVATE UBAANextCore
+        PRIVATE UBAANextAppRuntime
         PRIVATE UBAANextPlatformCurl
         PRIVATE UBAANextPlatformOpenSSL
         PRIVATE UBAANextPlatformTcp
@@ -77,17 +81,16 @@ if(UBAANEXT_ENABLE_MOCKS)
         target_link_libraries(UBAANextTests PRIVATE ws2_32)
     endif()
 
-    target_sources(UBAANextTests
-        PRIVATE ${CMAKE_SOURCE_DIR}/apps/cli/src/SecurityRedaction.cpp
-    )
-
     target_include_directories(UBAANextTests
         PRIVATE ${CMAKE_SOURCE_DIR}/apps/cli/include
+        PRIVATE ${CMAKE_SOURCE_DIR}/apps/runtime/include
     )
 
     target_compile_definitions(UBAANextTests PRIVATE
         UBAA_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
         UBAANEXT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        UBAANEXT_ENABLE_WINFSP=$<BOOL:${UBAANEXT_HAS_WINFSP}>
+        UBAANEXT_ENABLE_FUSE=$<BOOL:${UBAANEXT_HAS_FUSE}>
     )
 
     set_target_properties(UBAANextTests PROPERTIES
@@ -114,6 +117,7 @@ add_executable(UBAANextCliTests
 add_dependencies(UBAANextCliTests ubaa)
 
 target_link_libraries(UBAANextCliTests
+    PRIVATE UBAANextCliCore
     PRIVATE Catch2::Catch2WithMain
     PRIVATE nlohmann_json::nlohmann_json
 )
@@ -128,7 +132,17 @@ set_target_properties(UBAANextCliTests PROPERTIES
 target_compile_definitions(UBAANextCliTests PRIVATE
     UBAA_CLI_PATH="$<TARGET_FILE:ubaa>"
     UBAANEXT_ENABLE_MOCKS=$<BOOL:${UBAANEXT_ENABLE_MOCKS}>
+    UBAANEXT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
+if(TARGET UBAANextDesktop)
+    add_dependencies(UBAANextCliTests UBAANextDesktop)
+    target_compile_definitions(UBAANextCliTests PRIVATE
+        UBAANEXT_HAS_DESKTOP=1
+        UBAANEXT_DESKTOP_PATH="$<TARGET_FILE:UBAANextDesktop>"
+    )
+else()
+    target_compile_definitions(UBAANextCliTests PRIVATE UBAANEXT_HAS_DESKTOP=0)
+endif()
 
 catch_discover_tests(UBAANextCliTests)
 

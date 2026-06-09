@@ -86,6 +86,8 @@ public:
     Result<Model::CloudItem> share_parse(const std::string &id_or_url, const std::string &password = {});
     /** ReadOnlyCandidate: returns a direct download URL for one item or a zip URL for one directory. */
     Result<Model::CloudDownloadUrl> download_url(const CloudItemRef &item);
+    /** ReadOnlyCandidate: downloads a byte range through the redaction-safe transport path. */
+    Result<Model::CloudDownloadChunk> download_range(const CloudItemRef &item, std::uint64_t offset, std::uint64_t length);
     /** ReadOnlyCandidate: returns a zip URL for multiple files/dirs, or direct URL for one file. */
     Result<Model::CloudDownloadUrl> batch_download_url(const std::vector<CloudItemRef> &items, const std::string &name);
 

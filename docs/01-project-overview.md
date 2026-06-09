@@ -23,7 +23,7 @@ UBAA Next 是 **UBAA（智慧北航 Remake）** 的 C++ 原生重写版本，一
 - Windows CLI 工程化：稳定命令树、`CommandHandlers` 命令目录、统一 `--json` envelope、固定 exit code `0-6`、配置/缓存子命令。
 - CLI integration/golden tests：覆盖 help 合同、JSON 输出、exit code、写操作确认门与关键 mock/offline 命令。
 
-v0.4 已完成 CLI 工程化，但仍保持 mock/offline 优先的稳定边界。真实 HTTP、平台能力、C ABI、HarmonyOS 和 Slint 相关内容属于 v0.5+ 后续阶段或实验路径，除非对应路线图阶段完成并同步版本号，否则不作为当前稳定承诺。
+v0.4 已完成 CLI 工程化，但仍保持 mock/offline 优先的稳定边界。master 当前工作区正在收口 UI + CLI 体验，并额外推进北航云盘挂载；相关文档必须把已完成 CLI/Cloud 协议能力、进行中的 UI、未注册或依赖缺失的 mount adapter、以及真实验证要求分开标注。真实 HTTP、系统挂载、平台能力、C ABI、HarmonyOS 和 Slint 相关内容在对应路线图阶段完成并通过真实 smoke 前，不作为当前稳定承诺。
 
 ## 架构
 

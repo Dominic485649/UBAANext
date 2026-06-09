@@ -8,7 +8,7 @@ PlatformCapabilities HarmonyPlatformCapabilities::capabilities() const {
     caps.secure_cookie_persistence = false;
     caps.cookie_persistence = false;
     caps.redirect_control = true;
-    caps.openssl_crypto = true;
+    caps.protocol_crypto = true;
     caps.secure_store = false;
     caps.app_data_path = true;
     caps.upload_bytes = true;

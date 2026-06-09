@@ -5,11 +5,15 @@
 #include <UBAANext/Protocol/ScoreSession.hpp>
 #include <UBAANext/Protocol/SessionGuards.hpp>
 #include <UBAANext/Service/BykcService.hpp>
+#include <UBAANext/Service/ClassroomService.hpp>
+#include <UBAANext/Service/CourseService.hpp>
 #include <UBAANext/Service/EvaluationService.hpp>
+#include <UBAANext/Service/ExamService.hpp>
 #include <UBAANext/Service/JudgeService.hpp>
 #include <UBAANext/Service/LibrarySeatService.hpp>
 #include <UBAANext/Service/SigninService.hpp>
 #include <UBAANext/Service/SpocService.hpp>
+#include <UBAANext/Service/TodoService.hpp>
 #include <UBAANext/Service/VenueReservationService.hpp>
 #include <UBAANext/Service/YgdkService.hpp>
 
@@ -60,6 +64,60 @@ Model::FeatureRecord make_record(std::string id,
     record.status = std::move(status);
     record.fields = std::move(fields);
     return record;
+}
+
+std::string join_ints(const std::vector<int> &values) {
+    std::string text;
+    for (int value : values) {
+        if (!text.empty()) text += ",";
+        text += std::to_string(value);
+    }
+    return text;
+}
+
+std::vector<Model::FeatureRecord> course_records(const std::vector<Model::Course> &courses) {
+    std::vector<Model::FeatureRecord> records;
+    records.reserve(courses.size());
+    for (const auto &course : courses) {
+        records.push_back(make_record(course.id.empty() ? course.name : course.id,
+                                      course.name,
+                                      "scheduled",
+                                      {{"teacher", course.teacher},
+                                       {"classroom", course.classroom},
+                                       {"dayOfWeek", std::to_string(course.day_of_week)},
+                                       {"section", std::to_string(course.section_start) + "-" + std::to_string(course.section_end)},
+                                       {"week", std::to_string(course.week_start) + "-" + std::to_string(course.week_end)},
+                                       {"time", course.begin_time + "-" + course.end_time}}));
+    }
+    return records;
+}
+
+std::vector<Model::FeatureRecord> exam_records(const std::vector<Model::Exam> &exams) {
+    std::vector<Model::FeatureRecord> records;
+    records.reserve(exams.size());
+    for (const auto &exam : exams) {
+        records.push_back(make_record(exam.id.empty() ? exam.course_name : exam.id,
+                                      exam.course_name,
+                                      exam.exam_type.empty() ? "exam" : exam.exam_type,
+                                      {{"location", exam.location},
+                                       {"time", exam.time_text.empty() ? exam.exam_date + " " + exam.start_time + "-" + exam.end_time : exam.time_text},
+                                       {"seat", exam.seat_no},
+                                       {"courseNo", exam.course_no}}));
+    }
+    return records;
+}
+
+std::vector<Model::FeatureRecord> classroom_records(const Model::ClassroomQueryResult &classrooms) {
+    std::vector<Model::FeatureRecord> records;
+    for (const auto &[building, items] : classrooms.buildings) {
+        for (const auto &room : items) {
+            records.push_back(make_record(room.id.empty() ? building + ":" + room.name : room.id,
+                                          building + " " + room.name,
+                                          "free",
+                                          {{"building", building}, {"floor", room.floor_id}, {"sections", join_ints(room.free_sections)}}));
+        }
+    }
+    return records;
 }
 
 std::vector<std::string> split_colon_fields(const std::string &text) {
@@ -187,6 +245,18 @@ Result<std::pair<int, int>> parse_page_size_operation(const std::string &text, c
     auto size = sep == std::string::npos ? Result<int>(20) : parse_positive_int(text.substr(sep + 1), name + " size");
     if (!size) return make_error(size.error().code, size.error().message);
     return std::make_pair(*page, *size);
+}
+
+Result<std::vector<int>> parse_sections(const std::string &text) {
+    std::vector<int> sections;
+    std::string item;
+    std::istringstream input(text);
+    while (std::getline(input, item, ',')) {
+        auto section = parse_positive_int(item, "classroom section");
+        if (!section) return make_error(section.error().code, section.error().message);
+        sections.push_back(*section);
+    }
+    return sections;
 }
 
 #if UBAANEXT_ENABLE_MOCKS
@@ -323,6 +393,73 @@ Result<std::vector<Model::FeatureRecord>> FeatureService::list(const std::string
             return fetch_announcements(m_http_client, m_mode);
         }
         return make_error(ErrorCode::InvalidArgument, "未知的公告查询操作: " + operation);
+    }
+
+    if (domain == "course") {
+        CourseService service(m_http_client, m_cache, m_mode);
+        if (operation == "today") {
+            auto courses = service.get_today_courses();
+            if (!courses) return make_error(courses.error().code, courses.error().message);
+            return course_records(*courses);
+        }
+        if (operation.rfind("date:", 0) == 0) {
+            auto courses = service.get_date_courses(operation.substr(5));
+            if (!courses) return make_error(courses.error().code, courses.error().message);
+            return course_records(*courses);
+        }
+        if (operation.rfind("week", 0) == 0) {
+            auto parts = operation == "week" ? std::vector<std::string>{} : split_colon_fields(operation.substr(5));
+            auto week_text = parts.empty() ? std::string{"1"} : parts[0];
+            auto week = parse_positive_int(week_text, "course week");
+            if (!week) return make_error(week.error().code, week.error().message);
+            auto courses = parts.size() > 1 && !parts[1].empty() ? service.get_week_courses(*week, parts[1]) : service.get_week_courses(*week);
+            if (!courses) return make_error(courses.error().code, courses.error().message);
+            return course_records(*courses);
+        }
+        return make_error(ErrorCode::InvalidArgument, "未知的课程查询操作: " + operation);
+    }
+
+    if (domain == "exam") {
+        ExamService service(m_http_client, m_cache, m_mode);
+        auto term = operation.rfind("list:", 0) == 0 ? operation.substr(5) : std::string{};
+        if (operation == "list" || operation.rfind("list:", 0) == 0) {
+            auto exams = service.get_exams(term);
+            if (!exams) return make_error(exams.error().code, exams.error().message);
+            return exam_records(*exams);
+        }
+        return make_error(ErrorCode::InvalidArgument, "未知的考试查询操作: " + operation);
+    }
+
+    if (domain == "classroom") {
+        if (operation.rfind("query:", 0) != 0) {
+            return make_error(ErrorCode::InvalidArgument, "空教室查询需要 query:<campus>:<date>[:sections]");
+        }
+        auto parts = split_colon_fields(operation.substr(6));
+        if (parts.size() < 2) {
+            return make_error(ErrorCode::InvalidArgument, "空教室查询需要校区和日期");
+        }
+        auto campus = parse_positive_int(parts[0], "classroom campus");
+        if (!campus) return make_error(campus.error().code, campus.error().message);
+        ClassroomService service(m_http_client, m_cache, m_mode);
+        Result<Model::ClassroomQueryResult> classrooms = parts.size() > 2 && !parts[2].empty()
+            ? [&]() -> Result<Model::ClassroomQueryResult> {
+                  auto sections = parse_sections(parts[2]);
+                  if (!sections) return make_error(sections.error().code, sections.error().message);
+                  return service.query_classrooms(*campus, parts[1], *sections);
+              }()
+            : service.query_classrooms(*campus, parts[1]);
+        if (!classrooms) return make_error(classrooms.error().code, classrooms.error().message);
+        return classroom_records(*classrooms);
+    }
+
+    if (domain == "todo") {
+        TodoService service(m_http_client, m_cache, m_mode);
+        TodoQuery query;
+        query.pending_only = operation != "all";
+        if (operation == "list" || operation == "pending" || operation == "all") {
+            return service.list_todos(query);
+        }
+        return make_error(ErrorCode::InvalidArgument, "未知的待办查询操作: " + operation);
     }
 
     if (domain == "judge") {

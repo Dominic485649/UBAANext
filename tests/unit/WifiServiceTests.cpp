@@ -24,7 +24,7 @@ class TestCryptoProvider final : public UBAANext::ICryptoProvider {
 public:
     UBAANext::Result<std::string> md5_hex(const std::string &input) override {
         (void)input;
-        return "md5";
+        return std::string{"md5"};
     }
     UBAANext::Result<std::vector<unsigned char>> sha1_digest(const std::vector<unsigned char> &data) override {
         last_sha1_input.assign(data.begin(), data.end());

@@ -172,9 +172,9 @@ Result<Protocol::Td::ByteVector> read_photo_bytes(const TdStore &store, const st
     auto path = store.image_path(name);
     if (!path) return make_error(path.error().code, path.error().message);
     std::ifstream input(path.value(), std::ios::binary);
-    if (!input) return make_error(ErrorCode::StorageError, "无法读取 TD 图片: " + path->u8string());
+    if (!input) return make_error(ErrorCode::StorageError, "无法读取 TD 图片: " + path->string());
     Protocol::Td::ByteVector bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    if (input.bad()) return make_error(ErrorCode::StorageError, "读取 TD 图片失败: " + path->u8string());
+    if (input.bad()) return make_error(ErrorCode::StorageError, "读取 TD 图片失败: " + path->string());
     return bytes;
 }
 
@@ -370,12 +370,12 @@ Result<void> append_log_lines(const TdStore &store, const std::string &date, con
     if (lines.empty()) return Result<void>{};
     std::error_code error;
     std::filesystem::create_directories(store.paths().logs_dir, error);
-    if (error) return make_error(ErrorCode::StorageError, "无法创建 TD 日志目录: " + store.paths().logs_dir.u8string() + ": " + error.message());
+    if (error) return make_error(ErrorCode::StorageError, "无法创建 TD 日志目录: " + store.paths().logs_dir.string() + ": " + error.message());
     const auto path = store.paths().logs_dir / (date + ".log");
     std::ofstream output(path, std::ios::app);
-    if (!output) return make_error(ErrorCode::StorageError, "无法写入 TD 日志: " + path.u8string());
+    if (!output) return make_error(ErrorCode::StorageError, "无法写入 TD 日志: " + path.string());
     for (const auto &line : lines) output << line << '\n';
-    if (!output) return make_error(ErrorCode::StorageError, "写入 TD 日志失败: " + path.u8string());
+    if (!output) return make_error(ErrorCode::StorageError, "写入 TD 日志失败: " + path.string());
     return Result<void>{};
 }
 

@@ -5,4 +5,5 @@
 - [TD CLI](td-cli.md)
 - [Harmony ArkUI](harmony-arkui.md)
 - [Windows Slint GUI](windows-slint-gui.md)
+- [Linux Slint GUI](linux-slint-gui.md)
 - [发布渠道计划](release-channel-plan.md)

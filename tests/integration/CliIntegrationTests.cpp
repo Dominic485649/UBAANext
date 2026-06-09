@@ -6,6 +6,8 @@
  * 使用 --mock 模式避免真实网络调用。
  */
 
+#include "CliRunner.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <nlohmann/json.hpp>
@@ -20,6 +22,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if !defined(_WIN32)
@@ -31,6 +34,14 @@ namespace {
 // ubaa 可执行文件路径（通过 CMake 定义）
 #ifndef UBAA_CLI_PATH
 #define UBAA_CLI_PATH "ubaa"
+#endif
+
+#ifndef UBAANEXT_HAS_DESKTOP
+#define UBAANEXT_HAS_DESKTOP 0
+#endif
+
+#ifndef UBAANEXT_DESKTOP_PATH
+#define UBAANEXT_DESKTOP_PATH ""
 #endif
 
 struct CliResult {
@@ -67,7 +78,9 @@ struct CliResult {
     return path.string();
 }
 
-[[nodiscard]] CliResult run_cli(const std::vector<std::string> &args, const std::string &app_data_dir = make_app_data_dir()) {
+[[nodiscard]] CliResult run_program(const std::string &program_path,
+                                    const std::vector<std::string> &args,
+                                    const std::string &app_data_dir = make_app_data_dir()) {
     std::filesystem::create_directories(app_data_dir);
 
     std::string cmd;
@@ -75,13 +88,13 @@ struct CliResult {
     cmd = "set \"UBAANEXT_APP_DATA_DIR=";
     cmd += app_data_dir;
     cmd += "\" && \"";
-    cmd += UBAA_CLI_PATH;
+    cmd += program_path;
     cmd += "\"";
 #else
     cmd = "UBAANEXT_APP_DATA_DIR=";
     cmd += quote_arg(app_data_dir);
     cmd += " ";
-    cmd += quote_arg(UBAA_CLI_PATH);
+    cmd += quote_arg(program_path);
 #endif
     for (const auto &arg : args) {
         cmd += " " + quote_arg(arg);
@@ -120,6 +133,10 @@ struct CliResult {
     }
 #endif
     return result;
+}
+
+[[nodiscard]] CliResult run_cli(const std::vector<std::string> &args, const std::string &app_data_dir = make_app_data_dir()) {
+    return run_program(UBAA_CLI_PATH, args, app_data_dir);
 }
 
 [[nodiscard]] nlohmann::json parse_json_output(const std::string &output) {
@@ -429,6 +446,112 @@ TEST_CASE("CLI help 命令", "[cli][integration]") {
         CHECK(text_result.stdout_output.find(expected_token) != std::string::npos);
     }
 }
+
+TEST_CASE("CLI --help 别名命中帮助而不是写操作", "[cli][integration]") {
+    auto result = run_cli({"--help"});
+    REQUIRE(result.exit_code == 0);
+    CHECK(result.stdout_output.find("version") != std::string::npos);
+    CHECK(result.stdout_output.find("file roots") != std::string::npos);
+}
+
+TEST_CASE("CliRunner 同进程调用捕获输出并保留 exit code", "[cli][integration][runner]") {
+    auto help = UBAANextCli::run_cli_command({"--help"});
+    REQUIRE(help.exit_code == 0);
+    CHECK(help.stdout_text.find("version") != std::string::npos);
+    CHECK(help.stdout_text.find("file roots") != std::string::npos);
+    CHECK(help.stderr_text.empty());
+
+    auto invalid = UBAANextCli::run_cli_command({"unknown", "--json"});
+    REQUIRE(invalid.exit_code == 2);
+    auto json = parse_json_output(invalid.stdout_text);
+    require_error_envelope(json);
+    CHECK(invalid.stderr_text.empty());
+}
+
+TEST_CASE("CliRunner 同进程调用不削弱确认门禁", "[cli][integration][runner]") {
+    auto result = UBAANextCli::run_cli_command({"config", "set", "--key", "cache", "--value", "false", "--json"});
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_text);
+    require_error_envelope(json);
+    CHECK(json["error"]["message"].get<std::string>().find("--confirm") != std::string::npos);
+    CHECK(result.stderr_text.empty());
+}
+
+TEST_CASE("CliRunner JSON 错误仍封装在 stdout", "[cli][integration][runner]") {
+    auto result = UBAANextCli::run_cli_command({"config", "set", "--key", "unknown", "--value", "x", "--confirm", "--json"});
+    REQUIRE(result.exit_code == 2);
+    auto json = parse_json_output(result.stdout_text);
+    require_error_envelope(json);
+    CHECK(json["error"]["message"].is_string());
+    CHECK(result.stderr_text.empty());
+}
+
+TEST_CASE("CliRunner 并发同进程调用输出相互隔离", "[cli][integration][runner]") {
+    UBAANextCli::CliCommandResult first;
+    UBAANextCli::CliCommandResult second;
+
+    std::thread first_thread([&] { first = UBAANextCli::run_cli_command({"version", "--json"}); });
+    std::thread second_thread([&] { second = UBAANextCli::run_cli_command({"--help"}); });
+    first_thread.join();
+    second_thread.join();
+
+    REQUIRE(first.exit_code == 0);
+    REQUIRE(second.exit_code == 0);
+    CHECK(first.stdout_text.find("version") != std::string::npos);
+    CHECK(first.stdout_text.find("file roots") == std::string::npos);
+    CHECK(second.stdout_text.find("file roots") != std::string::npos);
+    CHECK(first.stderr_text.empty());
+    CHECK(second.stderr_text.empty());
+}
+
+#if UBAANEXT_HAS_DESKTOP
+TEST_CASE("CLI 和桌面 UI 产物保持拆分", "[cli][desktop][integration]") {
+    const auto cli_path = std::filesystem::path(UBAA_CLI_PATH);
+    const auto desktop_path = std::filesystem::path(UBAANEXT_DESKTOP_PATH);
+    REQUIRE(cli_path.filename() != desktop_path.filename());
+    CHECK(cli_path.parent_path() == desktop_path.parent_path());
+
+#if defined(_WIN32)
+    CHECK(cli_path.filename() == "ubaa.com");
+    CHECK(desktop_path.filename() == "ubaa.exe");
+    CHECK(cli_path.extension() == ".com");
+    CHECK(desktop_path.extension() == ".exe");
+#else
+    CHECK(cli_path.filename() == "ubaa");
+    CHECK(desktop_path.filename() == "ubaa-gui");
+#endif
+
+    auto cli_help = run_program(cli_path.string(), {"--help"});
+    REQUIRE(cli_help.exit_code == 0);
+    CHECK(cli_help.stdout_output.find("file roots") != std::string::npos);
+
+    auto desktop_version = run_program(desktop_path.string(), {"--version"});
+    REQUIRE(desktop_version.exit_code == 0);
+    if (!desktop_version.stdout_output.empty()) {
+        CHECK(desktop_version.stdout_output.find("UBAA Next Desktop") != std::string::npos);
+    }
+
+    auto desktop_help = run_program(desktop_path.string(), {"--help"});
+    REQUIRE(desktop_help.exit_code == 0);
+    if (!desktop_help.stdout_output.empty()) {
+        CHECK(desktop_help.stdout_output.find("Slint desktop UI") != std::string::npos);
+        CHECK(desktop_help.stdout_output.find("--diagnose") != std::string::npos);
+    }
+
+    auto desktop_diagnose = run_program(desktop_path.string(), {"--diagnose", "--mock"});
+    REQUIRE(desktop_diagnose.exit_code == 0);
+    if (!desktop_diagnose.stdout_output.empty()) {
+        auto diagnostics = parse_json_output(desktop_diagnose.stdout_output);
+        CHECK(diagnostics["mock"] == true);
+        CHECK(diagnostics.contains("account"));
+        CHECK(diagnostics.contains("paths"));
+        CHECK(diagnostics.contains("mounts"));
+        const auto raw = diagnostics.dump();
+        CHECK(raw.find("secret-token") == std::string::npos);
+        CHECK(raw.find("20260000") == std::string::npos);
+    }
+}
+#endif
 
 #if UBAANEXT_ENABLE_MOCKS
 TEST_CASE("CLI login mock 命令", "[cli][integration]") {
@@ -806,12 +929,16 @@ TEST_CASE("CLI capability show 命令", "[cli][integration][capability]") {
         "secureCookiePersistence",
         "cookiePersistence",
         "redirectControl",
-        "opensslCrypto",
+        "protocolCrypto",
         "secureStore",
         "appDataPath",
         "uploadBytes",
         "liveLogin",
         "writeOperations",
+        "desktopGui",
+        "winfspMount",
+        "cloudFilesMount",
+        "fuseMount",
     };
     for (const auto &field : expected_fields) {
         INFO("缺失 capability 字段: " << field);

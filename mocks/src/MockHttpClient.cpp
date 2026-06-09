@@ -61,6 +61,10 @@ static const char *kWeeksJson = R"([
   {"serialNumber":20,"name":"第20周","startDate":"2026-07-06","endDate":"2026-07-12","isCurrent":false}
 ])";
 
+static const char *kCloudUserRootJson = R"({"success":true,"data":[{"docid":"cloud-root-user","doc_lib_name":"个人文档库","doc_lib_type":"user_doc_lib","totalsize":-1}]})";
+
+static const char *kCloudListJson = R"({"success":true,"data":{"dirs":[{"docid":"cloud-dir-1","parent_docid":"cloud-root-user","name":"示例文件夹","type":"dir","size":"-1"}],"files":[{"docid":"cloud-file-1","parent_docid":"cloud-root-user","name":"示例文件.txt","type":"file","size":"1024"}]}})";
+
 // clang-format on
 
 MockHttpClient::MockHttpClient() {
@@ -70,6 +74,8 @@ MockHttpClient::MockHttpClient() {
     m_responses["/classroom/query"] = kClassroomsJson;
     m_responses["/schedule/terms"]  = kTermsJson;
     m_responses["/schedule/weeks"]  = kWeeksJson;
+    m_responses["https://bhpan.buaa.edu.cn/api/efast/v1/owned-doc-lib"] = kCloudUserRootJson;
+    m_responses["https://bhpan.buaa.edu.cn/api/efast/v1/dir/list"] = kCloudListJson;
 }
 
 UBAANext::Result<UBAANext::HttpResponse> MockHttpClient::send(const UBAANext::HttpRequest &request) {

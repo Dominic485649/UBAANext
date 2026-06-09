@@ -45,6 +45,16 @@ TEST_CASE("Core 不直接包含平台实现头", "[boundary][platform]") {
         "OH_Huks",
         "OH_Crypto",
         "CryptoArchitectureKit",
+        "slint",
+        "Slint",
+        "winfsp",
+        "WinFsp",
+        "cfapi",
+        "CfApi",
+        "cldapi",
+        "Cloud Files",
+        "fuse",
+        "FUSE",
     };
 
     for (const auto &file : source_files_under(root)) {
@@ -66,6 +76,14 @@ TEST_CASE("Core CMake 不链接平台库", "[boundary][platform]") {
         "OpenSSL::SSL",
         "curl",
         "libohcrypto",
+        "Slint::",
+        "slint_target_sources",
+        "WinFsp",
+        "winfsp",
+        "cfapi",
+        "cldapi",
+        "fuse",
+        "FUSE",
     };
 
     for (const auto &needle : forbidden) {
@@ -121,4 +139,42 @@ TEST_CASE("CLI and C ABI record serializers preserve partial failure fields", "[
     CHECK(cabi.find("{\"status\", record.status}") != std::string::npos);
     CHECK(cabi.find("{\"fields\", record.fields}") != std::string::npos);
     CHECK(cabi.find("source-error") == std::string::npos);
+}
+
+TEST_CASE("Mount and desktop capabilities are compile-time gated by platform adapters", "[boundary][platform][mount]") {
+    const auto windows = read_text(std::filesystem::path(source_root()) / "platform" / "windows" / "src" / "WindowsPlatformCapabilities.cpp");
+    CHECK(windows.find("caps.desktop_gui = UBAANEXT_BUILD_DESKTOP") != std::string::npos);
+    CHECK(windows.find("caps.mount_windows_drive = UBAANEXT_ENABLE_WINFSP") != std::string::npos);
+    CHECK(windows.find("caps.mount_windows_sync = UBAANEXT_ENABLE_CLOUD_FILES") != std::string::npos);
+    CHECK(windows.find("caps.mount_linux_userspace = false") != std::string::npos);
+
+    const auto linux = read_text(std::filesystem::path(source_root()) / "platform" / "linux" / "src" / "LinuxPlatformCapabilities.cpp");
+    CHECK(linux.find("caps.desktop_gui = UBAANEXT_BUILD_DESKTOP") != std::string::npos);
+    CHECK(linux.find("caps.mount_windows_drive = false") != std::string::npos);
+    CHECK(linux.find("caps.mount_windows_sync = false") != std::string::npos);
+    CHECK(linux.find("caps.mount_linux_userspace = UBAANEXT_ENABLE_FUSE") != std::string::npos);
+}
+
+TEST_CASE("Release install layout separates CLI desktop runtime and public headers", "[boundary][release]") {
+    const auto source = std::filesystem::path(source_root());
+    const auto cmake = read_text(source / "CMakeLists.txt");
+    CHECK(cmake.find("install(DIRECTORY core/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})") != std::string::npos);
+    CHECK(cmake.find("install(DIRECTORY apps/runtime/include/UBAANext DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})") != std::string::npos);
+    CHECK(cmake.find("install(DIRECTORY apps/cli/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})") != std::string::npos);
+    CHECK(cmake.find("list(APPEND UBAANEXT_INSTALL_TARGETS ubaa)") != std::string::npos);
+    CHECK(cmake.find("list(APPEND UBAANEXT_INSTALL_TARGETS UBAANextDesktop)") != std::string::npos);
+    CHECK(cmake.find("RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}") != std::string::npos);
+
+    const auto cli_cmake = read_text(source / "apps" / "cli" / "CMakeLists.txt");
+    CHECK(cli_cmake.find("RUNTIME_OUTPUT_DIRECTORY \"${UBAANEXT_CLI_OUTPUT_DIRECTORY}\"") != std::string::npos);
+    CHECK(cli_cmake.find("OUTPUT_NAME \"ubaa\"") != std::string::npos);
+    CHECK(cli_cmake.find("SUFFIX \".com\"") != std::string::npos);
+
+    const auto desktop_cmake = read_text(source / "apps" / "desktop" / "CMakeLists.txt");
+    CHECK(desktop_cmake.find("RUNTIME_OUTPUT_DIRECTORY \"${UBAANEXT_DESKTOP_OUTPUT_DIRECTORY}\"") != std::string::npos);
+    CHECK(desktop_cmake.find("add_executable(UBAANextDesktop WIN32") != std::string::npos);
+    CHECK(desktop_cmake.find("OUTPUT_NAME \"ubaa\"") != std::string::npos);
+    CHECK(desktop_cmake.find("SUFFIX \".exe\"") != std::string::npos);
+    CHECK(desktop_cmake.find("OUTPUT_NAME \"ubaa-gui\"") != std::string::npos);
+    CHECK(desktop_cmake.find("Slint was requested but was not found") != std::string::npos);
 }

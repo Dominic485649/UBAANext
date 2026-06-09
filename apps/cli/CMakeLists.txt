@@ -1,33 +1,33 @@
-add_executable(ubaa
+add_library(UBAANextCliCore STATIC
     src/main.cpp
     src/CommandHandlers.cpp
-    src/PlainFileStore.cpp
-    src/ServiceFactory.cpp
-    src/PlatformContextFactory.cpp
     src/OutputFormatter.cpp
-    src/CliConfig.cpp
-    src/SecurityRedaction.cpp
 )
 
-target_include_directories(ubaa
-    PRIVATE
+add_executable(ubaa
+    src/CliMain.cpp
+)
+
+target_include_directories(UBAANextCliCore
+    PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(ubaa
-    PRIVATE UBAANextCore
-    PRIVATE UBAANextPlatformCurrent
-    PRIVATE UBAANextPlatformCurl
-    PRIVATE UBAANextPlatformOpenSSL
+target_link_libraries(UBAANextCliCore
+    PUBLIC UBAANextAppRuntime
     PRIVATE UBAANextPlatformTcp
 )
 
+target_link_libraries(ubaa
+    PRIVATE UBAANextCliCore
+)
+
 if(UBAANEXT_ENABLE_MOCKS)
-    target_link_libraries(ubaa PRIVATE UBAANextMocks)
+    target_link_libraries(UBAANextCliCore PRIVATE UBAANextMocks)
 endif()
 
-target_compile_definitions(ubaa
-    PRIVATE UBAANEXT_ENABLE_MOCKS=$<BOOL:${UBAANEXT_ENABLE_MOCKS}>
+target_compile_definitions(UBAANextCliCore
+    PUBLIC UBAANEXT_ENABLE_MOCKS=$<BOOL:${UBAANEXT_ENABLE_MOCKS}>
 )
 
 set(UBAANEXT_CLI_ARCH_DIRECTORY "${CMAKE_SYSTEM_PROCESSOR}")
@@ -37,6 +37,13 @@ endif()
 
 set(UBAANEXT_CLI_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin/${UBAANEXT_CLI_ARCH_DIRECTORY}/$<CONFIG>")
 
+set_target_properties(UBAANextCliCore PROPERTIES
+    CXX_STANDARD ${UBAANEXT_CXX_STANDARD}
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
+)
+
 set_target_properties(ubaa PROPERTIES
     CXX_STANDARD ${UBAANEXT_CXX_STANDARD}
     CXX_STANDARD_REQUIRED ON
@@ -45,6 +52,17 @@ set_target_properties(ubaa PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${UBAANEXT_CLI_OUTPUT_DIRECTORY}"
     PDB_OUTPUT_DIRECTORY "${UBAANEXT_CLI_OUTPUT_DIRECTORY}"
 )
+
+if(WIN32)
+    set_target_properties(ubaa PROPERTIES
+        OUTPUT_NAME "ubaa"
+        SUFFIX ".com"
+    )
+else()
+    set_target_properties(ubaa PROPERTIES
+        OUTPUT_NAME "ubaa"
+    )
+endif()
 
 add_custom_command(TARGET ubaa POST_BUILD
     COMMAND ${CMAKE_COMMAND}

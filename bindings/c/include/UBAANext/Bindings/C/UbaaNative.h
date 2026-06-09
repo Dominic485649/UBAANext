@@ -30,7 +30,7 @@ extern "C"
         uint8_t secure_cookie_persistence;
         uint8_t cookie_persistence;
         uint8_t redirect_control;
-        uint8_t openssl_crypto;
+        uint8_t protocol_crypto;
         uint8_t secure_store;
         uint8_t app_data_path;
         uint8_t upload_bytes;

@@ -240,7 +240,7 @@ AppContext create_current_platform_context(const PlatformContextOptions &options
     ctx.capabilities.secure_cookie_persistence = false;
     ctx.capabilities.cookie_persistence = false;
     ctx.capabilities.redirect_control = true;
-    ctx.capabilities.openssl_crypto = true;
+    ctx.capabilities.protocol_crypto = true;
     ctx.capabilities.app_data_path = true;
     ctx.capabilities.upload_bytes = true;
     ctx.capabilities.live_login = false;

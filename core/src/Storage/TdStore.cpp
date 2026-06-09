@@ -11,14 +11,14 @@ namespace UBAANext {
 namespace {
 
 Unexpected filesystem_error(std::string action, const std::filesystem::path &path, const std::error_code &error) {
-    return make_error(ErrorCode::StorageError, action + ": " + path.u8string() + ": " + error.message());
+    return make_error(ErrorCode::StorageError, action + ": " + path.string() + ": " + error.message());
 }
 
 Result<void> ensure_directory(const std::filesystem::path &path) {
     std::error_code error;
     std::filesystem::create_directories(path, error);
     if (error) return filesystem_error("无法创建目录", path, error);
-    if (!std::filesystem::is_directory(path, error)) return make_error(ErrorCode::StorageError, "路径不是目录: " + path.u8string());
+    if (!std::filesystem::is_directory(path, error)) return make_error(ErrorCode::StorageError, "路径不是目录: " + path.string());
     return Result<void>{};
 }
 
@@ -38,13 +38,13 @@ Result<bool> path_is_regular_file(const std::filesystem::path &path) {
 
 Result<nlohmann::json> read_json_file(const std::filesystem::path &path) {
     std::ifstream input(path);
-    if (!input) return make_error(ErrorCode::StorageError, "无法读取 JSON 文件: " + path.u8string());
+    if (!input) return make_error(ErrorCode::StorageError, "无法读取 JSON 文件: " + path.string());
     try {
         nlohmann::json json;
         input >> json;
         return json;
     } catch (const nlohmann::json::exception &error) {
-        return make_error(ErrorCode::ParseError, "JSON 文件解析失败: " + path.u8string() + ": " + error.what());
+        return make_error(ErrorCode::ParseError, "JSON 文件解析失败: " + path.string() + ": " + error.what());
     }
 }
 
@@ -53,9 +53,9 @@ Result<void> write_json_file(const std::filesystem::path &path, const nlohmann::
     if (!parent) return make_error(parent.error().code, parent.error().message);
 
     std::ofstream output(path, std::ios::trunc);
-    if (!output) return make_error(ErrorCode::StorageError, "无法写入 JSON 文件: " + path.u8string());
+    if (!output) return make_error(ErrorCode::StorageError, "无法写入 JSON 文件: " + path.string());
     output << json.dump(2) << '\n';
-    if (!output) return make_error(ErrorCode::StorageError, "写入 JSON 文件失败: " + path.u8string());
+    if (!output) return make_error(ErrorCode::StorageError, "写入 JSON 文件失败: " + path.string());
     return Result<void>{};
 }
 
@@ -85,14 +85,14 @@ Result<nlohmann::json> load_object_file_or_default(const std::filesystem::path &
     if (!present.value()) return fallback;
     auto json = read_json_file(path);
     if (!json) return make_error(json.error().code, json.error().message);
-    if (!json->is_object()) return make_error(ErrorCode::ParseError, "JSON 文件顶层必须是对象: " + path.u8string());
+    if (!json->is_object()) return make_error(ErrorCode::ParseError, "JSON 文件顶层必须是对象: " + path.string());
     return json.value();
 }
 
 Result<std::string> safe_file_name(std::string name, std::string label) {
     if (name.empty()) return make_error(ErrorCode::InvalidArgument, label + "不能为空");
     const std::filesystem::path path(name);
-    if (path.filename().u8string() != name || path.has_parent_path()) {
+    if (path.filename().string() != name || path.has_parent_path()) {
         return make_error(ErrorCode::InvalidArgument, label + "不能包含目录");
     }
     if (name == "." || name == "..") return make_error(ErrorCode::InvalidArgument, label + "非法");
@@ -269,12 +269,12 @@ Result<void> TdStore::save_state(const Model::Td::UserState &state) const {
 Result<std::string> TdStore::add_image(const std::filesystem::path &source, std::string name, bool overwrite) const {
     auto source_present = path_exists(source);
     if (!source_present) return make_error(source_present.error().code, source_present.error().message);
-    if (!source_present.value()) return make_error(ErrorCode::InvalidArgument, "图片源文件不存在: " + source.u8string());
+    if (!source_present.value()) return make_error(ErrorCode::InvalidArgument, "图片源文件不存在: " + source.string());
     auto source_file = path_is_regular_file(source);
     if (!source_file) return make_error(source_file.error().code, source_file.error().message);
-    if (!source_file.value()) return make_error(ErrorCode::InvalidArgument, "图片源路径不是普通文件: " + source.u8string());
+    if (!source_file.value()) return make_error(ErrorCode::InvalidArgument, "图片源路径不是普通文件: " + source.string());
 
-    if (name.empty()) name = source.filename().u8string();
+    if (name.empty()) name = source.filename().string();
     auto safe_name = safe_file_name(std::move(name), "图片名称");
     if (!safe_name) return make_error(safe_name.error().code, safe_name.error().message);
 
@@ -304,7 +304,7 @@ Result<std::vector<std::string>> TdStore::list_images() const {
     for (const auto &entry : std::filesystem::directory_iterator(m_paths.images_dir, error)) {
         if (error) return filesystem_error("遍历图片目录失败", m_paths.images_dir, error);
         std::error_code file_error;
-        if (entry.is_regular_file(file_error)) images.push_back(entry.path().filename().u8string());
+        if (entry.is_regular_file(file_error)) images.push_back(entry.path().filename().string());
         if (file_error) return filesystem_error("检查图片文件失败", entry.path(), file_error);
     }
     if (error) return filesystem_error("遍历图片目录失败", m_paths.images_dir, error);

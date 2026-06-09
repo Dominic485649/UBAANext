@@ -100,6 +100,10 @@ TEST_CASE("C ABI version and capability smoke", "[cabi][integration]")
     require_success_envelope(cap_json);
     REQUIRE(cap_json["data"].contains("capabilities"));
     REQUIRE(cap_json["data"]["capabilities"].contains("realNetwork"));
+    REQUIRE(cap_json["data"]["capabilities"].contains("desktopGui"));
+    REQUIRE(cap_json["data"]["capabilities"].contains("winfspMount"));
+    REQUIRE(cap_json["data"]["capabilities"].contains("cloudFilesMount"));
+    REQUIRE(cap_json["data"]["capabilities"].contains("fuseMount"));
 
     NativeJsonResult version_json{ubaanext_version_info()};
     const auto version_info = version_json.parse();

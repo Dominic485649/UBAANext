@@ -1,6 +1,7 @@
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(UBAANEXT_LINUX_SOURCES
         src/LinuxAppDataPathProvider.cpp
+        src/LinuxFuseMount.cpp
         src/LinuxNetworkEnvironment.cpp
         src/LinuxPlatformCapabilities.cpp
         src/LocalEncryptedFileStore.cpp
@@ -33,6 +34,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_compile_definitions(UBAANextPlatformLinux PUBLIC UBAANEXT_ENABLE_LINUX_LIBSECRET=1)
     else()
         target_compile_definitions(UBAANextPlatformLinux PUBLIC UBAANEXT_ENABLE_LINUX_LIBSECRET=0)
+    endif()
+    target_compile_definitions(UBAANextPlatformLinux
+        PUBLIC
+            UBAANEXT_BUILD_DESKTOP=$<BOOL:${UBAANEXT_BUILD_DESKTOP}>
+            UBAANEXT_ENABLE_FUSE=$<BOOL:${UBAANEXT_HAS_FUSE}>
+    )
+    if(UBAANEXT_HAS_FUSE)
+        target_link_libraries(UBAANextPlatformLinux PRIVATE UBAANextOptionalFuse)
     endif()
 
     set_target_properties(UBAANextPlatformLinux PROPERTIES

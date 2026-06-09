@@ -34,9 +34,9 @@ Result<Protocol::Td::ByteVector> read_photo_bytes(const TdStore &store, const st
     auto path = store.image_path(name);
     if (!path) return make_error(path.error().code, path.error().message);
     std::ifstream input(path.value(), std::ios::binary);
-    if (!input) return make_error(ErrorCode::StorageError, "无法读取 TD 图片: " + path->u8string());
+    if (!input) return make_error(ErrorCode::StorageError, "无法读取 TD 图片: " + path->string());
     Protocol::Td::ByteVector bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    if (input.bad()) return make_error(ErrorCode::StorageError, "读取 TD 图片失败: " + path->u8string());
+    if (input.bad()) return make_error(ErrorCode::StorageError, "读取 TD 图片失败: " + path->string());
     return bytes;
 }
 

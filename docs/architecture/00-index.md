@@ -9,4 +9,5 @@
 - [CLI 设计](cli-design.md)
 - [Harmony ArkUI 设计](harmony-arkui-design.md)
 - [Slint 桌面设计](slint-desktop-design.md)
+- [Cloud mount 设计](cloud-mount-design.md)
 - [未来扩展点](future-extension-points.md)

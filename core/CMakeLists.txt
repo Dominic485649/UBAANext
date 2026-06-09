@@ -4,6 +4,7 @@ add_library(UBAANextCore STATIC
     src/Auth/AuthService.cpp
     src/Auth/SessionContext.cpp
     src/Auth/SessionManager.cpp
+    src/CloudVfs/CloudVfs.cpp
     src/Service/CourseService.cpp
     src/Service/ExamService.cpp
     src/Service/ClassroomService.cpp

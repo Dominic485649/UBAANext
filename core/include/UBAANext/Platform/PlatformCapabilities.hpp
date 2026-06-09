@@ -7,7 +7,7 @@ struct PlatformCapabilities {
     bool secure_cookie_persistence = false;
     bool cookie_persistence = false;
     bool redirect_control = false;
-    bool openssl_crypto = false;
+    bool protocol_crypto = false;
     bool secure_store = false;
     bool app_data_path = false;
     /** Placeholder/Upload boundary: true only means byte upload plumbing exists, not that a business upload API is implemented. */
@@ -16,6 +16,12 @@ struct PlatformCapabilities {
     bool live_login = false;
     /** WriteGated capability: real remote mutations require this plus per-command confirmation. */
     bool write_operations = false;
+    /** Desktop shell capability: true when a desktop UI target is built for the current package. */
+    bool desktop_gui = false;
+    /** Mount frontend capability flags are advisory and do not imply that optional runtime dependencies are installed. */
+    bool mount_windows_drive = false;
+    bool mount_windows_sync = false;
+    bool mount_linux_userspace = false;
 };
 
 class IPlatformCapabilities {

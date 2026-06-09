@@ -58,10 +58,15 @@ foreach(artifact IN LISTS root_artifacts)
 endforeach()
 
 file(GLOB_RECURSE cli_outputs LIST_DIRECTORIES false
+    "${UBAANEXT_SOURCE_DIR}/bin/*/*/ubaa"
     "${UBAANEXT_SOURCE_DIR}/bin/*/*/ubaa.exe"
+    "${UBAANEXT_SOURCE_DIR}/bin/*/*/ubaa.com"
     "${UBAANEXT_SOURCE_DIR}/bin/*/*/ubaa.pdb"
     "${UBAANEXT_SOURCE_DIR}/bin/*/*/ubaa.ilk"
     "${UBAANEXT_SOURCE_DIR}/bin/*/*/ubaa.exe.sha256"
+    "${UBAANEXT_SOURCE_DIR}/bin/*/*/ubaa.com.sha256"
+    "${UBAANEXT_SOURCE_DIR}/bin/*/*/ubaa-gui"
+    "${UBAANEXT_SOURCE_DIR}/bin/*/*/ubaa-gui.sha256"
 )
 foreach(output IN LISTS cli_outputs)
     ubaanext_remove_path("${output}")

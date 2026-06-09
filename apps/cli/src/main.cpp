@@ -51,6 +51,7 @@
 
 #include "AppContext.hpp"
 #include "CliConfig.hpp"
+#include "CliRunner.hpp"
 #include "CommandHandlers.hpp"
 #include "Console.hpp"
 #include "ExitCodes.hpp"
@@ -59,6 +60,7 @@
 #include "SecurityRedaction.hpp"
 #include "ServiceFactory.hpp"
 
+#include <UBAANext/Runtime/AppRuntime.hpp>
 #include <UBAANext/Version.hpp>
 #include <UBAANext/Auth/SessionContext.hpp>
 #include <UBAANext/Model/Course.hpp>
@@ -91,6 +93,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -813,54 +816,28 @@ ExitCode confirm_sensitive_operation_or_exit(CliArgs &args, OutputFormatter &out
 // ── 路径工具 ──────────────────────────────────────────────────
 
 [[nodiscard]] std::filesystem::path get_app_data_dir() {
-#if defined(_WIN32)
-    char *override_buf = nullptr;
-    std::size_t override_len = 0;
-    if (_dupenv_s(&override_buf, &override_len, "UBAANEXT_APP_DATA_DIR") == 0 && override_buf != nullptr) {
-        std::filesystem::path path = override_buf;
-        free(override_buf);
-        if (!path.empty()) return path;
-    }
-#else
-    if (const char *override_dir = std::getenv("UBAANEXT_APP_DATA_DIR")) {
-        if (*override_dir != '\0') return override_dir;
-    }
-#endif
-#if defined(_WIN32)
-    char *buf = nullptr;
-    std::size_t len = 0;
-    if (_dupenv_s(&buf, &len, "LOCALAPPDATA") == 0 && buf != nullptr) {
-        std::filesystem::path path = std::filesystem::path(buf) / "UBAANext";
-        free(buf);
-        return path;
-    }
-    if (_dupenv_s(&buf, &len, "USERPROFILE") == 0 && buf != nullptr) {
-        std::filesystem::path path = std::filesystem::path(buf) / ".ubaanext";
-        free(buf);
-        return path;
-    }
-#else
-    if (const char *xdg_data_home = std::getenv("XDG_DATA_HOME")) {
-        return std::filesystem::path(xdg_data_home) / "ubaanext";
-    }
-    if (const char *home = std::getenv("HOME")) {
-        return std::filesystem::path(home) / ".ubaanext";
-    }
-#endif
-    return ".ubaanext";
+    return UBAANext::Runtime::default_app_data_dir();
 }
 
 [[nodiscard]] std::filesystem::path get_session_file_path() {
-    return get_app_data_dir() / "session.dat";
+    return UBAANext::Runtime::session_file_path(get_app_data_dir());
 }
 
 /** Sensitive local persistence boundary: returns the real cookie file path; exposing it is diagnostic-only. */
 [[nodiscard]] std::filesystem::path get_cookie_file_path() {
-    return get_app_data_dir() / "cookies.dat";
+    return UBAANext::Runtime::cookie_file_path(get_app_data_dir());
 }
 
 [[nodiscard]] std::filesystem::path get_config_file_path() {
-    return get_app_data_dir() / "config.json";
+    return UBAANext::Runtime::config_file_path(get_app_data_dir());
+}
+
+[[nodiscard]] std::filesystem::path get_cache_dir() {
+    return UBAANext::Runtime::default_cache_dir(get_app_data_dir());
+}
+
+[[nodiscard]] std::filesystem::path get_log_dir() {
+    return UBAANext::Runtime::default_log_dir(get_app_data_dir());
 }
 
 /** Upload helper: infers MIME from a local path string without reading the file contents. */
@@ -2035,7 +2012,7 @@ ExitCode cmd_week_list(const CliArgs &args, ServiceFactory &factory, OutputForma
 }
 
 [[nodiscard]] std::string path_text(const std::filesystem::path &path) {
-    return path.u8string();
+    return path.string();
 }
 
 [[nodiscard]] std::string int_text(int value) {
@@ -2756,6 +2733,8 @@ ExitCode cmd_config_show(OutputFormatter &out, const CliConfig &config) {
             {"sessionPath",  get_session_file_path().string()},
             {"cookiePath",   get_cookie_file_path().string()},
             {"configPath",   get_config_file_path().string()},
+            {"cachePath",    get_cache_dir().string()},
+            {"logPath",      get_log_dir().string()},
             {"version",      UBAANEXT_VERSION_STRING},
         };
         nlohmann::json out_json = {{"ok", true}, {"data", data}, {"error", nullptr}};
@@ -2768,6 +2747,8 @@ ExitCode cmd_config_show(OutputFormatter &out, const CliConfig &config) {
             {"SessionPath", get_session_file_path().string()},
             {"CookiePath", get_cookie_file_path().string()},
             {"ConfigPath", get_config_file_path().string()},
+            {"CachePath", get_cache_dir().string()},
+            {"LogPath", get_log_dir().string()},
             {"Version", UBAANEXT_VERSION_STRING},
         });
     }
@@ -4211,7 +4192,7 @@ int run_cli(int argc, char *argv[]) {
     }
 
 
-    if (args.command.empty() || args.command == "help") {
+    if (args.command.empty() || args.command == "help" || args.command == "--help" || args.command == "-h") {
         return static_cast<int>(cmd_help(out));
     }
 
@@ -4499,26 +4480,74 @@ void enable_windows_virtual_terminal() {
 #endif
 }
 
-bool cli_has_flag(int argc, char *argv[], std::string_view flag) {
-    for (int i = 1; i < argc; ++i) {
-        if (std::string_view(argv[i]) == flag) return true;
-    }
-    return false;
+bool cli_has_flag(const std::vector<std::string> &arguments, std::string_view flag) {
+    return std::find(arguments.begin(), arguments.end(), flag) != arguments.end();
 }
+
+std::mutex &cli_stream_capture_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+class StreamCaptureGuard {
+public:
+    StreamCaptureGuard(std::ostringstream &stdout_capture, std::ostringstream &stderr_capture)
+        : lock_(cli_stream_capture_mutex()),
+          old_stdout_(std::cout.rdbuf(stdout_capture.rdbuf())),
+          old_stderr_(std::cerr.rdbuf(stderr_capture.rdbuf())) {}
+
+    StreamCaptureGuard(const StreamCaptureGuard &) = delete;
+    StreamCaptureGuard &operator=(const StreamCaptureGuard &) = delete;
+
+    ~StreamCaptureGuard() {
+        std::cout.rdbuf(old_stdout_);
+        std::cerr.rdbuf(old_stderr_);
+    }
+
+private:
+    std::unique_lock<std::mutex> lock_;
+    std::streambuf *old_stdout_;
+    std::streambuf *old_stderr_;
+};
 
 } // namespace
 
-int main(int argc, char *argv[]) {
+namespace UBAANextCli {
+
+CliCommandResult run_cli_command(const std::vector<std::string> &arguments) {
     enable_windows_virtual_terminal();
-    try {
-        return run_cli(argc, argv);
-    } catch (const std::exception &ex) {
-        OutputFormatter out(cli_has_flag(argc, argv, "--json"));
-        out.print_error({um::ErrorCode::Unknown, UBAANextCli::redact_sensitive_text(ex.what())});
-        return static_cast<int>(ExitCode::General);
-    } catch (...) {
-        OutputFormatter out(cli_has_flag(argc, argv, "--json"));
-        out.print_error({um::ErrorCode::Unknown, "CLI 执行失败"});
-        return static_cast<int>(ExitCode::General);
+
+    std::ostringstream stdout_capture;
+    std::ostringstream stderr_capture;
+    CliCommandResult result;
+
+    {
+        StreamCaptureGuard capture_guard(stdout_capture, stderr_capture);
+        try {
+            std::vector<std::string> storage;
+            storage.reserve(arguments.size() + 1);
+            storage.emplace_back("ubaa");
+            storage.insert(storage.end(), arguments.begin(), arguments.end());
+
+            std::vector<char *> argv;
+            argv.reserve(storage.size());
+            for (auto &value : storage) argv.push_back(value.data());
+
+            result.exit_code = run_cli(static_cast<int>(argv.size()), argv.data());
+        } catch (const std::exception &ex) {
+            OutputFormatter out(cli_has_flag(arguments, "--json"));
+            out.print_error({um::ErrorCode::Unknown, UBAANextCli::redact_sensitive_text(ex.what())});
+            result.exit_code = static_cast<int>(ExitCode::General);
+        } catch (...) {
+            OutputFormatter out(cli_has_flag(arguments, "--json"));
+            out.print_error({um::ErrorCode::Unknown, "CLI 执行失败"});
+            result.exit_code = static_cast<int>(ExitCode::General);
+        }
     }
+
+    result.stdout_text = stdout_capture.str();
+    result.stderr_text = stderr_capture.str();
+    return result;
 }
+
+} // namespace UBAANextCli

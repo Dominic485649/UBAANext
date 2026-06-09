@@ -92,7 +92,7 @@ void write_capabilities(const UBAANext::PlatformCapabilities &caps,
     out_capabilities.secure_cookie_persistence = as_u8(caps.secure_cookie_persistence);
     out_capabilities.cookie_persistence = as_u8(caps.cookie_persistence);
     out_capabilities.redirect_control = as_u8(caps.redirect_control);
-    out_capabilities.openssl_crypto = as_u8(caps.openssl_crypto);
+    out_capabilities.protocol_crypto = as_u8(caps.protocol_crypto);
     out_capabilities.secure_store = as_u8(caps.secure_store);
     out_capabilities.app_data_path = as_u8(caps.app_data_path);
     out_capabilities.upload_bytes = as_u8(caps.upload_bytes);
@@ -106,12 +106,16 @@ void write_capabilities(const UBAANext::PlatformCapabilities &caps,
                 {"secureCookiePersistence", caps.secure_cookie_persistence},
                 {"cookiePersistence", caps.cookie_persistence},
                 {"redirectControl", caps.redirect_control},
-                {"opensslCrypto", caps.openssl_crypto},
+                {"opensslCrypto", caps.protocol_crypto},
                 {"secureStore", caps.secure_store},
                 {"appDataPath", caps.app_data_path},
                 {"uploadBytes", caps.upload_bytes},
                 {"liveLogin", caps.live_login},
-                {"writeOperations", caps.write_operations}};
+                {"writeOperations", caps.write_operations},
+                {"desktopGui", caps.desktop_gui},
+                {"winfspMount", caps.mount_windows_drive},
+                {"cloudFilesMount", caps.mount_windows_sync},
+                {"fuseMount", caps.mount_linux_userspace}};
 }
 
 class VolatileSecureStore final : public UBAANext::ISecureStore

@@ -10,7 +10,7 @@ UBAANext::PlatformCapabilities planned_linux_capabilities() {
     caps.secure_cookie_persistence = false;
     caps.cookie_persistence = false;
     caps.redirect_control = true;
-    caps.openssl_crypto = true;
+    caps.protocol_crypto = true;
     caps.secure_store = false;
     caps.app_data_path = true;
     caps.upload_bytes = true;
@@ -26,7 +26,7 @@ TEST_CASE("Linux skeleton capabilities fail fast without secure store", "[platfo
 
     CHECK(caps.real_network);
     CHECK(caps.redirect_control);
-    CHECK(caps.openssl_crypto);
+    CHECK(caps.protocol_crypto);
     CHECK(caps.app_data_path);
     CHECK(caps.upload_bytes);
     CHECK_FALSE(caps.secure_store);

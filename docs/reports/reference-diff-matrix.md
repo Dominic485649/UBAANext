@@ -4,7 +4,7 @@
 
 ## 范围
 
-本矩阵只记录本轮与课堂资源下载、TD 图片管理相关的差异补齐。`AutoTD` 的后台 daemon、自动挂后台、自动刷新/刷取、PID 管理、Web 管理端和 telemetry 明确排除。
+本矩阵记录当前 UI + CLI 完善阶段与参考项目的能力差异，重点覆盖课堂资源下载、TD 图片管理、北航云盘 CLI/Cloud VFS 与桌面 mount 前端缺口。`AutoTD` 的后台 daemon、自动挂后台、自动刷新/刷取、PID 管理、Web 管理端和 telemetry 明确排除。Cloud mount 只按“协议/VFS 已有、adapter 接入状态、外部依赖、真实系统挂载验证”分层记录，未完成 adapter 不得写成已可用挂载能力。
 
 ## 对比结果
 

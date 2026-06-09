@@ -24,12 +24,12 @@
 - [CLI 设计](architecture/cli-design.md)
 - [Harmony ArkUI 设计](architecture/harmony-arkui-design.md)
 - [Slint 桌面设计](architecture/slint-desktop-design.md)
+- [Cloud mount 设计](architecture/cloud-mount-design.md)
 - [未来扩展点](architecture/future-extension-points.md)
 
 ## 核心
 
 - [编码规范](core/coding-guidelines.md)
-- [命名规则](core/naming-rules.md)
 - [命名空间规则](core/namespace-rules.md)
 - [错误模型](core/error-model.md)
 - [Result 类型](core/result-type.md)
@@ -80,6 +80,7 @@
 - [TD CLI](apps/td-cli.md)
 - [Harmony ArkUI](apps/harmony-arkui.md)
 - [Windows Slint GUI](apps/windows-slint-gui.md)
+- [Linux Slint GUI](apps/linux-slint-gui.md)
 - [发布渠道计划](apps/release-channel-plan.md)
 
 ## 安全

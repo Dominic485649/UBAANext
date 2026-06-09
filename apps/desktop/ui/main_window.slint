@@ -1,0 +1,426 @@
+import { Button, CheckBox, LineEdit, TabWidget, VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+
+component HeaderBar inherits Rectangle {
+    in property <string> version;
+    in property <string> mode;
+    in property <string> account-summary;
+    in property <string> mount-status;
+    in property <string> cache-status;
+
+    height: 68px;
+    background: #ffffff;
+    border-color: #d7dde8;
+    border-width: 1px;
+    border-radius: 8px;
+
+    HorizontalLayout {
+        padding: 12px;
+        spacing: 18px;
+        Text { text: "UBAA Next"; font-size: 24px; font-weight: 700; color: #1d2736; }
+        Text { text: root.version; color: #526070; vertical-alignment: center; }
+        Text { text: root.mode; color: #256f5b; vertical-alignment: center; }
+        Text { text: root.account-summary; color: #526070; vertical-alignment: center; horizontal-stretch: 1; }
+        Text { text: root.mount-status; color: #344054; vertical-alignment: center; }
+        Text { text: root.cache-status; color: #344054; vertical-alignment: center; }
+    }
+}
+
+component SessionPage inherits VerticalBox {
+    in property <string> session-status;
+    in property <string> account-summary;
+    callback login(account: string, password: string);
+    callback whoami();
+    callback logout(confirm: bool);
+
+    padding: 16px;
+    spacing: 10px;
+    Text { text: "Login / Session"; font-size: 18px; font-weight: 600; color: #202b3c; }
+    Text { text: root.session-status; color: #526070; }
+    HorizontalBox {
+        spacing: 8px;
+        account_input := LineEdit { placeholder-text: "Account"; horizontal-stretch: 1; }
+        password_input := LineEdit { placeholder-text: "Password"; input-type: InputType.password; horizontal-stretch: 1; }
+        Button { text: "Login"; clicked => { root.login(account_input.text, password_input.text); } }
+        Button { text: "Whoami"; clicked => { root.whoami(); } }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        logout_confirm := CheckBox { text: "Confirm logout and clear local session"; checked: false; }
+        Button { text: "Logout"; clicked => { root.logout(logout_confirm.checked); } }
+    }
+    Text { text: root.account-summary; color: #526070; }
+}
+
+component CloudPage inherits VerticalBox {
+    in property <string> cloud-status;
+    in property <string> cloud-breadcrumb;
+    in property <[string]> cloud-rows;
+    callback refresh-cloud(filter: string);
+    callback open-cloud-path(path: string, filter: string);
+    callback upload-cloud(local_path: string, overwrite: bool, confirm: bool, filter: string);
+    callback download-cloud(cloud_path: string, local_path: string, overwrite: bool, confirm: bool, filter: string);
+    callback delete-cloud(cloud_path: string, confirm: bool, filter: string);
+    callback rename-cloud(cloud_path: string, new_name: string, confirm: bool, filter: string);
+    callback create-cloud-folder(name: string, confirm: bool, filter: string);
+
+    padding: 16px;
+    spacing: 10px;
+    Text { text: root.cloud-status; color: #526070; }
+    Text { text: "Path: " + root.cloud-breadcrumb; font-size: 18px; font-weight: 600; color: #202b3c; }
+    search_input := LineEdit { placeholder-text: "Search current directory"; horizontal-stretch: 1; }
+    HorizontalBox {
+        spacing: 8px;
+        open_path_input := LineEdit { text: "/"; placeholder-text: "Cloud directory path"; horizontal-stretch: 1; }
+        Button { text: "Open"; clicked => { root.open-cloud-path(open_path_input.text, search_input.text); } }
+        Button { text: "Refresh"; clicked => { root.refresh-cloud(search_input.text); } }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        local_upload_input := LineEdit { placeholder-text: "Local file path to upload"; horizontal-stretch: 1; }
+        upload_overwrite := CheckBox { text: "Overwrite conflict"; checked: false; }
+        upload_confirm := CheckBox { text: "Confirm upload"; checked: false; }
+        Button { text: "Upload"; clicked => { root.upload-cloud(local_upload_input.text, upload_overwrite.checked, upload_confirm.checked, search_input.text); } }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        download_cloud_input := LineEdit { placeholder-text: "Cloud file path"; horizontal-stretch: 1; }
+        download_local_input := LineEdit { placeholder-text: "Local output path"; horizontal-stretch: 1; }
+        download_overwrite := CheckBox { text: "Overwrite local file"; checked: false; }
+        download_confirm := CheckBox { text: "Confirm local write"; checked: false; }
+        Button { text: "Download"; clicked => { root.download-cloud(download_cloud_input.text, download_local_input.text, download_overwrite.checked, download_confirm.checked, search_input.text); } }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        mutate_path_input := LineEdit { placeholder-text: "Cloud item path"; horizontal-stretch: 1; }
+        rename_input := LineEdit { placeholder-text: "New name or new folder name"; horizontal-stretch: 1; }
+        mutate_confirm := CheckBox { text: "Confirm cloud write/delete"; checked: false; }
+        Button { text: "Rename"; clicked => { root.rename-cloud(mutate_path_input.text, rename_input.text, mutate_confirm.checked, search_input.text); } }
+        Button { text: "Delete"; clicked => { root.delete-cloud(mutate_path_input.text, mutate_confirm.checked, search_input.text); } }
+        Button { text: "New Folder"; clicked => { root.create-cloud-folder(rename_input.text, mutate_confirm.checked, search_input.text); } }
+    }
+    Text { text: "Upload, rename, delete, and new folder require explicit confirmation before changing cloud data."; color: #526070; }
+    ScrollView {
+        viewport-height: 300px;
+        VerticalLayout {
+            for row in root.cloud-rows : Text {
+                text: row;
+                color: #344054;
+                font-size: 14px;
+            }
+        }
+    }
+}
+
+component MountsPage inherits VerticalBox {
+    in property <string> mount-status;
+    in property <[string]> mount-rows;
+    callback start-winfsp(writable: bool, mount_point: string);
+    callback start-cloud-files(writable: bool, mount_point: string);
+    callback start-fuse(writable: bool, mount_point: string);
+    callback stop-mounts(confirm: bool);
+
+    padding: 16px;
+    spacing: 12px;
+    Text { text: root.mount-status; font-size: 18px; font-weight: 600; color: #202b3c; }
+    HorizontalBox {
+        spacing: 8px;
+        Text { text: "WinFsp"; vertical-alignment: center; }
+        winfsp_writable := CheckBox { text: "Writable"; checked: true; }
+        winfsp_mount := LineEdit { text: "B:\\"; placeholder-text: "Drive or mount point"; horizontal-stretch: 1; }
+        Button { text: "Start"; clicked => { root.start-winfsp(winfsp_writable.checked, winfsp_mount.text); } }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        Text { text: "Cloud Files"; vertical-alignment: center; }
+        cloud_files_writable := CheckBox { text: "Writable"; checked: false; }
+        cloud_files_mount := LineEdit { placeholder-text: "Sync root path"; horizontal-stretch: 1; }
+        Button { text: "Start"; clicked => { root.start-cloud-files(cloud_files_writable.checked, cloud_files_mount.text); } }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        Text { text: "Linux FUSE"; vertical-alignment: center; }
+        fuse_writable := CheckBox { text: "Writable"; checked: false; }
+        fuse_mount := LineEdit { placeholder-text: "Mount point"; horizontal-stretch: 1; }
+        Button { text: "Start"; clicked => { root.start-fuse(fuse_writable.checked, fuse_mount.text); } }
+    }
+    stop_mounts_confirm := CheckBox { text: "Confirm stop all mount frontends"; checked: false; }
+    Button { text: "Stop All"; clicked => { root.stop-mounts(stop_mounts_confirm.checked); } }
+    ScrollView {
+        viewport-height: 220px;
+        VerticalLayout {
+            for row in root.mount-rows : Text {
+                text: row;
+                color: #344054;
+                font-size: 14px;
+            }
+        }
+    }
+}
+
+component TasksPage inherits ScrollView {
+    in property <[string]> task-rows;
+
+    viewport-height: 500px;
+    VerticalLayout {
+        padding: 16px;
+        spacing: 8px;
+        for row in root.task-rows : Text {
+            text: row;
+            color: #344054;
+        }
+    }
+}
+
+component SettingsPage inherits VerticalBox {
+    in property <string> cache-status;
+    in property <string> capabilities-status;
+    in property <string> mode;
+    callback set-mode(mode: string);
+    callback clear-cache(confirm: bool);
+
+    padding: 16px;
+    spacing: 12px;
+    Text { text: root.cache-status; font-size: 18px; font-weight: 600; color: #202b3c; }
+    Text { text: root.capabilities-status; color: #526070; }
+    HorizontalBox {
+        spacing: 8px;
+        Text { text: "Connection"; vertical-alignment: center; }
+        Button { text: "direct"; clicked => { root.set-mode("direct"); } }
+        Button { text: "vpn"; clicked => { root.set-mode("vpn"); } }
+        Button { text: "mock"; clicked => { root.set-mode("mock"); } }
+        Text { text: "Current: " + root.mode; color: #526070; vertical-alignment: center; }
+    }
+    CheckBox { text: "Redact logs"; checked: true; enabled: false; }
+    clear_confirm := CheckBox { text: "Confirm clear local cache"; checked: false; }
+    Button { text: "Clear Cache"; clicked => { root.clear-cache(clear_confirm.checked); } }
+}
+
+component CampusPage inherits VerticalBox {
+    in property <string> campus-status;
+    in property <[string]> campus-rows;
+    callback run-campus-feature(domain: string, operation: string, id: string, confirm: bool);
+
+    padding: 16px;
+    spacing: 10px;
+    Text { text: "Campus feature center"; font-size: 18px; font-weight: 600; color: #202b3c; }
+    Text { text: root.campus-status; color: #526070; }
+    HorizontalBox {
+        spacing: 8px;
+        feature_id_input := LineEdit { placeholder-text: "ID / term / date / operation argument"; horizontal-stretch: 1; }
+        feature_confirm := CheckBox { text: "Confirm mutation"; checked: false; }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        Button { text: "Today Courses"; clicked => { root.run-campus-feature("course", "today", feature_id_input.text, false); } }
+        Button { text: "Week Courses"; clicked => { root.run-campus-feature("course", "week", feature_id_input.text, false); } }
+        Button { text: "Exams"; clicked => { root.run-campus-feature("exam", "list", feature_id_input.text, false); } }
+        Button { text: "Grades"; clicked => { root.run-campus-feature("grade", "list", feature_id_input.text, false); } }
+        Button { text: "Classrooms"; clicked => { root.run-campus-feature("classroom", "query", feature_id_input.text, false); } }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        Button { text: "SPOC Assignments"; clicked => { root.run-campus-feature("spoc", "assignments", feature_id_input.text, false); } }
+        Button { text: "XiJi Assignments"; clicked => { root.run-campus-feature("judge", "assignments", feature_id_input.text, false); } }
+        Button { text: "Signin Today"; clicked => { root.run-campus-feature("signin", "today", feature_id_input.text, false); } }
+        Button { text: "Todo"; clicked => { root.run-campus-feature("todo", "list", feature_id_input.text, false); } }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        Button { text: "Boya Courses"; clicked => { root.run-campus-feature("bykc", "courses", feature_id_input.text, false); } }
+        Button { text: "Seminar Sites"; clicked => { root.run-campus-feature("cgyy", "sites", feature_id_input.text, false); } }
+        Button { text: "Library"; clicked => { root.run-campus-feature("libbook", "libraries", feature_id_input.text, false); } }
+        Button { text: "YGDK"; clicked => { root.run-campus-feature("ygdk", "overview", feature_id_input.text, false); } }
+        Button { text: "Evaluation"; clicked => { root.run-campus-feature("evaluation", "list", feature_id_input.text, false); } }
+    }
+    HorizontalBox {
+        spacing: 8px;
+        Button { text: "Show Detail"; clicked => { root.run-campus-feature("detail", "show", feature_id_input.text, false); } }
+        Button { text: "Mutate"; clicked => { root.run-campus-feature("mutation", "run", feature_id_input.text, feature_confirm.checked); } }
+    }
+    Text { text: "Use ID field for term/date/id. Examples: course week=8 or 8:2025-2026-2, grades=2025-2026-2, classroom=1:2026-06-09:1,2,3,4. Command Center remains for long-tail commands."; color: #526070; }
+    ScrollView {
+        viewport-height: 300px;
+        VerticalLayout {
+            for row in root.campus-rows : Text {
+                text: row;
+                color: #344054;
+                font-size: 14px;
+            }
+        }
+    }
+}
+
+component CommandCenterPage inherits VerticalBox {
+    in property <string> command-output;
+    callback run-command(command: string, confirm: bool);
+
+    padding: 16px;
+    spacing: 10px;
+    Text { text: "Run CLI command in this desktop process"; font-size: 18px; font-weight: 600; color: #202b3c; }
+    HorizontalBox {
+        spacing: 8px;
+        command_input := LineEdit { placeholder-text: "Example: whoami or file roots"; horizontal-stretch: 1; }
+        command_confirm := CheckBox { text: "Confirm mutation"; checked: false; }
+        Button { text: "Run"; clicked => { root.run-command(command_input.text, command_confirm.checked); } }
+    }
+    Text { text: "--json is added automatically. Check Confirm mutation to add --confirm."; color: #526070; }
+    ScrollView {
+        viewport-height: 420px;
+        Text {
+            text: root.command-output;
+            color: #344054;
+            font-family: "monospace";
+            font-size: 13px;
+        }
+    }
+}
+
+component DiagnosticsPage inherits VerticalBox {
+    in property <string> diagnostics;
+    callback export-diagnostics();
+
+    padding: 16px;
+    spacing: 10px;
+    Button { text: "Export"; clicked => { root.export-diagnostics(); } }
+    ScrollView {
+        viewport-height: 450px;
+        Text {
+            text: root.diagnostics;
+            color: #344054;
+            font-family: "monospace";
+            font-size: 13px;
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    in property <string> version;
+    in property <string> mode;
+    in property <string> account-summary;
+    in property <string> session-status;
+    in property <string> capabilities-status;
+    in property <string> mount-status;
+    in property <string> cache-status;
+    in property <string> diagnostics;
+    in property <[string]> cloud-rows;
+    in property <string> cloud-status;
+    in property <string> cloud-breadcrumb;
+    in property <[string]> task-rows;
+    in property <[string]> mount-rows;
+    in property <string> command-output;
+    in property <string> campus-status;
+    in property <[string]> campus-rows;
+
+    callback login(account: string, password: string);
+    callback whoami();
+    callback logout(confirm: bool);
+    callback set-mode(mode: string);
+    callback refresh-cloud(filter: string);
+    callback open-cloud-path(path: string, filter: string);
+    callback upload-cloud(local_path: string, overwrite: bool, confirm: bool, filter: string);
+    callback download-cloud(cloud_path: string, local_path: string, overwrite: bool, confirm: bool, filter: string);
+    callback delete-cloud(cloud_path: string, confirm: bool, filter: string);
+    callback rename-cloud(cloud_path: string, new_name: string, confirm: bool, filter: string);
+    callback create-cloud-folder(name: string, confirm: bool, filter: string);
+    callback start-winfsp(writable: bool, mount_point: string);
+    callback start-cloud-files(writable: bool, mount_point: string);
+    callback start-fuse(writable: bool, mount_point: string);
+    callback stop-mounts(confirm: bool);
+    callback clear-cache(confirm: bool);
+    callback export-diagnostics();
+    callback run-campus-feature(domain: string, operation: string, id: string, confirm: bool);
+    callback run-command(command: string, confirm: bool);
+
+    title: "UBAA Next";
+    preferred-width: 1120px;
+    preferred-height: 720px;
+    background: #f6f8fb;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        HeaderBar {
+            version: root.version;
+            mode: root.mode;
+            account-summary: root.account-summary;
+            mount-status: root.mount-status;
+            cache-status: root.cache-status;
+        }
+
+        TabWidget {
+            Tab {
+                title: "Session";
+                SessionPage {
+                    session-status: root.session-status;
+                    account-summary: root.account-summary;
+                    login(account, password) => { root.login(account, password); }
+                    whoami() => { root.whoami(); }
+                    logout(confirm) => { root.logout(confirm); }
+                }
+            }
+            Tab {
+                title: "Cloud";
+                CloudPage {
+                    cloud-status: root.cloud-status;
+                    cloud-breadcrumb: root.cloud-breadcrumb;
+                    cloud-rows: root.cloud-rows;
+                    refresh-cloud(filter) => { root.refresh-cloud(filter); }
+                    open-cloud-path(path, filter) => { root.open-cloud-path(path, filter); }
+                    upload-cloud(local_path, overwrite, confirm, filter) => { root.upload-cloud(local_path, overwrite, confirm, filter); }
+                    download-cloud(cloud_path, local_path, overwrite, confirm, filter) => { root.download-cloud(cloud_path, local_path, overwrite, confirm, filter); }
+                    delete-cloud(cloud_path, confirm, filter) => { root.delete-cloud(cloud_path, confirm, filter); }
+                    rename-cloud(cloud_path, new_name, confirm, filter) => { root.rename-cloud(cloud_path, new_name, confirm, filter); }
+                    create-cloud-folder(name, confirm, filter) => { root.create-cloud-folder(name, confirm, filter); }
+                }
+            }
+            Tab {
+                title: "Mounts";
+                MountsPage {
+                    mount-status: root.mount-status;
+                    mount-rows: root.mount-rows;
+                    start-winfsp(writable, mount_point) => { root.start-winfsp(writable, mount_point); }
+                    start-cloud-files(writable, mount_point) => { root.start-cloud-files(writable, mount_point); }
+                    start-fuse(writable, mount_point) => { root.start-fuse(writable, mount_point); }
+                    stop-mounts(confirm) => { root.stop-mounts(confirm); }
+                }
+            }
+            Tab {
+                title: "Tasks";
+                TasksPage { task-rows: root.task-rows; }
+            }
+            Tab {
+                title: "Settings";
+                SettingsPage {
+                    cache-status: root.cache-status;
+                    capabilities-status: root.capabilities-status;
+                    mode: root.mode;
+                    set-mode(mode) => { root.set-mode(mode); }
+                    clear-cache(confirm) => { root.clear-cache(confirm); }
+                }
+            }
+            Tab {
+                title: "Campus";
+                CampusPage {
+                    campus-status: root.campus-status;
+                    campus-rows: root.campus-rows;
+                    run-campus-feature(domain, operation, id, confirm) => { root.run-campus-feature(domain, operation, id, confirm); }
+                }
+            }
+            Tab {
+                title: "Command Center";
+                CommandCenterPage {
+                    command-output: root.command-output;
+                    run-command(command, confirm) => { root.run-command(command, confirm); }
+                }
+            }
+            Tab {
+                title: "Diagnostics";
+                DiagnosticsPage {
+                    diagnostics: root.diagnostics;
+                    export-diagnostics() => { root.export-diagnostics(); }
+                }
+            }
+        }
+    }
+}

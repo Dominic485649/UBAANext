@@ -62,6 +62,12 @@ struct CloudDownloadUrl {
     bool zipped = false;
 };
 
+struct CloudDownloadChunk {
+    std::vector<unsigned char> bytes;
+    std::uint64_t offset = 0;
+    bool partial = false;
+};
+
 struct CloudUploadResult {
     std::string id;
     std::string revision;

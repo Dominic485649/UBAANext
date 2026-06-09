@@ -920,12 +920,16 @@ void OutputFormatter::print_capabilities(const UBAANext::PlatformCapabilities &c
                 {"secureCookiePersistence", capabilities.secure_cookie_persistence},
                 {"cookiePersistence", capabilities.cookie_persistence},
                 {"redirectControl", capabilities.redirect_control},
-                {"opensslCrypto", capabilities.openssl_crypto},
+                {"protocolCrypto", capabilities.protocol_crypto},
                 {"secureStore", capabilities.secure_store},
                 {"appDataPath", capabilities.app_data_path},
                 {"uploadBytes", capabilities.upload_bytes},
                 {"liveLogin", capabilities.live_login},
                 {"writeOperations", capabilities.write_operations},
+                {"desktopGui", capabilities.desktop_gui},
+                {"winfspMount", capabilities.mount_windows_drive},
+                {"cloudFilesMount", capabilities.mount_windows_sync},
+                {"fuseMount", capabilities.mount_linux_userspace},
             }}
         };
         json out = {{"ok", true}, {"data", data}, {"error", nullptr}};
@@ -940,12 +944,16 @@ void OutputFormatter::print_capabilities(const UBAANext::PlatformCapabilities &c
                      {"secureCookiePersistence", bool_text(capabilities.secure_cookie_persistence)},
                      {"cookiePersistence", bool_text(capabilities.cookie_persistence)},
                      {"redirectControl", bool_text(capabilities.redirect_control)},
-                     {"opensslCrypto", bool_text(capabilities.openssl_crypto)},
+                     {"protocolCrypto", bool_text(capabilities.protocol_crypto)},
                      {"secureStore", bool_text(capabilities.secure_store)},
                      {"appDataPath", bool_text(capabilities.app_data_path)},
                      {"uploadBytes", bool_text(capabilities.upload_bytes)},
                      {"liveLogin", bool_text(capabilities.live_login)},
                      {"writeOperations", bool_text(capabilities.write_operations)},
+                     {"desktopGui", bool_text(capabilities.desktop_gui)},
+                     {"winfspMount", bool_text(capabilities.mount_windows_drive)},
+                     {"cloudFilesMount", bool_text(capabilities.mount_windows_sync)},
+                     {"fuseMount", bool_text(capabilities.mount_linux_userspace)},
                  });
 }
 

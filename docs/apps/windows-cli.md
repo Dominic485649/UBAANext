@@ -4,6 +4,8 @@
 
 UBAA Next 命令行接口 (CLI) 是基于 C++ 原生重构的 Windows 系统首选入口点，主要用于核心服务验证、自动化回归测试以及开发者日常调试。CLI 独立于任何 GUI 框架，直接链接 `UBAANextCore`，保证极低的系统资源占用与最高效的执行效率。
 
+启用桌面构建时，Windows 输出目录同时包含 `ubaa.com` 和 `ubaa.exe`：`ubaa.com` 是 CLI，`ubaa.exe` 是 Slint 桌面 UI。PowerShell/CMD 中输入 `ubaa ...` 会优先命中 `.com`，因此脚本和 smoke test 应使用 `ubaa.com` 或不带扩展名的 `ubaa`；需要打开 GUI 时显式运行 `ubaa.exe`。
+
 ## 1. 命令行参数解析机制
 
 为了保持极致的依赖最小化，UBAA Next CLI 采用手写参数解析器（位于 [main.cpp](file:///d:/Code/Cpp/UBAANext/apps/cli/src/main.cpp) 中的 `parse_args` 函数），不依赖第三方参数解析库。

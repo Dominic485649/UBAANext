@@ -347,7 +347,7 @@ std::optional<std::string> live_token_from_response(const HttpResponse &response
     return extract_live_jwt(response.body);
 }
 
-void apply_optional_live_authorization(HttpRequest &request, ICookieStore *store)
+[[maybe_unused]] void apply_optional_live_authorization(HttpRequest &request, ICookieStore *store)
 {
     if (auto token = live_token_from_cookie_store(store))
     {
@@ -419,7 +419,7 @@ std::optional<nlohmann::json> find_detail_item(const nlohmann::json &candidates,
     if (candidates.is_object())
     {
         if (candidate_matches(candidates, course_id, sub_id))
-            return candidates;
+            return std::optional<nlohmann::json>{candidates};
         if (candidates.contains("list"))
             return find_detail_item(candidates["list"], course_id, sub_id);
         return std::nullopt;
@@ -431,7 +431,7 @@ std::optional<nlohmann::json> find_detail_item(const nlohmann::json &candidates,
         if (!candidate.is_object())
             continue;
         if (candidate_matches(candidate, course_id, sub_id))
-            return candidate;
+            return std::optional<nlohmann::json>{candidate};
         if (candidate.contains("list"))
         {
             auto nested = find_detail_item(candidate["list"], course_id, sub_id);

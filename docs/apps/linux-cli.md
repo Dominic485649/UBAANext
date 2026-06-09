@@ -4,6 +4,8 @@
 
 ## 构建与运行
 
+Linux 输出中 `ubaa` 是 CLI；启用桌面构建时，Slint GUI 输出名为 `ubaa-gui`，详见 [Linux Slint GUI](linux-slint-gui.md)。
+
 ```bash
 cmake --fresh --preset linux-ninja-debug
 cmake --build --preset linux-ninja-debug --target ubaa UBAANextTests UBAANextCliTests
