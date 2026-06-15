@@ -1,13 +1,10 @@
 # Build directories
 build/
+build-release/
 cmake-build-*/
+/bin/
 vcpkg_installed/
 vcpkg-manifest-install.log
-/bin/*/*/ubaa
-/bin/*/*/ubaa.exe
-/bin/*/*/*.pdb
-/bin/*/*/*.ilk
-/bin/*/*/*.sha256
 
 # IDE
 .vs/
@@ -48,6 +45,8 @@ desktop.ini
 
 # Claude/local agent workspaces
 .claude/
+.codex/
+.agents/
 .mcp.json
 .antigravitycli/
 
@@ -56,3 +55,7 @@ reference/
 
 # Local onboarding note
 /ONBOARDING.md
+
+# Misc helper scripts
+/account_manager_fixed.py
+/test_zlib2_fixed.py
