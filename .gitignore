@@ -1,4 +1,4 @@
-# Build directories
+# Build directories and outputs
 build/
 build-release/
 cmake-build-*/
@@ -6,7 +6,7 @@ cmake-build-*/
 vcpkg_installed/
 vcpkg-manifest-install.log
 
-# IDE
+# IDE and editor
 .vs/
 .vscode/
 .idea/
@@ -43,7 +43,7 @@ desktop.ini
 .env
 .env.local
 
-# Claude/local agent workspaces
+# Local agent and tool workspaces
 .claude/
 .codex/
 .agents/
@@ -55,7 +55,3 @@ reference/
 
 # Local onboarding note
 /ONBOARDING.md
-
-# Misc helper scripts
-/account_manager_fixed.py
-/test_zlib2_fixed.py
